@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX, Palette } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt } from "./useTimer";
@@ -143,10 +143,12 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
+  const timerRef = useRef<HTMLElement>(null);
+  const scrollToTimer = () => timerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
+      <section ref={timerRef} className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
           <div className="flex shrink-0 flex-col items-center lg:items-start">
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
@@ -210,7 +212,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
                 );
               })}
             </div>
-            {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} />}
+            {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} onSave={scrollToTimer} />}
           </div>
           <div>
             <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
@@ -273,7 +275,7 @@ function NumberField({ value, unit, min, max, label, onChange }: any) {
   );
 }
 
-function CustomEditor({ custom, setCustom }: any) {
+function CustomEditor({ custom, setCustom, onSave }: any) {
   const rows: { key: string; label: string; unit: string; min: number; max: number }[] = [
     { key: "focus", label: "Focus length", unit: "min", min: 1, max: 180 },
     { key: "short", label: "Short break", unit: "min", min: 1, max: 60 },
@@ -293,7 +295,11 @@ function CustomEditor({ custom, setCustom }: any) {
           </div>
         ))}
       </div>
-      <p className="mt-3 text-[11px] text-muted-foreground">Type a value or use the buttons. Changing a value resets the current timer.</p>
+      <button onClick={onSave}
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-[0.98]">
+        <Check size={16} /> Save and go to timer
+      </button>
+      <p className="mt-2 text-[11px] text-muted-foreground">Type a value or use the buttons. Changing a value resets the current timer.</p>
     </div>
   );
 }

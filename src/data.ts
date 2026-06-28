@@ -20,7 +20,7 @@ export const METHODS: Method[] = [
   { id: "gentle", name: "Gentle 20/10", blurb: "Lower-intensity days. More recovery.", focus: 20, short: 10, long: 20, cycles: 4 },
   { id: "fifty2", name: "52/17", blurb: "The productivity-study ratio.", focus: 52, short: 17, long: 25, cycles: 3 },
   { id: "marathon", name: "Marathon 120/30", blurb: "For long library sits before an exam.", focus: 120, short: 30, long: 45, cycles: 2, premium: true },
-  { id: "custom", name: "Custom", blurb: "Set your own focus, break, and cadence.", focus: 30, short: 7, long: 20, cycles: 4 },
+  { id: "custom", name: "Custom", blurb: "Set your own focus, break, and cadence.", focus: 30, short: 7, long: 20, cycles: 4, premium: true },
 ];
 
 export type Task = { id: string; title: string; tag: string; done: boolean; poms: number; est: number };
