@@ -278,11 +278,14 @@ function ThemePicker({ themeId, setThemeId }: any) {
           const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
           return (
             <button key={t.id} onClick={() => setThemeId(t.id)}
-              className={`relative flex h-24 flex-col justify-between overflow-hidden rounded-xl border p-2.5 text-left transition ${active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/40"}`}
-              style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
+              className={`relative flex h-24 flex-col justify-between overflow-hidden rounded-xl p-2.5 text-left shadow-sm transition ${active ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : "hover:brightness-95"}`}
+              style={{
+                background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})`,
+                border: `2px solid ${active ? "hsl(var(--primary))" : `hsl(${t.vars["--foreground"]} / 0.35)`}`,
+              }}>
               <div className="flex gap-1">
-                <span className="h-3.5 w-3.5 rounded-full border border-white/40" style={{ background: t.ring }} />
-                <span className="h-3.5 w-3.5 rounded-full border border-white/40" style={{ background: t.rest }} />
+                <span className="h-3.5 w-3.5 rounded-full border border-white/50 shadow-sm" style={{ background: t.ring }} />
+                <span className="h-3.5 w-3.5 rounded-full border border-white/50 shadow-sm" style={{ background: t.rest }} />
               </div>
               <span className="font-display text-sm font-semibold" style={{ color: nameColor }}>{t.name}</span>
               {active && (
