@@ -235,6 +235,44 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
   );
 }
 
+function NumberField({ value, unit, min, max, label, onChange }: any) {
+  // Local string state lets the user clear and retype freely; we commit a clamped
+  // number on blur or Enter so typing never fights the value mid-edit.
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => { setDraft(String(value)); }, [value]);
+
+  const commit = () => {
+    const n = parseInt(draft, 10);
+    const next = isNaN(n) ? value : Math.max(min, Math.min(max, n));
+    onChange(next);
+    setDraft(String(next));
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={() => onChange(Math.max(min, value - 1))} aria-label={`Decrease ${label}`}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+        <Minus size={15} />
+      </button>
+      <div className="flex w-[88px] items-center justify-center rounded-lg border border-border bg-card px-1 focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20">
+        <input
+          type="text" inputMode="numeric" pattern="[0-9]*"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ""))}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          aria-label={`${label}${unit ? ` in ${unit}` : ""}`}
+          className="w-9 bg-transparent py-1.5 text-right font-mono text-sm tabular-nums outline-none" />
+        {unit && <span className="pl-1 pr-1 font-mono text-sm text-muted-foreground">{unit}</span>}
+      </div>
+      <button onClick={() => onChange(Math.min(max, value + 1))} aria-label={`Increase ${label}`}
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+        <Plus size={15} />
+      </button>
+    </div>
+  );
+}
+
 function CustomEditor({ custom, setCustom }: any) {
   const rows: { key: string; label: string; unit: string; min: number; max: number }[] = [
     { key: "focus", label: "Focus length", unit: "min", min: 1, max: 180 },
@@ -242,8 +280,6 @@ function CustomEditor({ custom, setCustom }: any) {
     { key: "long", label: "Long break", unit: "min", min: 1, max: 90 },
     { key: "cycles", label: "Blocks before long break", unit: "", min: 1, max: 10 },
   ];
-  const set = (key: string, val: number, min: number, max: number) =>
-    setCustom({ ...custom, [key]: Math.max(min, Math.min(max, val)) });
 
   return (
     <div className="mt-3 rounded-2xl border border-border bg-card/70 p-4">
@@ -252,23 +288,12 @@ function CustomEditor({ custom, setCustom }: any) {
         {rows.map((r) => (
           <div key={r.key} className="flex items-center justify-between gap-3">
             <span className="text-sm">{r.label}</span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => set(r.key, custom[r.key] - 1, r.min, r.max)} aria-label={`Decrease ${r.label}`}
-                className="grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-                <Minus size={15} />
-              </button>
-              <span className="w-16 text-center font-mono text-sm tabular-nums">
-                {custom[r.key]}{r.unit && <span className="text-muted-foreground"> {r.unit}</span>}
-              </span>
-              <button onClick={() => set(r.key, custom[r.key] + 1, r.min, r.max)} aria-label={`Increase ${r.label}`}
-                className="grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-                <Plus size={15} />
-              </button>
-            </div>
+            <NumberField value={custom[r.key]} unit={r.unit} min={r.min} max={r.max} label={r.label}
+              onChange={(v: number) => setCustom({ ...custom, [r.key]: v })} />
           </div>
         ))}
       </div>
-      <p className="mt-3 text-[11px] text-muted-foreground">Changing a value resets the current timer.</p>
+      <p className="mt-3 text-[11px] text-muted-foreground">Type a value or use the buttons. Changing a value resets the current timer.</p>
     </div>
   );
 }
