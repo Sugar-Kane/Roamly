@@ -119,6 +119,20 @@ function Header({ isPremium, themeId, setThemeId, gateThen }: any) {
   );
 }
 
+function TimeDisplay({ value, className }: { value: string; className?: string }) {
+  // Render each character in a fixed-width slot so the total width never changes
+  // as digits change (Fraunces digits aren't equal-width and tabular-nums is unreliable).
+  return (
+    <span className={`inline-flex leading-none ${className ?? ""}`} style={{ fontVariantNumeric: "tabular-nums" }} aria-label={value}>
+      {value.split("").map((ch, i) => (
+        <span key={i} className="inline-flex justify-center" style={{ width: ch === ":" ? "0.42em" : "0.62em" }}>
+          {ch}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, tasks, activeTask, setActiveTask, isPremium, gateThen, sound }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
@@ -130,7 +144,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
           <div className="flex shrink-0 flex-col items-center lg:items-start">
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
-            <span className="font-display text-7xl font-medium tabular-nums leading-none tracking-tight sm:text-8xl">{fmt(timer.secondsLeft)}</span>
+            <TimeDisplay value={fmt(timer.secondsLeft)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
             <span className="mt-1 text-sm text-muted-foreground">{method.name}</span>
           </div>
 
