@@ -47,10 +47,11 @@ export default function App() {
   return (
     <div className="min-h-screen text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <div className="relative mx-auto flex max-w-6xl flex-col px-5 pb-28 pt-7 md:px-8">
-        <Header isPremium={isPremium} themeId={themeId} setThemeId={setThemeId} gateThen={gateThen} />
+        <Header isPremium={isPremium} />
+        <ThemePicker themeId={themeId} setThemeId={setThemeId} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
-            <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme} setThemeId={setThemeId}
+            <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen} sound={sound} />
@@ -67,11 +68,9 @@ export default function App() {
   );
 }
 
-function Header({ isPremium, themeId, setThemeId, gateThen }: any) {
-  const [open, setOpen] = useState(false);
-  const current = THEMES.find((t: any) => t.id === themeId)!;
+function Header({ isPremium }: any) {
   return (
-    <header className="relative flex items-center justify-between">
+    <header className="flex items-center justify-between">
       <div className="flex items-baseline gap-3">
         <span className="font-display text-2xl font-semibold tracking-tight text-gradient">Roamly</span>
         <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">Focus</span>
@@ -82,43 +81,6 @@ function Header({ isPremium, themeId, setThemeId, gateThen }: any) {
             <Crown size={13} /> Premium
           </span>
         )}
-        <div className="relative">
-          <button onClick={() => setOpen((o) => !o)} aria-label="Change theme"
-            className="flex items-center gap-2 rounded-full border border-border bg-card/70 py-1.5 pl-2.5 pr-3 text-sm font-medium transition hover:border-primary/40">
-            <Palette size={15} className="text-primary" />
-            <span className="hidden sm:inline">{current.name}</span>
-            <span className="flex gap-1">
-              <span className="h-3 w-3 rounded-full" style={{ background: current.ring }} />
-              <span className="h-3 w-3 rounded-full" style={{ background: current.rest }} />
-            </span>
-          </button>
-          {open && (
-            <>
-              <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-              <div className="absolute right-0 z-40 mt-2 w-60 rounded-2xl border border-border bg-card p-2 shadow-xl">
-                <p className="px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Theme</p>
-                {THEMES.map((t: any) => {
-                  const locked = t.premium && !isPremium;
-                  const active = t.id === themeId;
-                  return (
-                    <button key={t.id}
-                      onClick={() => { if (locked) { gateThen(() => setThemeId(t.id)); } else { setThemeId(t.id); } setOpen(false); }}
-                      className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${active ? "bg-primary/10" : "hover:bg-secondary"}`}>
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
-                        <span className="h-3 w-3 rounded-full" style={{ background: t.ring }} />
-                      </span>
-                      <span className="flex-1">
-                        <span className="block text-sm font-medium">{t.name}</span>
-                        <span className="block text-[11px] text-muted-foreground">{t.hint}</span>
-                      </span>
-                      {locked ? <Crown size={13} className="text-primary" /> : active ? <Check size={15} className="text-primary" /> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
         <div className="grid h-9 w-9 place-items-center rounded-full gradient-primary text-sm font-semibold text-white shadow-glow">PA</div>
       </div>
     </header>
@@ -139,7 +101,7 @@ function TimeDisplay({ value, className }: { value: string; className?: string }
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, sound }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, sound }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -230,7 +192,6 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
         </div>
         <div className="space-y-6">
           <SoundPanel sound={sound} />
-          <ThemePicker themeId={theme.id} setThemeId={setThemeId} />
         </div>
       </div>
     </div>
@@ -306,12 +267,12 @@ function CustomEditor({ custom, setCustom, onSave }: any) {
 
 function ThemePicker({ themeId, setThemeId }: any) {
   return (
-    <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+    <div className="mt-6 rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
       <div className="mb-3 flex items-center gap-2">
         <Palette size={16} className="text-primary" />
         <h2 className="font-display text-lg font-semibold">Theme</h2>
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         {THEMES.map((t: any) => {
           const active = themeId === t.id;
           const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
