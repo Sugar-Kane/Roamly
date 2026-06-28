@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX, Palette } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX, Palette } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt } from "./useTimer";
 import { useSoundscape, SOUNDS, CATEGORIES } from "./useSoundscape";
@@ -15,8 +15,13 @@ export default function App() {
   const [activeTask, setActiveTask] = useState<string | null>("t1");
   const [isPremium, setIsPremium] = useState(false);
   const [showUpsell, setShowUpsell] = useState(false);
+  // User-editable values for the Custom method (minutes).
+  const [custom, setCustom] = useState({ focus: 30, short: 7, long: 20, cycles: 4 });
 
-  const method = useMemo(() => METHODS.find((m) => m.id === methodId)!, [methodId]);
+  const method = useMemo(() => {
+    const base = METHODS.find((m) => m.id === methodId)!;
+    return base.id === "custom" ? { ...base, ...custom } : base;
+  }, [methodId, custom]);
   const theme = useMemo(() => THEMES.find((t) => t.id === themeId)!, [themeId]);
   const timer = useTimer(method);
   const sound = useSoundscape();
@@ -47,6 +52,7 @@ export default function App() {
           {view === "focus" && (
             <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme} setThemeId={setThemeId}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
+              custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen} sound={sound} />
           )}
           {view === "tasks" && <TasksView tasks={tasks} setTasks={setTasks} activeTask={activeTask} setActiveTask={setActiveTask} />}
@@ -133,7 +139,7 @@ function TimeDisplay({ value, className }: { value: string; className?: string }
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, tasks, activeTask, setActiveTask, isPremium, gateThen, sound }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, sound }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -204,6 +210,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
                 );
               })}
             </div>
+            {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} />}
           </div>
           <div>
             <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
@@ -224,6 +231,44 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
           <ThemePicker themeId={theme.id} setThemeId={setThemeId} />
         </div>
       </div>
+    </div>
+  );
+}
+
+function CustomEditor({ custom, setCustom }: any) {
+  const rows: { key: string; label: string; unit: string; min: number; max: number }[] = [
+    { key: "focus", label: "Focus length", unit: "min", min: 1, max: 180 },
+    { key: "short", label: "Short break", unit: "min", min: 1, max: 60 },
+    { key: "long", label: "Long break", unit: "min", min: 1, max: 90 },
+    { key: "cycles", label: "Blocks before long break", unit: "", min: 1, max: 10 },
+  ];
+  const set = (key: string, val: number, min: number, max: number) =>
+    setCustom({ ...custom, [key]: Math.max(min, Math.min(max, val)) });
+
+  return (
+    <div className="mt-3 rounded-2xl border border-border bg-card/70 p-4">
+      <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Custom settings</p>
+      <div className="space-y-2.5">
+        {rows.map((r) => (
+          <div key={r.key} className="flex items-center justify-between gap-3">
+            <span className="text-sm">{r.label}</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => set(r.key, custom[r.key] - 1, r.min, r.max)} aria-label={`Decrease ${r.label}`}
+                className="grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                <Minus size={15} />
+              </button>
+              <span className="w-16 text-center font-mono text-sm tabular-nums">
+                {custom[r.key]}{r.unit && <span className="text-muted-foreground"> {r.unit}</span>}
+              </span>
+              <button onClick={() => set(r.key, custom[r.key] + 1, r.min, r.max)} aria-label={`Increase ${r.label}`}
+                className="grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                <Plus size={15} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-3 text-[11px] text-muted-foreground">Changing a value resets the current timer.</p>
     </div>
   );
 }
