@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Crown, Play, Pause, RotateCcw, SkipForward, X } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt } from "./useTimer";
+import { useSoundscape, SOUNDS } from "./useSoundscape";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 
 type View = "focus" | "tasks" | "analytics" | "rooms" | "premium";
@@ -18,6 +19,7 @@ export default function App() {
   const method = useMemo(() => METHODS.find((m) => m.id === methodId)!, [methodId]);
   const theme = useMemo(() => THEMES.find((t) => t.id === themeId)!, [themeId]);
   const timer = useTimer(method);
+  const sound = useSoundscape();
 
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
     { id: "focus", label: "Focus", icon: Timer },
@@ -37,7 +39,7 @@ export default function App() {
           {view === "focus" && (
             <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
-              isPremium={isPremium} gateThen={gateThen} />
+              isPremium={isPremium} gateThen={gateThen} sound={sound} />
           )}
           {view === "tasks" && <TasksView tasks={tasks} setTasks={setTasks} activeTask={activeTask} setActiveTask={setActiveTask} />}
           {view === "analytics" && <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)} />}
@@ -70,7 +72,7 @@ function Header({ isPremium }: { isPremium: boolean }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, tasks, activeTask, setActiveTask, isPremium, gateThen }: any) {
+function FocusView({ method, methodId, setMethodId, timer, tasks, activeTask, setActiveTask, isPremium, gateThen, sound }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? "#7C5CFA" : "#16A34A";
@@ -151,7 +153,44 @@ function FocusView({ method, methodId, setMethodId, timer, tasks, activeTask, se
             ))}
           </div>
         </div>
+        <SoundPanel sound={sound} isPremium={isPremium} gateThen={gateThen} />
       </section>
+    </div>
+  );
+}
+
+function SoundPanel({ sound, isPremium, gateThen }: any) {
+  const VolIcon = sound.volume === 0 ? VolumeX : sound.volume < 0.5 ? Volume1 : Volume2;
+  return (
+    <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <Music size={16} className="text-primary" />
+        <h2 className="font-display text-lg font-semibold">Sound</h2>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {SOUNDS.map((s: any) => {
+          const locked = s.premium && !isPremium;
+          const active = sound.activeId === s.id;
+          return (
+            <button key={s.id} onClick={() => (locked ? gateThen(() => sound.play(s.id)) : sound.play(s.id))}
+              className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">{s.name}</span>
+                {locked ? <Crown size={12} className="text-primary" /> : active && s.id !== "off" ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" /> : null}
+              </div>
+              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{s.hint}</p>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <VolIcon size={16} className="shrink-0 text-muted-foreground" />
+        <input type="range" min={0} max={1} step={0.01} value={sound.volume}
+          onChange={(e) => sound.changeVolume(parseFloat(e.target.value))}
+          aria-label="Volume"
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-secondary accent-primary" />
+      </div>
+      <p className="mt-2 text-[11px] text-muted-foreground">Sounds are generated live — no downloads, plays offline.</p>
     </div>
   );
 }
