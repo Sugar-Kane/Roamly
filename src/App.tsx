@@ -125,84 +125,91 @@ function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, ta
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-      <section className="flex flex-col items-center justify-center rounded-3xl border border-border bg-card/80 p-8 shadow-sm backdrop-blur">
-        <span className="mb-1 font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
-        <span className="mb-6 text-sm text-muted-foreground">{method.name}</span>
-        <div className="relative grid place-items-center">
-          <svg width="280" height="280" viewBox="0 0 280 280" className="rotate-[-90deg]">
-            <circle cx="140" cy="140" r="128" fill="none" stroke="hsl(var(--border))" strokeWidth="6" />
-            <circle cx="140" cy="140" r="128" fill="none" stroke={ring} strokeWidth="6" strokeLinecap="round"
-              strokeDasharray={2 * Math.PI * 128}
-              strokeDashoffset={2 * Math.PI * 128 * (1 - timer.progress)}
-              style={{ transition: "stroke-dashoffset 1s linear" }} />
-          </svg>
-          <div className="absolute flex flex-col items-center">
-            <span className="font-display text-6xl font-medium tabular-nums tracking-tight">{fmt(timer.secondsLeft)}</span>
-            <div className="mt-3 flex gap-1.5">
-              {Array.from({ length: method.cycles }).map((_, i) => (
-                <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: i < timer.completedFocus % method.cycles ? ring : "hsl(var(--border))" }} />
+    <div className="space-y-8">
+      <section className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
+          <div className="flex shrink-0 flex-col items-center lg:items-start">
+            <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
+            <span className="font-display text-7xl font-medium tabular-nums leading-none tracking-tight sm:text-8xl">{fmt(timer.secondsLeft)}</span>
+            <span className="mt-1 text-sm text-muted-foreground">{method.name}</span>
+          </div>
+
+          <div className="flex flex-1 flex-col gap-5">
+            <div>
+              <div className="h-3 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
+                <div className="h-full rounded-full" style={{ width: `${timer.progress * 100}%`, background: ring, transition: "width 1s linear" }} />
+              </div>
+              <div className="mt-2 flex items-center justify-between">
+                <div className="flex gap-1.5">
+                  {Array.from({ length: method.cycles }).map((_, i) => (
+                    <span key={i} className="h-1.5 w-6 rounded-full" style={{ background: i < timer.completedFocus % method.cycles ? ring : "hsl(var(--border))" }} />
+                  ))}
+                </div>
+                {task && (
+                  <span className="truncate pl-3 text-sm text-muted-foreground">
+                    <span className="text-foreground">{task.title}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button onClick={timer.running ? timer.pause : timer.start}
+                className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]"
+                style={{ background: ring }} aria-label={timer.running ? "Pause" : "Start"}>
+                {timer.running ? <><Pause size={22} fill="currentColor" /> Pause</> : <><Play size={22} fill="currentColor" /> Start</>}
+              </button>
+              <button onClick={timer.reset} className="grid h-14 w-14 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Reset">
+                <RotateCcw size={19} />
+              </button>
+              <button onClick={timer.skip} className="grid h-14 w-14 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Skip">
+                <SkipForward size={19} />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        <div className="space-y-6">
+          <div>
+            <h2 className="mb-3 font-display text-lg font-semibold">Method</h2>
+            <div className="grid grid-cols-2 gap-2.5">
+              {METHODS.map((m) => {
+                const locked = m.premium && !isPremium;
+                const active = m.id === methodId;
+                return (
+                  <button key={m.id} onClick={() => (locked ? gateThen(() => setMethodId(m.id)) : setMethodId(m.id))}
+                    className={`relative rounded-2xl border p-3 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold">{m.name}</span>
+                      {locked && <Crown size={13} className="text-primary" />}
+                    </div>
+                    <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{m.blurb}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
+            <div className="space-y-2">
+              {tasks.filter((t: Task) => !t.done).slice(0, 3).map((t: Task) => (
+                <button key={t.id} onClick={() => setActiveTask(t.id)}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
+                  <span className="flex-1 truncate text-sm">{t.title}</span>
+                  <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+                </button>
               ))}
             </div>
           </div>
         </div>
-        {task && (
-          <div className="mt-6 max-w-xs text-center">
-            <span className="text-xs text-muted-foreground">Working on</span>
-            <p className="mt-0.5 text-sm font-medium text-foreground">{task.title}</p>
-          </div>
-        )}
-        <div className="mt-7 flex items-center gap-3">
-          <button onClick={timer.reset} className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Reset">
-            <RotateCcw size={17} />
-          </button>
-          <button onClick={timer.running ? timer.pause : timer.start}
-            className="flex h-16 w-16 items-center justify-center rounded-full font-semibold text-white shadow-glow transition active:scale-95"
-            style={{ background: ring }} aria-label={timer.running ? "Pause" : "Start"}>
-            {timer.running ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
-          </button>
-          <button onClick={timer.skip} className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Skip">
-            <SkipForward size={17} />
-          </button>
+        <div className="space-y-6">
+          <SoundPanel sound={sound} />
+          <ThemePicker themeId={theme.id} setThemeId={setThemeId} />
         </div>
-      </section>
-
-      <section className="space-y-6">
-        <div>
-          <h2 className="mb-3 font-display text-lg font-semibold">Method</h2>
-          <div className="grid grid-cols-2 gap-2.5">
-            {METHODS.map((m) => {
-              const locked = m.premium && !isPremium;
-              const active = m.id === methodId;
-              return (
-                <button key={m.id} onClick={() => (locked ? gateThen(() => setMethodId(m.id)) : setMethodId(m.id))}
-                  className={`relative rounded-2xl border p-3 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold">{m.name}</span>
-                    {locked && <Crown size={13} className="text-primary" />}
-                  </div>
-                  <p className="mt-0.5 text-xs leading-snug text-muted-foreground">{m.blurb}</p>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div>
-          <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
-          <div className="space-y-2">
-            {tasks.filter((t: Task) => !t.done).slice(0, 3).map((t: Task) => (
-              <button key={t.id} onClick={() => setActiveTask(t.id)}
-                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
-                <span className="flex-1 truncate text-sm">{t.title}</span>
-                <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-        <SoundPanel sound={sound} />
-        <ThemePicker themeId={theme.id} setThemeId={setThemeId} />
-      </section>
+      </div>
     </div>
   );
 }
