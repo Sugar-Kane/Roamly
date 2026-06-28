@@ -44,18 +44,18 @@ export const WEEK_DATA = [
 ];
 
 export const SUBJECT_SPLIT = [
-  { name: "Pharm", value: 32, color: "#E8A33D" },
-  { name: "Cardio", value: 24, color: "#7A9B8E" },
-  { name: "Clinical", value: 21, color: "#C76B5A" },
-  { name: "PANCE", value: 23, color: "#8A909C" },
+  { name: "Pharm", value: 32, color: "#7C5CFA" },
+  { name: "Cardio", value: 24, color: "#3B82F6" },
+  { name: "Clinical", value: 21, color: "#E8765A" },
+  { name: "PANCE", value: 23, color: "#16A34A" },
 ];
 
 export type Theme = { id: string; name: string; premium: boolean; from: string; to: string };
 export const THEMES: Theme[] = [
-  { id: "lamp", name: "Study Lamp", premium: false, from: "#1E2128", to: "#16181D" },
-  { id: "dawn", name: "Dawn Library", premium: true, from: "#2A2118", to: "#171311" },
-  { id: "forest", name: "Forest Window", premium: true, from: "#16201B", to: "#11160F" },
-  { id: "rain", name: "Rain on Glass", premium: true, from: "#181D24", to: "#10141A" },
+  { id: "lamp", name: "Clean Light", premium: false, from: "#FFFFFF", to: "#F4F3FB" },
+  { id: "dawn", name: "Dawn Coral", premium: true, from: "#FFF5F1", to: "#FDEEF6" },
+  { id: "forest", name: "Mint Calm", premium: true, from: "#F0FAF4", to: "#EAF4FB" },
+  { id: "rain", name: "Indigo Mist", premium: true, from: "#F3F2FE", to: "#EDF1FC" },
 ];
 
 export type Room = { id: string; name: string; host: string; focus: string; members: number; cap: number };

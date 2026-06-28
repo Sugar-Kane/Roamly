@@ -1,14 +1,80 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
-* { -webkit-font-smoothing: antialiased; }
-body { margin: 0; background: #16181D; }
+/* Roamly Design System */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 220 13% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 18%;
+    --primary: 250 84% 60%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 220 9% 46%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 12 76% 61%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 250 84% 60%;
+    --radius: 0.75rem;
+    --roamly-purple: 250 84% 60%;
+    --roamly-coral: 12 76% 61%;
+    --roamly-blue: 217 91% 60%;
+    --roamly-green: 142 76% 36%;
+  }
 
-@keyframes lampflick { 0%,100%{opacity:.55} 50%{opacity:.8} }
-.lamp-glow { animation: lampflick 6s ease-in-out infinite; }
+  .dark {
+    --background: 220 13% 9%;
+    --foreground: 0 0% 98%;
+    --card: 220 13% 9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 220 13% 9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 250 84% 60%;
+    --primary-foreground: 220 13% 9%;
+    --secondary: 220 13% 15%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 220 13% 15%;
+    --muted-foreground: 220 9% 65%;
+    --accent: 12 76% 61%;
+    --accent-foreground: 220 13% 9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 220 13% 15%;
+    --input: 220 13% 15%;
+    --ring: 250 84% 60%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground font-sans; margin: 0; -webkit-font-smoothing: antialiased; }
+}
+
+/* Custom utilities */
+@layer utilities {
+  .gradient-primary { background: linear-gradient(135deg, hsl(var(--roamly-purple)), hsl(var(--roamly-blue))); }
+  .gradient-accent { background: linear-gradient(135deg, hsl(var(--roamly-coral)), hsl(var(--roamly-purple))); }
+  .text-gradient {
+    background: linear-gradient(135deg, hsl(var(--roamly-purple)), hsl(var(--roamly-coral)));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .glass-effect {
+    backdrop-filter: blur(16px);
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  .shadow-glow { box-shadow: 0 0 20px rgba(139, 92, 246, 0.3); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
