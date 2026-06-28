@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt } from "./useTimer";
@@ -10,7 +10,7 @@ type View = "focus" | "tasks" | "analytics" | "rooms" | "premium";
 export default function App() {
   const [view, setView] = useState<View>("focus");
   const [methodId, setMethodId] = useState("classic");
-  const [themeId, setThemeId] = useState("lamp");
+  const [themeId, setThemeId] = useState("coffee");
   const [tasks, setTasks] = useState<Task[]>(SEED_TASKS);
   const [activeTask, setActiveTask] = useState<string | null>("t1");
   const [isPremium, setIsPremium] = useState(false);
@@ -31,13 +31,21 @@ export default function App() {
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
 
+  // Apply the active theme's palette to the document root so every CSS variable
+  // (background, card, primary, etc.) updates live across the whole app.
+  useEffect(() => {
+    const root = document.documentElement;
+    Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+    root.classList.toggle("dark", !!theme.dark);
+  }, [theme]);
+
   return (
-    <div className="min-h-screen text-foreground font-sans" style={{ background: `linear-gradient(160% 120% at 50% -10%, ${theme.from} 0%, ${theme.to} 70%)` }}>
+    <div className="min-h-screen text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <div className="relative mx-auto flex max-w-6xl flex-col px-5 pb-28 pt-7 md:px-8">
         <Header isPremium={isPremium} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
-            <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer}
+            <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               isPremium={isPremium} gateThen={gateThen} sound={sound} />
           )}
@@ -72,10 +80,10 @@ function Header({ isPremium }: { isPremium: boolean }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, tasks, activeTask, setActiveTask, isPremium, gateThen, sound }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, isPremium, gateThen, sound }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
-  const ring = timer.phase === "focus" ? "#7C5CFA" : "#16A34A";
+  const ring = timer.phase === "focus" ? theme.ring : theme.rest;
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
@@ -84,7 +92,7 @@ function FocusView({ method, methodId, setMethodId, timer, tasks, activeTask, se
         <span className="mb-6 text-sm text-muted-foreground">{method.name}</span>
         <div className="relative grid place-items-center">
           <svg width="280" height="280" viewBox="0 0 280 280" className="rotate-[-90deg]">
-            <circle cx="140" cy="140" r="128" fill="none" stroke="hsl(220 13% 91%)" strokeWidth="6" />
+            <circle cx="140" cy="140" r="128" fill="none" stroke="hsl(var(--border))" strokeWidth="6" />
             <circle cx="140" cy="140" r="128" fill="none" stroke={ring} strokeWidth="6" strokeLinecap="round"
               strokeDasharray={2 * Math.PI * 128}
               strokeDashoffset={2 * Math.PI * 128 * (1 - timer.progress)}
@@ -94,7 +102,7 @@ function FocusView({ method, methodId, setMethodId, timer, tasks, activeTask, se
             <span className="font-display text-6xl font-medium tabular-nums tracking-tight">{fmt(timer.secondsLeft)}</span>
             <div className="mt-3 flex gap-1.5">
               {Array.from({ length: method.cycles }).map((_, i) => (
-                <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: i < timer.completedFocus % method.cycles ? ring : "hsl(220 13% 88%)" }} />
+                <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: i < timer.completedFocus % method.cycles ? ring : "hsl(var(--border))" }} />
               ))}
             </div>
           </div>
@@ -273,9 +281,9 @@ function AnalyticsView({ isPremium, onUpsell }: any) {
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={WEEK_DATA}>
-              <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(220 9% 46%)", fontSize: 12 }} />
-              <Tooltip cursor={{ fill: "rgba(124,92,250,0.08)" }} contentStyle={{ background: "#fff", border: "1px solid hsl(220 13% 91%)", borderRadius: 12, color: "hsl(220 13% 18%)" }} />
-              <Bar dataKey="min" radius={[6, 6, 0, 0]} fill="#7C5CFA" />
+              <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
+              <Tooltip cursor={{ fill: "hsl(var(--primary) / 0.08)" }} contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, color: "hsl(var(--card-foreground))" }} />
+              <Bar dataKey="min" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -399,19 +407,33 @@ function PremiumView({ isPremium, setIsPremium, themeId, setThemeId, gateThen }:
         </div>
       )}
       <div className="mt-8">
-        <h2 className="mb-3 font-display text-lg font-semibold">Study themes</h2>
+        <h2 className="mb-1 font-display text-lg font-semibold">Study themes</h2>
+        <p className="mb-3 text-sm text-muted-foreground">Recolors the whole app. Switches instantly.</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {THEMES.map((t) => {
             const locked = t.premium && !isPremium;
+            const active = themeId === t.id;
+            const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
             return (
               <button key={t.id} onClick={() => (locked ? gateThen(() => setThemeId(t.id)) : setThemeId(t.id))}
-                className={`relative h-28 overflow-hidden rounded-2xl border transition ${themeId === t.id ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/40"}`}
-                style={{ background: `linear-gradient(135deg, ${t.from}, ${t.to})` }}>
-                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between p-3">
-                  <span className="text-sm font-medium text-foreground">{t.name}</span>
-                  {locked && <Crown size={13} className="text-primary" />}
+                className={`relative flex h-32 flex-col justify-between overflow-hidden rounded-2xl border p-3 text-left transition ${active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/40"}`}
+                style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-4 w-4 rounded-full border border-white/40" style={{ background: t.ring }} />
+                  <span className="h-4 w-4 rounded-full border border-white/40" style={{ background: t.rest }} />
                 </div>
-                {themeId === t.id && <span className="absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full gradient-primary text-white"><Check size={12} /></span>}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-display text-sm font-semibold" style={{ color: nameColor }}>{t.name}</span>
+                    {locked && <Crown size={13} style={{ color: t.ring }} />}
+                  </div>
+                  <span className="text-[11px]" style={{ color: nameColor, opacity: 0.7 }}>{t.hint}</span>
+                </div>
+                {active && (
+                  <span className="absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full text-white" style={{ background: t.ring }}>
+                    <Check size={12} />
+                  </span>
+                )}
               </button>
             );
           })}

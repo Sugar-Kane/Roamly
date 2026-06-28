@@ -6,53 +6,35 @@
 /* Roamly Design System */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 220 13% 18%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 13% 18%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 13% 18%;
-    --primary: 250 84% 60%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 220 9% 46%;
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 9% 46%;
-    --accent: 12 76% 61%;
-    --accent-foreground: 0 0% 98%;
+    --background: 34 38% 92%;
+    --foreground: 25 30% 22%;
+    --card: 36 44% 97%;
+    --card-foreground: 25 30% 22%;
+    --popover: 36 44% 97%;
+    --popover-foreground: 25 30% 22%;
+    --primary: 24 30% 51%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 33 30% 88%;
+    --secondary-foreground: 25 20% 38%;
+    --muted: 33 30% 88%;
+    --muted-foreground: 27 18% 48%;
+    --accent: 157 16% 55%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 250 84% 60%;
+    --border: 32 24% 82%;
+    --input: 32 24% 82%;
+    --ring: 24 30% 51%;
     --radius: 0.75rem;
-    --roamly-purple: 250 84% 60%;
-    --roamly-coral: 12 76% 61%;
-    --roamly-blue: 217 91% 60%;
-    --roamly-green: 142 76% 36%;
+    --roamly-purple: 24 30% 51%;
+    --roamly-coral: 18 45% 55%;
+    --roamly-blue: 157 16% 55%;
+    --roamly-green: 157 22% 45%;
   }
 
-  .dark {
-    --background: 220 13% 9%;
-    --foreground: 0 0% 98%;
-    --card: 220 13% 9%;
-    --card-foreground: 0 0% 98%;
-    --popover: 220 13% 9%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 250 84% 60%;
-    --primary-foreground: 220 13% 9%;
-    --secondary: 220 13% 15%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 220 13% 15%;
-    --muted-foreground: 220 9% 65%;
-    --accent: 12 76% 61%;
-    --accent-foreground: 220 13% 9%;
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 13% 15%;
-    --input: 220 13% 15%;
-    --ring: 250 84% 60%;
-  }
+  /* Dark themes (e.g. Library Night) supply their own variables inline via JS.
+     We only set color-scheme here so native controls (scrollbars, inputs) render dark. */
+  .dark { color-scheme: dark; }
 }
 
 @layer base {

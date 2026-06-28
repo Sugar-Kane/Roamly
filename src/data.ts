@@ -50,12 +50,151 @@ export const SUBJECT_SPLIT = [
   { name: "PANCE", value: 23, color: "#16A34A" },
 ];
 
-export type Theme = { id: string; name: string; premium: boolean; from: string; to: string };
+// Each theme recolors the whole app. Values are HSL triplets matching the CSS
+// variables in index.css (e.g. "250 84% 60%"). `grad` is the timer-card gradient.
+// `ring` is the focus-phase timer-ring color; `rest` the break-phase color (hex).
+export type Theme = {
+  id: string;
+  name: string;
+  hint: string;
+  premium: boolean;
+  dark?: boolean;
+  ring: string;
+  rest: string;
+  grad: [string, string];
+  vars: Record<string, string>;
+};
+
 export const THEMES: Theme[] = [
-  { id: "lamp", name: "Clean Light", premium: false, from: "#FFFFFF", to: "#F4F3FB" },
-  { id: "dawn", name: "Dawn Coral", premium: true, from: "#FFF5F1", to: "#FDEEF6" },
-  { id: "forest", name: "Mint Calm", premium: true, from: "#F0FAF4", to: "#EAF4FB" },
-  { id: "rain", name: "Indigo Mist", premium: true, from: "#F3F2FE", to: "#EDF1FC" },
+  {
+    id: "coffee",
+    name: "Coffee Shop",
+    hint: "Warm and cozy",
+    premium: false,
+    ring: "#A87C5A",
+    rest: "#7A9B8E",
+    grad: ["#EBDFD0", "#D8C4AE"],
+    vars: {
+      "--background": "34 38% 92%",
+      "--foreground": "25 30% 22%",
+      "--card": "36 44% 97%",
+      "--card-foreground": "25 30% 22%",
+      "--popover": "36 44% 97%",
+      "--popover-foreground": "25 30% 22%",
+      "--primary": "24 30% 51%",
+      "--primary-foreground": "0 0% 100%",
+      "--secondary": "33 30% 88%",
+      "--secondary-foreground": "25 20% 38%",
+      "--muted": "33 30% 88%",
+      "--muted-foreground": "27 18% 48%",
+      "--accent": "157 16% 55%",
+      "--accent-foreground": "0 0% 100%",
+      "--border": "32 24% 82%",
+      "--input": "32 24% 82%",
+      "--ring": "24 30% 51%",
+      "--roamly-purple": "24 30% 51%",
+      "--roamly-coral": "18 45% 55%",
+      "--roamly-blue": "157 16% 55%",
+      "--roamly-green": "157 22% 45%",
+    },
+  },
+  {
+    id: "whitecoat",
+    name: "White Coat",
+    hint: "Clean and clinical",
+    premium: false,
+    ring: "#2563EB",
+    rest: "#0EA5E9",
+    grad: ["#FFFFFF", "#EEF2F7"],
+    vars: {
+      "--background": "0 0% 100%",
+      "--foreground": "222 38% 20%",
+      "--card": "210 33% 99%",
+      "--card-foreground": "222 38% 20%",
+      "--popover": "210 33% 99%",
+      "--popover-foreground": "222 38% 20%",
+      "--primary": "221 83% 53%",
+      "--primary-foreground": "0 0% 100%",
+      "--secondary": "210 33% 96%",
+      "--secondary-foreground": "215 25% 35%",
+      "--muted": "210 33% 96%",
+      "--muted-foreground": "215 16% 47%",
+      "--accent": "199 89% 48%",
+      "--accent-foreground": "0 0% 100%",
+      "--border": "214 25% 90%",
+      "--input": "214 25% 90%",
+      "--ring": "221 83% 53%",
+      "--roamly-purple": "221 83% 53%",
+      "--roamly-coral": "199 89% 48%",
+      "--roamly-blue": "199 89% 48%",
+      "--roamly-green": "160 70% 40%",
+    },
+  },
+  {
+    id: "library",
+    name: "Library Night",
+    hint: "Dark and focused",
+    premium: false,
+    dark: true,
+    ring: "#A78BFA",
+    rest: "#34D399",
+    grad: ["#1E2230", "#14161F"],
+    vars: {
+      "--background": "227 22% 10%",
+      "--foreground": "252 30% 92%",
+      "--card": "228 21% 15%",
+      "--card-foreground": "252 30% 92%",
+      "--popover": "228 21% 15%",
+      "--popover-foreground": "252 30% 92%",
+      "--primary": "255 92% 76%",
+      "--primary-foreground": "227 22% 10%",
+      "--secondary": "228 18% 20%",
+      "--secondary-foreground": "252 20% 88%",
+      "--muted": "228 18% 20%",
+      "--muted-foreground": "230 12% 66%",
+      "--accent": "158 64% 52%",
+      "--accent-foreground": "227 22% 10%",
+      "--border": "228 16% 24%",
+      "--input": "228 16% 24%",
+      "--ring": "255 92% 76%",
+      "--roamly-purple": "255 92% 76%",
+      "--roamly-coral": "12 76% 61%",
+      "--roamly-blue": "199 89% 60%",
+      "--roamly-green": "158 64% 52%",
+    },
+  },
+  {
+    id: "sage",
+    name: "Sage Calm",
+    hint: "Fresh and relaxed",
+    premium: false,
+    ring: "#4F9D78",
+    rest: "#E0A458",
+    grad: ["#EAF1ED", "#D8E6DE"],
+    vars: {
+      "--background": "150 18% 94%",
+      "--foreground": "152 30% 18%",
+      "--card": "150 24% 98%",
+      "--card-foreground": "152 30% 18%",
+      "--popover": "150 24% 98%",
+      "--popover-foreground": "152 30% 18%",
+      "--primary": "152 33% 46%",
+      "--primary-foreground": "0 0% 100%",
+      "--secondary": "150 18% 89%",
+      "--secondary-foreground": "152 22% 32%",
+      "--muted": "150 18% 89%",
+      "--muted-foreground": "150 14% 42%",
+      "--accent": "33 70% 61%",
+      "--accent-foreground": "0 0% 100%",
+      "--border": "150 16% 83%",
+      "--input": "150 16% 83%",
+      "--ring": "152 33% 46%",
+      "--roamly-purple": "152 33% 46%",
+      "--roamly-coral": "33 70% 61%",
+      "--roamly-blue": "152 33% 46%",
+      "--roamly-green": "152 40% 40%",
+    },
+  },
 ];
 
 export type Room = { id: string; name: string; host: string; focus: string; members: number; cap: number };
