@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX, Palette } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt } from "./useTimer";
 import { useSoundscape, SOUNDS, CATEGORIES } from "./useSoundscape";
@@ -42,17 +42,17 @@ export default function App() {
   return (
     <div className="min-h-screen text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <div className="relative mx-auto flex max-w-6xl flex-col px-5 pb-28 pt-7 md:px-8">
-        <Header isPremium={isPremium} />
+        <Header isPremium={isPremium} themeId={themeId} setThemeId={setThemeId} gateThen={gateThen} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
-            <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
+            <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme} setThemeId={setThemeId}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               isPremium={isPremium} gateThen={gateThen} sound={sound} />
           )}
           {view === "tasks" && <TasksView tasks={tasks} setTasks={setTasks} activeTask={activeTask} setActiveTask={setActiveTask} />}
           {view === "analytics" && <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)} />}
           {view === "rooms" && <RoomsView isPremium={isPremium} gateThen={gateThen} />}
-          {view === "premium" && <PremiumView isPremium={isPremium} setIsPremium={setIsPremium} themeId={themeId} setThemeId={setThemeId} gateThen={gateThen} />}
+          {view === "premium" && <PremiumView isPremium={isPremium} setIsPremium={setIsPremium} />}
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
@@ -61,9 +61,11 @@ export default function App() {
   );
 }
 
-function Header({ isPremium }: { isPremium: boolean }) {
+function Header({ isPremium, themeId, setThemeId, gateThen }: any) {
+  const [open, setOpen] = useState(false);
+  const current = THEMES.find((t: any) => t.id === themeId)!;
   return (
-    <header className="flex items-center justify-between">
+    <header className="relative flex items-center justify-between">
       <div className="flex items-baseline gap-3">
         <span className="font-display text-2xl font-semibold tracking-tight text-gradient">Roamly</span>
         <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">Focus</span>
@@ -74,13 +76,50 @@ function Header({ isPremium }: { isPremium: boolean }) {
             <Crown size={13} /> Premium
           </span>
         )}
+        <div className="relative">
+          <button onClick={() => setOpen((o) => !o)} aria-label="Change theme"
+            className="flex items-center gap-2 rounded-full border border-border bg-card/70 py-1.5 pl-2.5 pr-3 text-sm font-medium transition hover:border-primary/40">
+            <Palette size={15} className="text-primary" />
+            <span className="hidden sm:inline">{current.name}</span>
+            <span className="flex gap-1">
+              <span className="h-3 w-3 rounded-full" style={{ background: current.ring }} />
+              <span className="h-3 w-3 rounded-full" style={{ background: current.rest }} />
+            </span>
+          </button>
+          {open && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+              <div className="absolute right-0 z-40 mt-2 w-60 rounded-2xl border border-border bg-card p-2 shadow-xl">
+                <p className="px-2 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Theme</p>
+                {THEMES.map((t: any) => {
+                  const locked = t.premium && !isPremium;
+                  const active = t.id === themeId;
+                  return (
+                    <button key={t.id}
+                      onClick={() => { if (locked) { gateThen(() => setThemeId(t.id)); } else { setThemeId(t.id); } setOpen(false); }}
+                      className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${active ? "bg-primary/10" : "hover:bg-secondary"}`}>
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
+                        <span className="h-3 w-3 rounded-full" style={{ background: t.ring }} />
+                      </span>
+                      <span className="flex-1">
+                        <span className="block text-sm font-medium">{t.name}</span>
+                        <span className="block text-[11px] text-muted-foreground">{t.hint}</span>
+                      </span>
+                      {locked ? <Crown size={13} className="text-primary" /> : active ? <Check size={15} className="text-primary" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
         <div className="grid h-9 w-9 place-items-center rounded-full gradient-primary text-sm font-semibold text-white shadow-glow">PA</div>
       </div>
     </header>
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, isPremium, gateThen, sound }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, setThemeId, tasks, activeTask, setActiveTask, isPremium, gateThen, sound }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -162,7 +201,41 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           </div>
         </div>
         <SoundPanel sound={sound} />
+        <ThemePicker themeId={theme.id} setThemeId={setThemeId} />
       </section>
+    </div>
+  );
+}
+
+function ThemePicker({ themeId, setThemeId }: any) {
+  return (
+    <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <Palette size={16} className="text-primary" />
+        <h2 className="font-display text-lg font-semibold">Theme</h2>
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        {THEMES.map((t: any) => {
+          const active = themeId === t.id;
+          const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
+          return (
+            <button key={t.id} onClick={() => setThemeId(t.id)}
+              className={`relative flex h-24 flex-col justify-between overflow-hidden rounded-xl border p-2.5 text-left transition ${active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/40"}`}
+              style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
+              <div className="flex gap-1">
+                <span className="h-3.5 w-3.5 rounded-full border border-white/40" style={{ background: t.ring }} />
+                <span className="h-3.5 w-3.5 rounded-full border border-white/40" style={{ background: t.rest }} />
+              </div>
+              <span className="font-display text-sm font-semibold" style={{ color: nameColor }}>{t.name}</span>
+              {active && (
+                <span className="absolute right-2 top-2 grid h-4 w-4 place-items-center rounded-full text-white" style={{ background: t.ring }}>
+                  <Check size={10} />
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -379,7 +452,7 @@ function RoomsView({ isPremium, gateThen }: any) {
   );
 }
 
-function PremiumView({ isPremium, setIsPremium, themeId, setThemeId, gateThen }: any) {
+function PremiumView({ isPremium, setIsPremium }: any) {
   const perks = ["Ambient study themes", "Unlimited analytics history", "Unlimited hosted sessions", "Unlimited room joins", "Premium UI themes", "PANCE & Marathon methods"];
   return (
     <div className="mx-auto max-w-3xl">
@@ -406,39 +479,6 @@ function PremiumView({ isPremium, setIsPremium, themeId, setThemeId, gateThen }:
           </div>
         </div>
       )}
-      <div className="mt-8">
-        <h2 className="mb-1 font-display text-lg font-semibold">Study themes</h2>
-        <p className="mb-3 text-sm text-muted-foreground">Recolors the whole app. Switches instantly.</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {THEMES.map((t) => {
-            const locked = t.premium && !isPremium;
-            const active = themeId === t.id;
-            const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
-            return (
-              <button key={t.id} onClick={() => (locked ? gateThen(() => setThemeId(t.id)) : setThemeId(t.id))}
-                className={`relative flex h-32 flex-col justify-between overflow-hidden rounded-2xl border p-3 text-left transition ${active ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/40"}`}
-                style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
-                <div className="flex items-center gap-1.5">
-                  <span className="h-4 w-4 rounded-full border border-white/40" style={{ background: t.ring }} />
-                  <span className="h-4 w-4 rounded-full border border-white/40" style={{ background: t.rest }} />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-display text-sm font-semibold" style={{ color: nameColor }}>{t.name}</span>
-                    {locked && <Crown size={13} style={{ color: t.ring }} />}
-                  </div>
-                  <span className="text-[11px]" style={{ color: nameColor, opacity: 0.7 }}>{t.hint}</span>
-                </div>
-                {active && (
-                  <span className="absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full text-white" style={{ background: t.ring }}>
-                    <Check size={12} />
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
       {isPremium && (
         <button onClick={() => setIsPremium(false)} className="mt-8 text-xs text-muted-foreground underline">Switch back to free (demo)</button>
       )}
