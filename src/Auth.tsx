@@ -20,14 +20,14 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
     );
   }
 
+  const client = supabase; // narrowed to non-null for the closures below
+
   const submit = async () => {
     setError(null);
     setLoading(true);
-    // Called directly on `supabase.auth` (not extracted into a variable first)
-    // so the method keeps its `this` binding to the client instance.
     const { error: authError } = mode === "signup"
-      ? await supabase.auth.signUp({ email, password })
-      : await supabase.auth.signInWithPassword({ email, password });
+      ? await client.auth.signUp({ email, password })
+      : await client.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (authError) { setError(authError.message); return; }
     onClose();
@@ -35,7 +35,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
 
   const withGoogle = async () => {
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithOAuth({
+    const { error: authError } = await client.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: window.location.origin },
     });

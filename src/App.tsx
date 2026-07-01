@@ -62,12 +62,13 @@ export default function App() {
   // Reflect a Stripe webhook's is_premium update live, without a manual refresh.
   useEffect(() => {
     if (!supabase || !session?.user.id) return;
-    const channel = supabase
+    const client = supabase; // narrowed to non-null for the cleanup closure below
+    const channel = client
       .channel(`profile-${session.user.id}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${session.user.id}` },
         (payload) => setProfile(payload.new as Profile))
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { client.removeChannel(channel); };
   }, [session?.user.id]);
 
   const handlePhaseComplete = useCallback((finishedPhase: Phase) => {
