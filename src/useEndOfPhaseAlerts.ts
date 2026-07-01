@@ -1,0 +1,69 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Phase } from "./useTimer";
+
+const PHASE_MESSAGE: Record<Phase, string> = {
+  focus: "Focus session complete — time for a break.",
+  short: "Short break's over — back to it.",
+  long: "Long break's over — ready for the next block.",
+};
+
+const FLASH_TITLE = "⏰ Time's up! — Roamly";
+const FLASH_INTERVAL_MS = 1000;
+
+type Permission = NotificationPermission | "unsupported";
+
+export function useEndOfPhaseAlerts() {
+  const supported = typeof window !== "undefined" && "Notification" in window;
+  const [permission, setPermission] = useState<Permission>(
+    supported ? Notification.permission : "unsupported"
+  );
+
+  const flashTimer = useRef<number | null>(null);
+  const originalTitle = useRef<string | null>(null);
+
+  const stopFlashing = useCallback(() => {
+    if (flashTimer.current !== null) {
+      window.clearInterval(flashTimer.current);
+      flashTimer.current = null;
+    }
+    if (originalTitle.current !== null) {
+      document.title = originalTitle.current;
+      originalTitle.current = null;
+    }
+  }, []);
+
+  const startFlashing = useCallback(() => {
+    stopFlashing(); // never stack more than one interval on repeated notify() calls
+    originalTitle.current = document.title;
+    let showAlert = true;
+    flashTimer.current = window.setInterval(() => {
+      document.title = showAlert ? FLASH_TITLE : (originalTitle.current ?? document.title);
+      showAlert = !showAlert;
+    }, FLASH_INTERVAL_MS);
+  }, [stopFlashing]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => { if (!document.hidden) stopFlashing(); };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      stopFlashing();
+    };
+  }, [stopFlashing]);
+
+  const requestPermission = useCallback(() => {
+    if (!supported) return;
+    Notification.requestPermission().then(setPermission);
+  }, [supported]);
+
+  const notify = useCallback((finishedPhase: Phase) => {
+    if (supported && Notification.permission === "granted") {
+      try {
+        new Notification("Roamly Focus", { body: PHASE_MESSAGE[finishedPhase] });
+      } catch { /* some browsers restrict Notification construction; ignore */ }
+    }
+    if (document.hidden) startFlashing();
+  }, [supported, startFlashing]);
+
+  return { permission, requestPermission, notify };
+}
