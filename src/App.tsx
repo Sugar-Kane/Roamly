@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
-import { useTimer, fmt } from "./useTimer";
+import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
+import { supabase } from "./supabaseClient";
+import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, type Profile } from "./db";
+import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
+import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
+import { AuthPanel } from "./Auth";
+import type { Session } from "@supabase/supabase-js";
 
 type View = "focus" | "tasks" | "analytics" | "rooms" | "premium";
 
@@ -13,17 +19,66 @@ export default function App() {
   const [themeId, setThemeId] = useState("coffee");
   const [tasks, setTasks] = useState<Task[]>(SEED_TASKS);
   const [activeTask, setActiveTask] = useState<string | null>("t1");
-  const [isPremium, setIsPremium] = useState(false);
   const [showUpsell, setShowUpsell] = useState(false);
   // User-editable values for the Custom method (minutes).
   const [custom, setCustom] = useState({ focus: 30, short: 7, long: 20, cycles: 4 });
+
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [sessions, setSessions] = useState<FocusSession[]>([]);
+  const [showAuth, setShowAuth] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const alerts = useEndOfPhaseAlerts();
+
+  const isPremium = profile?.is_premium ?? false;
+  const dailyGoal = profile?.daily_goal_minutes ?? 120;
+  const examDate = profile?.exam_date ?? null;
+  const streak = useMemo(() => computeStreak(sessions), [sessions]);
+  const todayMinutes = useMemo(() => minutesToday(sessions), [sessions]);
 
   const method = useMemo(() => {
     const base = METHODS.find((m) => m.id === methodId)!;
     return base.id === "custom" ? { ...base, ...custom } : base;
   }, [methodId, custom]);
   const theme = useMemo(() => THEMES.find((t) => t.id === themeId)!, [themeId]);
-  const timer = useTimer(method);
+
+  // Track the signed-in session.
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // Load this user's profile + recent focus sessions whenever they sign in/out.
+  useEffect(() => {
+    const userId = session?.user.id;
+    if (!userId) { setProfile(null); setSessions([]); return; }
+    fetchProfile(userId).then(setProfile);
+    fetchRecentSessions(userId).then(setSessions);
+  }, [session?.user.id]);
+
+  // Reflect a Stripe webhook's is_premium update live, without a manual refresh.
+  useEffect(() => {
+    if (!supabase || !session?.user.id) return;
+    const channel = supabase
+      .channel(`profile-${session.user.id}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${session.user.id}` },
+        (payload) => setProfile(payload.new as Profile))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [session?.user.id]);
+
+  const handlePhaseComplete = useCallback((finishedPhase: Phase) => {
+    alerts.notify(finishedPhase);
+    if (finishedPhase === "focus" && session?.user.id) {
+      setSessions((prev) => addSession(prev, method.focus));
+      logFocusMinutes(dateKey(), method.focus);
+    }
+  }, [alerts.notify, session?.user.id, method.focus]);
+
+  const timer = useTimer(method, handlePhaseComplete);
 
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
     { id: "focus", label: "Focus", icon: Timer },
@@ -34,6 +89,37 @@ export default function App() {
   ];
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
+  const onSignIn = () => setShowAuth(true);
+  const onSignOut = () => supabase?.auth.signOut();
+
+  const setDailyGoal = (minutes: number) => {
+    setProfile((p) => (p ? { ...p, daily_goal_minutes: minutes } : p));
+    updateGoalAndExam({ daily_goal_minutes: minutes });
+  };
+  const setExamDate = (date: string | null) => {
+    setProfile((p) => (p ? { ...p, exam_date: date } : p));
+    updateGoalAndExam({ exam_date: date });
+  };
+
+  const startCheckout = useCallback(async () => {
+    if (!session) { setShowAuth(true); return; }
+    setCheckoutError(null);
+    setCheckoutLoading(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) { setCheckoutLoading(false); setShowAuth(true); return; }
+      const res = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { setCheckoutError("Payments aren't set up yet — check back soon."); setCheckoutLoading(false); return; }
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch {
+      setCheckoutError("Couldn't reach the payments server. Try again soon.");
+      setCheckoutLoading(false);
+    }
+  }, [session]);
 
   // Apply the active theme's palette to the document root so every CSS variable
   // (background, card, primary, etc.) updates live across the whole app.
@@ -46,28 +132,47 @@ export default function App() {
   return (
     <div className="min-h-screen text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <div className="relative mx-auto flex max-w-6xl flex-col px-5 pb-28 pt-7 md:px-8">
-        <Header isPremium={isPremium} />
+        <Header isPremium={isPremium} streak={streak} session={session} onSignIn={onSignIn} onSignOut={onSignOut} />
         <ThemePicker themeId={themeId} setThemeId={setThemeId} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
             <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               custom={custom} setCustom={setCustom}
-              isPremium={isPremium} gateThen={gateThen} />
+              isPremium={isPremium} gateThen={gateThen}
+              examDate={examDate} setExamDate={setExamDate} alerts={alerts}
+              session={session} onSignIn={onSignIn} />
           )}
           {view === "tasks" && <TasksView tasks={tasks} setTasks={setTasks} activeTask={activeTask} setActiveTask={setActiveTask} />}
-          {view === "analytics" && <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)} />}
+          {view === "analytics" && (
+            <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
+              streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
+              session={session} onSignIn={onSignIn} />
+          )}
           {view === "rooms" && <RoomsView isPremium={isPremium} gateThen={gateThen} />}
-          {view === "premium" && <PremiumView isPremium={isPremium} setIsPremium={setIsPremium} />}
+          {view === "premium" && (
+            <PremiumView isPremium={isPremium} session={session} onSubscribe={startCheckout}
+              checkoutLoading={checkoutLoading} checkoutError={checkoutError} />
+          )}
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
-      {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setIsPremium(true); setShowUpsell(false); }} />}
+      {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}
+      {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
     </div>
   );
 }
 
-function Header({ isPremium }: any) {
+function StreakBadge({ streak }: any) {
+  if (streak <= 0) return null;
+  return (
+    <span className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+      <Flame size={13} /> {streak} day{streak === 1 ? "" : "s"}
+    </span>
+  );
+}
+
+function Header({ isPremium, streak, session, onSignIn, onSignOut }: any) {
   return (
     <header className="flex items-center justify-between">
       <div className="flex items-baseline gap-3">
@@ -75,10 +180,18 @@ function Header({ isPremium }: any) {
         <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">Focus</span>
       </div>
       <div className="flex items-center gap-3">
+        <StreakBadge streak={streak} />
         {isPremium && (
           <span className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
             <Crown size={13} /> Premium
           </span>
+        )}
+        {session ? (
+          <button onClick={onSignOut} className="text-xs text-muted-foreground underline">Sign out</button>
+        ) : (
+          <button onClick={onSignIn} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+            <LogIn size={13} /> Sign in
+          </button>
         )}
         <div className="grid h-9 w-9 place-items-center rounded-full gradient-primary text-sm font-semibold text-white shadow-glow">PA</div>
       </div>
@@ -100,7 +213,95 @@ function TimeDisplay({ value, className }: { value: string; className?: string }
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen }: any) {
+function SignInPrompt({ onSignIn, message }: any) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-4">
+      <span className="text-sm text-muted-foreground">{message}</span>
+      <button onClick={onSignIn} className="shrink-0 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium transition hover:border-primary/40">
+        Sign in
+      </button>
+    </div>
+  );
+}
+
+function ExamCountdownBar({ examDate, setExamDate }: any) {
+  const [editing, setEditing] = useState(!examDate);
+  const [draft, setDraft] = useState(examDate ?? "");
+
+  const save = () => {
+    if (!draft) return;
+    setExamDate(draft);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+        <div className="flex items-center gap-2">
+          <CalendarClock size={16} className="text-primary" />
+          <span className="text-sm font-medium">Set your PANCE exam date</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input type="date" value={draft} onChange={(e) => setDraft(e.target.value)}
+            className="rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          <button onClick={save} disabled={!draft}
+            className="rounded-xl gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
+            Save
+          </button>
+          {examDate && (
+            <button onClick={() => { setDraft(examDate); setEditing(false); }} className="text-xs text-muted-foreground underline">
+              Cancel
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const exam = new Date(`${examDate}T00:00:00`); // local-time parse, not UTC
+  const days = Math.ceil((exam.getTime() - today.getTime()) / 86400000);
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+      <div className="flex items-center gap-2">
+        <CalendarClock size={16} className="text-primary" />
+        <span className="text-sm">
+          {days > 0 && <><span className="font-display text-lg font-semibold">{days}</span> day{days === 1 ? "" : "s"} until your exam</>}
+          {days === 0 && "Your exam is today — good luck!"}
+          {days < 0 && "Your exam date has passed"}
+        </span>
+      </div>
+      <button onClick={() => setEditing(true)} className="text-xs text-muted-foreground underline">Change</button>
+    </div>
+  );
+}
+
+function NotificationToggle({ alerts }: any) {
+  if (alerts.permission === "unsupported") return null;
+  if (alerts.permission === "granted") {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Bell size={13} /> Notifications on
+      </span>
+    );
+  }
+  if (alerts.permission === "denied") {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <BellOff size={13} /> Notifications blocked in browser settings
+      </span>
+    );
+  }
+  return (
+    <button onClick={alerts.requestPermission}
+      className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+      <Bell size={13} /> Enable notifications
+    </button>
+  );
+}
+
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -109,6 +310,12 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
   return (
     <div className="space-y-8">
+      {session ? (
+        <ExamCountdownBar examDate={examDate} setExamDate={setExamDate} />
+      ) : (
+        <SignInPrompt onSignIn={onSignIn} message="Sign in to track your exam countdown." />
+      )}
+
       <section ref={timerRef} className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
           <div className="flex shrink-0 flex-col items-center lg:items-start">
@@ -149,6 +356,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <SkipForward size={19} />
               </button>
             </div>
+            <NotificationToggle alerts={alerts} />
           </div>
         </div>
       </section>
@@ -438,7 +646,32 @@ function TasksView({ tasks, setTasks, activeTask, setActiveTask }: any) {
   );
 }
 
-function AnalyticsView({ isPremium, onUpsell }: any) {
+function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
+  const pct = Math.min(100, Math.round((todayMinutes / dailyGoal) * 100));
+  return (
+    <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Your progress</h2>
+        {streak > 0 && (
+          <span className="flex items-center gap-1 text-xs text-primary"><Flame size={13} /> {streak}-day streak</span>
+        )}
+      </div>
+      <div className="mt-3 flex items-center justify-between text-sm">
+        <span className="text-muted-foreground">Today</span>
+        <span className="font-mono">{todayMinutes} / {dailyGoal} min</span>
+      </div>
+      <div className="mt-2 h-3 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
+        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%`, transition: "width 0.4s ease" }} />
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground">Daily goal</span>
+        <NumberField value={dailyGoal} unit="min" min={5} max={600} label="Daily goal" onChange={setDailyGoal} />
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn }: any) {
   const totalMin = WEEK_DATA.reduce((a, b) => a + b.min, 0);
   const totalSessions = WEEK_DATA.reduce((a, b) => a + b.sessions, 0);
   const best = WEEK_DATA.reduce((a, b) => (b.min > a.min ? b : a));
@@ -447,13 +680,23 @@ function AnalyticsView({ isPremium, onUpsell }: any) {
     <div className="mx-auto max-w-4xl">
       <h1 className="font-display text-3xl font-semibold">Analytics</h1>
       <p className="mt-1 text-sm text-muted-foreground">Your last 7 days of focus.</p>
+
+      <div className="mt-6">
+        {session ? (
+          <DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
+        ) : (
+          <SignInPrompt onSignIn={onSignIn} message="Sign in to track your streak and daily goal." />
+        )}
+      </div>
+
       <div className="mt-6 grid grid-cols-3 gap-3">
         <Stat label="Focus time" value={`${Math.floor(totalMin / 60)}h ${totalMin % 60}m`} />
         <Stat label="Sessions" value={String(totalSessions)} />
         <Stat label="Best day" value={best.day} sub={`${best.min}m`} />
       </div>
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
-        <h2 className="mb-4 text-sm font-semibold">Focus minutes by day</h2>
+        <h2 className="mb-1 text-sm font-semibold">Focus minutes by day</h2>
+        <p className="mb-4 text-xs text-muted-foreground">Demo data — a sample week for illustration.</p>
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={WEEK_DATA}>
@@ -555,7 +798,7 @@ function RoomsView({ isPremium, gateThen }: any) {
   );
 }
 
-function PremiumView({ isPremium, setIsPremium }: any) {
+function PremiumView({ isPremium, session, onSubscribe, checkoutLoading, checkoutError }: any) {
   const perks = ["Ambient study themes", "Unlimited analytics history", "Unlimited hosted sessions", "Unlimited room joins", "Premium UI themes", "PANCE & Marathon methods", "Spotify music embed"];
   return (
     <div className="mx-auto max-w-3xl">
@@ -575,15 +818,14 @@ function PremiumView({ isPremium, setIsPremium }: any) {
                 </div>
               ))}
             </div>
-            <button onClick={() => setIsPremium(true)} className="mt-6 w-full rounded-full gradient-primary py-3 font-semibold text-white shadow-glow transition active:scale-95">
-              Start free trial
+            <button onClick={onSubscribe} disabled={checkoutLoading}
+              className="mt-6 w-full rounded-full gradient-primary py-3 font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
+              {session ? (checkoutLoading ? "Redirecting…" : "Subscribe with Stripe") : "Sign in to subscribe"}
             </button>
-            <p className="mt-2 text-center text-xs text-muted-foreground">7 days free, then $6/mo. Billing handled by Stripe once connected.</p>
+            {checkoutError && <p className="mt-2 text-center text-xs text-destructive">{checkoutError}</p>}
+            <p className="mt-2 text-center text-xs text-muted-foreground">Billed monthly via Stripe. Cancel anytime.</p>
           </div>
         </div>
-      )}
-      {isPremium && (
-        <button onClick={() => setIsPremium(false)} className="mt-8 text-xs text-muted-foreground underline">Switch back to free (demo)</button>
       )}
     </div>
   );
