@@ -3,12 +3,15 @@ import type { Method } from "./data";
 
 export type Phase = "focus" | "short" | "long";
 
-export function useTimer(method: Method) {
+export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase) => void) {
   const [phase, setPhase] = useState<Phase>("focus");
   const [secondsLeft, setSecondsLeft] = useState(method.focus * 60);
   const [running, setRunning] = useState(false);
   const [completedFocus, setCompletedFocus] = useState(0);
   const tick = useRef<number | null>(null);
+  const onPhaseCompleteRef = useRef(onPhaseComplete);
+
+  useEffect(() => { onPhaseCompleteRef.current = onPhaseComplete; }, [onPhaseComplete]);
 
   const phaseLength = useCallback(
     (p: Phase) => (p === "focus" ? method.focus : p === "short" ? method.short : method.long) * 60,
@@ -64,9 +67,10 @@ export function useTimer(method: Method) {
   useEffect(() => {
     if (secondsLeft === 0 && running) {
       setRunning(false);
+      onPhaseCompleteRef.current?.(phase);
       advance();
     }
-  }, [secondsLeft, running, advance]);
+  }, [secondsLeft, running, advance, phase]);
 
   const total = phaseLength(phase);
   const progress = 1 - secondsLeft / total;
