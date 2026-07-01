@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Volume2, Volume1, VolumeX, Palette } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt } from "./useTimer";
-import { useSoundscape, SOUNDS, CATEGORIES } from "./useSoundscape";
+import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 
 type View = "focus" | "tasks" | "analytics" | "rooms" | "premium";
@@ -24,7 +24,6 @@ export default function App() {
   }, [methodId, custom]);
   const theme = useMemo(() => THEMES.find((t) => t.id === themeId)!, [themeId]);
   const timer = useTimer(method);
-  const sound = useSoundscape();
 
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
     { id: "focus", label: "Focus", icon: Timer },
@@ -54,7 +53,7 @@ export default function App() {
             <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               custom={custom} setCustom={setCustom}
-              isPremium={isPremium} gateThen={gateThen} sound={sound} />
+              isPremium={isPremium} gateThen={gateThen} />
           )}
           {view === "tasks" && <TasksView tasks={tasks} setTasks={setTasks} activeTask={activeTask} setActiveTask={setActiveTask} />}
           {view === "analytics" && <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)} />}
@@ -101,7 +100,7 @@ function TimeDisplay({ value, className }: { value: string; className?: string }
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, sound }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -191,7 +190,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           </div>
         </div>
         <div className="space-y-6">
-          <SoundPanel sound={sound} />
+          <MusicPanel isPremium={isPremium} gateThen={gateThen} />
         </div>
       </div>
     </div>
@@ -301,53 +300,96 @@ function ThemePicker({ themeId, setThemeId }: any) {
   );
 }
 
-function SoundPanel({ sound }: any) {
-  const VolIcon = sound.volume === 0 ? VolumeX : sound.volume < 0.5 ? Volume1 : Volume2;
+function MusicPanel({ isPremium, gateThen }: any) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [customUrl, setCustomUrl] = useState("");
+  const [customError, setCustomError] = useState(false);
+  const [customTarget, setCustomTarget] = useState<{ type: SpotifyEmbedType; id: string } | null>(null);
+
+  const preset = selectedId ? SPOTIFY_PRESETS.find((p) => p.id === selectedId) ?? null : null;
+  const target = customTarget ?? (preset ? { type: preset.type, id: preset.spotifyId } : null);
+
+  const selectPreset = (id: string) => {
+    setSelectedId(id);
+    setCustomTarget(null);
+    setCustomUrl("");
+    setCustomError(false);
+  };
+
+  const applyCustomUrl = (value: string) => {
+    setCustomUrl(value);
+    if (!value.trim()) { setCustomError(false); return; }
+    const parsed = parseSpotifyUrl(value);
+    if (parsed) {
+      setSelectedId(null);
+      setCustomTarget(parsed);
+      setCustomError(false);
+    } else {
+      setCustomError(true);
+    }
+  };
+
   return (
-    <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+    <div className="relative rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Music size={16} className="text-primary" />
-          <h2 className="font-display text-lg font-semibold">Sound</h2>
+          <h2 className="font-display text-lg font-semibold">Music</h2>
         </div>
-        {sound.activeId !== "off" && (
-          <button onClick={() => sound.play("off")} className="text-xs font-medium text-muted-foreground transition hover:text-foreground">
-            Stop
-          </button>
-        )}
+        {!isPremium && <span className="flex items-center gap-1 text-xs text-primary"><Crown size={12} /> Premium</span>}
       </div>
 
-      <div className="max-h-[420px] space-y-4 overflow-y-auto pr-1">
-        {CATEGORIES.map((cat: string) => (
-          <div key={cat}>
-            <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{cat}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {SOUNDS.filter((s: any) => s.category === cat && s.id !== "off").map((s: any) => {
-                const active = sound.activeId === s.id;
-                return (
-                  <button key={s.id} onClick={() => sound.play(s.id)}
-                    className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{s.name}</span>
-                      {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-                    </div>
-                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{s.hint}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <div className={!isPremium ? "blur-sm" : ""}>
+        <div className="grid grid-cols-2 gap-2">
+          {SPOTIFY_PRESETS.map((p) => {
+            const active = !customTarget && selectedId === p.id;
+            return (
+              <button key={p.id} onClick={() => selectPreset(p.id)}
+                className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{p.name}</span>
+                  {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+                </div>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4">
+          <label htmlFor="spotify-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            Or paste a Spotify link
+          </label>
+          <input id="spotify-url" type="text" value={customUrl}
+            onChange={(e) => applyCustomUrl(e.target.value)}
+            placeholder="https://open.spotify.com/playlist/..."
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          {customError && (
+            <p className="mt-1.5 text-[11px] text-destructive">
+              Couldn't read that link — paste a track, playlist, album, artist, episode, or show URL from Spotify.
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-xl">
+          {target ? (
+            <iframe key={`${target.type}-${target.id}`} src={toEmbedSrc(target)} width="100%" height={embedHeight(target.type)}
+              style={{ borderRadius: 12, border: "none" }}
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+              loading="lazy" title="Spotify player" />
+          ) : (
+            <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+              Pick a preset or paste a link to start playing.
+            </p>
+          )}
+        </div>
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <VolIcon size={16} className="shrink-0 text-muted-foreground" />
-        <input type="range" min={0} max={1} step={0.01} value={sound.volume}
-          onChange={(e) => sound.changeVolume(parseFloat(e.target.value))}
-          aria-label="Volume"
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-secondary accent-primary" />
-      </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">{SOUNDS.length - 1} sounds, all free — generated live, plays offline.</p>
+      {!isPremium && (
+        <button onClick={() => gateThen(() => {})} className="absolute inset-0 grid place-items-center rounded-2xl">
+          <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock Spotify music</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -514,7 +556,7 @@ function RoomsView({ isPremium, gateThen }: any) {
 }
 
 function PremiumView({ isPremium, setIsPremium }: any) {
-  const perks = ["Ambient study themes", "Unlimited analytics history", "Unlimited hosted sessions", "Unlimited room joins", "Premium UI themes", "PANCE & Marathon methods"];
+  const perks = ["Ambient study themes", "Unlimited analytics history", "Unlimited hosted sessions", "Unlimited room joins", "Premium UI themes", "PANCE & Marathon methods", "Spotify music embed"];
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-3xl font-semibold">{isPremium ? "Your Premium" : "Go Premium"}</h1>

@@ -10,7 +10,7 @@ This is the **frontend** (Phase 1). It runs fully on its own with mock data so y
 - **Tasks** — add, tag (Pharm / Cardio / Clinical / PANCE / Anatomy), complete, and pick an active task to focus on.
 - **Analytics** — weekly focus chart and stats, with a premium-gated subject breakdown.
 - **Study rooms** — browse and join/leave live sessions (UI + mock data; real-time comes with the backend).
-- **Premium** — subscription screen, ambient study themes, and feature gating throughout.
+- **Premium** — subscription screen, ambient study themes, Spotify music embed, and feature gating throughout.
 
 > Note: data resets on refresh — there's no backend yet, and the app keeps state in memory only. Persistence arrives in Phase 2.
 
@@ -59,6 +59,7 @@ src/
   App.tsx       # all views: Focus, Tasks, Analytics, Rooms, Premium
   useTimer.ts   # timer logic (phases, cycles, audio cue)
   data.ts       # methods, seed tasks, mock analytics, themes, rooms
+  spotify.ts    # Spotify presets + link parsing for the Music panel
   index.css     # fonts + base styles
 tailwind.config.js  # custom palette (ink / lamp / sage / clay) and fonts
 ```
