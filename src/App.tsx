@@ -142,6 +142,16 @@ export default function App() {
     if (session?.user.id) updateTask(id, { done: nextDone });
   }, [tasks, session?.user.id]);
 
+  // Lets a task's Pomodoro estimate be adjusted at any point — before starting
+  // (to override an auto-generated guess) or after (if it took fewer/more than
+  // expected). Clamped to a generous 1-20 range; auto-generated estimates start
+  // narrower (1-6, set server-side) but a manually raised estimate isn't capped there.
+  const updateTaskEst = useCallback((id: string, est: number) => {
+    const clamped = Math.max(1, Math.min(20, est));
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, est: clamped } : t)));
+    if (session?.user.id) updateTask(id, { est: clamped });
+  }, [session?.user.id]);
+
   const removeTask = useCallback((id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     if (session?.user.id) deleteTask(id);
@@ -197,7 +207,7 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
-              addTask={addTask} toggleTask={toggleTask} removeTask={removeTask}
+              addTask={addTask} toggleTask={toggleTask} removeTask={removeTask} updateTaskEst={updateTaskEst}
               session={session} onSignIn={onSignIn}
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout} />
           )}
@@ -765,7 +775,7 @@ function UploadTasksPanel({ profile, session, onImported, onUpgrade }: any) {
   );
 }
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("Pharm");
   const add = () => {
@@ -808,7 +818,17 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
               <span className={`flex-1 text-sm ${t.done ? "text-muted-foreground line-through" : ""}`}>{t.title}</span>
             </button>
-            <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+            <div className="flex shrink-0 items-center gap-1">
+              <button onClick={() => updateTaskEst(t.id, t.est - 1)} aria-label="Decrease estimated Pomodoros"
+                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                <Minus size={11} />
+              </button>
+              <span className="w-10 text-center font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+              <button onClick={() => updateTaskEst(t.id, t.est + 1)} aria-label="Increase estimated Pomodoros"
+                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                <Plus size={11} />
+              </button>
+            </div>
             <button onClick={() => removeTask(t.id)} className="text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"><X size={16} /></button>
           </div>
         ))}
