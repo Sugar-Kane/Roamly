@@ -193,8 +193,8 @@ export default function App() {
   }, [theme]);
 
   return (
-    <div className="min-h-screen text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
-      <div className="relative mx-auto flex max-w-6xl flex-col px-5 pb-28 pt-7 md:px-8">
+    <div className="min-h-screen w-full text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
+      <div className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-28 pt-7 md:px-8">
         <Header isPremium={isPremium} streak={streak} session={session} onSignIn={onSignIn} onSignOut={onSignOut} />
         <ThemePicker themeId={themeId} setThemeId={setThemeId} />
         <main className="mt-8 flex-1">
