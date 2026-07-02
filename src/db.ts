@@ -1,4 +1,5 @@
 import { supabase } from "./supabaseClient";
+import type { Task } from "./data";
 
 export type Profile = {
   id: string;
@@ -52,4 +53,40 @@ export async function getAccessToken(): Promise<string | null> {
   if (!supabase) return null;
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token ?? null;
+}
+
+const TASK_COLUMNS = "id, title, tag, done, poms, est";
+
+export async function fetchTasks(userId: string): Promise<Task[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_COLUMNS)
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (error) { console.warn("[Roamly] fetchTasks failed", error.message); return []; }
+  return (data ?? []) as Task[];
+}
+
+export async function createTask(userId: string, title: string, tag: string): Promise<Task | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({ user_id: userId, title, tag })
+    .select(TASK_COLUMNS)
+    .single();
+  if (error) { console.warn("[Roamly] createTask failed", error.message); return null; }
+  return data as Task;
+}
+
+export async function updateTask(id: string, fields: Partial<{ title: string; tag: string; done: boolean; poms: number; est: number }>) {
+  if (!supabase) return;
+  const { error } = await supabase.from("tasks").update(fields).eq("id", id);
+  if (error) console.warn("[Roamly] updateTask failed", error.message);
+}
+
+export async function deleteTask(id: string) {
+  if (!supabase) return;
+  const { error } = await supabase.from("tasks").delete().eq("id", id);
+  if (error) console.warn("[Roamly] deleteTask failed", error.message);
 }
