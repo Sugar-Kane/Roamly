@@ -10,6 +10,8 @@ create table public.profiles (
   stripe_subscription_id text,
   daily_goal_minutes int not null default 120,
   exam_date date,
+  ai_uploads_count int not null default 0,
+  ai_uploads_period text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -34,6 +36,9 @@ create policy "profiles_update_own"
 -- from their own browser console and give themselves Premium for free.
 -- Column-level GRANTs close that gap. service_role (used only by our server
 -- functions) is unaffected by these revokes and keeps full access.
+-- ai_uploads_count/ai_uploads_period are deliberately left out of the grant
+-- below too — they're only ever written by api/generate-tasks.ts (service
+-- role), never the client, so a signed-in user can't reset their own quota.
 revoke update on public.profiles from authenticated;
 grant update (daily_goal_minutes, exam_date) on public.profiles to authenticated;
 
