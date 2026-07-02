@@ -39,6 +39,7 @@
 
 @layer base {
   * { @apply border-border; }
+  html, body { width: 100%; overflow-x: hidden; }
   body { @apply bg-background text-foreground font-sans; margin: 0; -webkit-font-smoothing: antialiased; }
 }
 
