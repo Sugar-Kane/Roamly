@@ -108,6 +108,43 @@ $$;
 
 grant execute on function public.log_focus_minutes(date, int) to authenticated;
 
+
+-- ============ tasks ============
+create table public.tasks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  title text not null,
+  tag text not null default 'General',
+  done boolean not null default false,
+  poms int not null default 0,
+  est int not null default 2,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.tasks enable row level security;
+
+create policy "tasks_select_own"
+  on public.tasks for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+create policy "tasks_insert_own"
+  on public.tasks for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+create policy "tasks_update_own"
+  on public.tasks for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "tasks_delete_own"
+  on public.tasks for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
 -- After running this file, also enable Realtime replication for the
 -- `profiles` table: Database → Replication → toggle `profiles` on. This lets
 -- the app reflect a Stripe webhook's is_premium update live, without a
