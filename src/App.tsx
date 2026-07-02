@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
@@ -775,6 +775,23 @@ function UploadTasksPanel({ profile, session, onImported, onUpgrade }: any) {
   );
 }
 
+function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="What does this mean?"
+        className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground transition hover:text-foreground">
+        <Info size={14} />
+      </button>
+      {open && (
+        <span className="absolute left-0 top-full z-10 mt-1.5 w-56 rounded-lg border border-border bg-card p-2.5 text-left text-xs font-normal leading-snug text-muted-foreground shadow-lg">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("Pharm");
@@ -788,7 +805,10 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Queue what you'll study. Pick one to focus on.</p>
+      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+        Queue what you'll study. Pick one to focus on.
+        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Hover a task and use the −/+ buttons to adjust its estimate." />
+      </p>
       {!session && (
         <div className="mt-4">
           <SignInPrompt onSignIn={onSignIn} message="Sign in to save your tasks across devices." />
