@@ -3,6 +3,7 @@ import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crow
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
+import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, type Profile } from "./db";
@@ -576,31 +577,61 @@ function ThemePicker({ themeId, setThemeId }: any) {
 }
 
 function MusicPanel({ isPremium, gateThen }: any) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [customUrl, setCustomUrl] = useState("");
-  const [customError, setCustomError] = useState(false);
-  const [customTarget, setCustomTarget] = useState<{ type: SpotifyEmbedType; id: string } | null>(null);
+  const [service, setService] = useState<"spotify" | "apple">("spotify");
 
-  const preset = selectedId ? SPOTIFY_PRESETS.find((p) => p.id === selectedId) ?? null : null;
-  const target = customTarget ?? (preset ? { type: preset.type, id: preset.spotifyId } : null);
+  const [spotifySelectedId, setSpotifySelectedId] = useState<string | null>(null);
+  const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
+  const [spotifyCustomError, setSpotifyCustomError] = useState(false);
+  const [spotifyCustomTarget, setSpotifyCustomTarget] = useState<{ type: SpotifyEmbedType; id: string } | null>(null);
 
-  const selectPreset = (id: string) => {
-    setSelectedId(id);
-    setCustomTarget(null);
-    setCustomUrl("");
-    setCustomError(false);
+  const [appleSelectedId, setAppleSelectedId] = useState<string | null>(null);
+  const [appleCustomUrl, setAppleCustomUrl] = useState("");
+  const [appleCustomError, setAppleCustomError] = useState(false);
+  const [appleCustomTarget, setAppleCustomTarget] = useState<{ type: AppleMusicEmbedType; path: string } | null>(null);
+
+  const spotifyPreset = spotifySelectedId ? SPOTIFY_PRESETS.find((p) => p.id === spotifySelectedId) ?? null : null;
+  const spotifyTarget = spotifyCustomTarget ?? (spotifyPreset ? { type: spotifyPreset.type, id: spotifyPreset.spotifyId } : null);
+
+  const applePreset = appleSelectedId ? APPLE_MUSIC_PRESETS.find((p) => p.id === appleSelectedId) ?? null : null;
+  const appleTarget = appleCustomTarget ?? (applePreset ? { type: applePreset.type, path: applePreset.path } : null);
+
+  const selectSpotifyPreset = (id: string) => {
+    setSpotifySelectedId(id);
+    setSpotifyCustomTarget(null);
+    setSpotifyCustomUrl("");
+    setSpotifyCustomError(false);
   };
 
-  const applyCustomUrl = (value: string) => {
-    setCustomUrl(value);
-    if (!value.trim()) { setCustomError(false); return; }
+  const applySpotifyUrl = (value: string) => {
+    setSpotifyCustomUrl(value);
+    if (!value.trim()) { setSpotifyCustomError(false); return; }
     const parsed = parseSpotifyUrl(value);
     if (parsed) {
-      setSelectedId(null);
-      setCustomTarget(parsed);
-      setCustomError(false);
+      setSpotifySelectedId(null);
+      setSpotifyCustomTarget(parsed);
+      setSpotifyCustomError(false);
     } else {
-      setCustomError(true);
+      setSpotifyCustomError(true);
+    }
+  };
+
+  const selectApplePreset = (id: string) => {
+    setAppleSelectedId(id);
+    setAppleCustomTarget(null);
+    setAppleCustomUrl("");
+    setAppleCustomError(false);
+  };
+
+  const applyAppleUrl = (value: string) => {
+    setAppleCustomUrl(value);
+    if (!value.trim()) { setAppleCustomError(false); return; }
+    const parsed = parseAppleMusicUrl(value);
+    if (parsed) {
+      setAppleSelectedId(null);
+      setAppleCustomTarget(parsed);
+      setAppleCustomError(false);
+    } else {
+      setAppleCustomError(true);
     }
   };
 
@@ -615,54 +646,115 @@ function MusicPanel({ isPremium, gateThen }: any) {
       </div>
 
       <div className={!isPremium ? "blur-sm" : ""}>
-        <div className="grid grid-cols-2 gap-2">
-          {SPOTIFY_PRESETS.map((p) => {
-            const active = !customTarget && selectedId === p.id;
-            return (
-              <button key={p.id} onClick={() => selectPreset(p.id)}
-                className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{p.name}</span>
-                  {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-                </div>
-                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
-              </button>
-            );
-          })}
+        <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
+          <button onClick={() => setService("spotify")}
+            className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            Spotify
+          </button>
+          <button onClick={() => setService("apple")}
+            className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "apple" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            Apple Music
+          </button>
         </div>
 
-        <div className="mt-4">
-          <label htmlFor="spotify-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-            Or paste a Spotify link
-          </label>
-          <input id="spotify-url" type="text" value={customUrl}
-            onChange={(e) => applyCustomUrl(e.target.value)}
-            placeholder="https://open.spotify.com/playlist/..."
-            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          {customError && (
-            <p className="mt-1.5 text-[11px] text-destructive">
-              Couldn't read that link — paste a track, playlist, album, artist, episode, or show URL from Spotify.
-            </p>
-          )}
-        </div>
+        {service === "spotify" ? (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              {SPOTIFY_PRESETS.map((p) => {
+                const active = !spotifyCustomTarget && spotifySelectedId === p.id;
+                return (
+                  <button key={p.id} onClick={() => selectSpotifyPreset(p.id)}
+                    className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{p.name}</span>
+                      {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+                    </div>
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
+                  </button>
+                );
+              })}
+            </div>
 
-        <div className="mt-4 overflow-hidden rounded-xl">
-          {target ? (
-            <iframe key={`${target.type}-${target.id}`} src={toEmbedSrc(target)} width="100%" height={embedHeight(target.type)}
-              style={{ borderRadius: 12, border: "none" }}
-              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-              loading="lazy" title="Spotify player" />
-          ) : (
-            <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-              Pick a preset or paste a link to start playing.
-            </p>
-          )}
-        </div>
+            <div className="mt-4">
+              <label htmlFor="spotify-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                Or paste a Spotify link
+              </label>
+              <input id="spotify-url" type="text" value={spotifyCustomUrl}
+                onChange={(e) => applySpotifyUrl(e.target.value)}
+                placeholder="https://open.spotify.com/playlist/..."
+                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              {spotifyCustomError && (
+                <p className="mt-1.5 text-[11px] text-destructive">
+                  Couldn't read that link — paste a track, playlist, album, artist, episode, or show URL from Spotify.
+                </p>
+              )}
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl">
+              {spotifyTarget ? (
+                <iframe key={`spotify-${spotifyTarget.type}-${spotifyTarget.id}`} src={toEmbedSrc(spotifyTarget)} width="100%" height={embedHeight(spotifyTarget.type)}
+                  style={{ borderRadius: 12, border: "none" }}
+                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                  loading="lazy" title="Spotify player" />
+              ) : (
+                <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                  Pick a preset or paste a link to start playing.
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              {APPLE_MUSIC_PRESETS.map((p) => {
+                const active = !appleCustomTarget && appleSelectedId === p.id;
+                return (
+                  <button key={p.id} onClick={() => selectApplePreset(p.id)}
+                    className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{p.name}</span>
+                      {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+                    </div>
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="apple-music-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                Or paste an Apple Music link
+              </label>
+              <input id="apple-music-url" type="text" value={appleCustomUrl}
+                onChange={(e) => applyAppleUrl(e.target.value)}
+                placeholder="https://music.apple.com/us/playlist/..."
+                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              {appleCustomError && (
+                <p className="mt-1.5 text-[11px] text-destructive">
+                  Couldn't read that link — paste an album, playlist, song, artist, or station URL from Apple Music.
+                </p>
+              )}
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl">
+              {appleTarget ? (
+                <iframe key={`apple-${appleTarget.type}-${appleTarget.path}`} src={toAppleEmbedSrc(appleTarget)} width="100%" height={appleEmbedHeight(appleTarget.type)}
+                  style={{ borderRadius: 12, border: "none" }}
+                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                  loading="lazy" title="Apple Music player" />
+              ) : (
+                <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                  Pick a preset or paste a link to start playing.
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {!isPremium && (
         <button onClick={() => gateThen(() => {})} className="absolute inset-0 grid place-items-center rounded-2xl">
-          <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock Spotify music</span>
+          <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock {service === "spotify" ? "Spotify" : "Apple Music"}</span>
         </button>
       )}
     </div>
@@ -1010,7 +1102,7 @@ function RoomsView({ isPremium, gateThen }: any) {
 }
 
 function PremiumView({ isPremium, session, onSubscribe, checkoutLoading, checkoutError }: any) {
-  const perks = ["Ambient study themes", "Unlimited analytics history", "Unlimited hosted sessions", "Unlimited room joins", "Premium UI themes", "PANCE & Marathon methods", "Spotify music embed"];
+  const perks = ["Ambient study themes", "Unlimited analytics history", "Unlimited hosted sessions", "Unlimited room joins", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-3xl font-semibold">{isPremium ? "Your Premium" : "Go Premium"}</h1>
