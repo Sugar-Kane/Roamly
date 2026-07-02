@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info } from "lucide-react";
-import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, ROOMS, type Task } from "./data";
+import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
@@ -10,6 +10,9 @@ import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, 
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel } from "./Auth";
+import { RoomsLive } from "./RoomsLive";
+import { NotificationsBell } from "./Notifications";
+import { FriendsModal } from "./Friends";
 import type { Session } from "@supabase/supabase-js";
 
 type View = "focus" | "tasks" | "analytics" | "rooms" | "premium";
@@ -28,6 +31,8 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [sessions, setSessions] = useState<FocusSession[]>([]);
   const [showAuth, setShowAuth] = useState(false);
+  const [showFriends, setShowFriends] = useState(false);
+  const [roomTarget, setRoomTarget] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const alerts = useEndOfPhaseAlerts();
@@ -113,6 +118,16 @@ export default function App() {
   const onSignIn = () => setShowAuth(true);
   const onSignOut = () => supabase?.auth.signOut();
 
+  // A notification ("X invited you to a room") lands the user in that room.
+  const openRoomFromNotification = useCallback((roomId: string) => {
+    setRoomTarget(roomId);
+    setView("rooms");
+  }, []);
+  const openFriends = useCallback(() => setShowFriends(true), []);
+  const handleUsernameSet = useCallback((username: string) => {
+    setProfile((p) => (p ? { ...p, username, display_name: p.display_name ?? username } : p));
+  }, []);
+
   const setDailyGoal = (minutes: number) => {
     setProfile((p) => (p ? { ...p, daily_goal_minutes: minutes } : p));
     updateGoalAndExam({ daily_goal_minutes: minutes });
@@ -195,7 +210,8 @@ export default function App() {
   return (
     <div className="min-h-screen w-full text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <div className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-7 md:px-8">
-        <Header isPremium={isPremium} streak={streak} session={session} onSignIn={onSignIn} onSignOut={onSignOut} />
+        <Header isPremium={isPremium} streak={streak} session={session} onSignIn={onSignIn} onSignOut={onSignOut}
+          onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends} />
         <ThemePicker themeId={themeId} setThemeId={setThemeId} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
@@ -217,7 +233,11 @@ export default function App() {
               streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
               session={session} onSignIn={onSignIn} />
           )}
-          {view === "rooms" && <RoomsView isPremium={isPremium} gateThen={gateThen} />}
+          {view === "rooms" && (
+            <RoomsLive session={session} profile={profile} isPremium={isPremium} gateThen={gateThen} onSignIn={onSignIn}
+              onNeedUsername={openFriends} onOpenFriends={openFriends}
+              targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)} />
+          )}
           {view === "premium" && (
             <PremiumView isPremium={isPremium} session={session} onSubscribe={startCheckout}
               checkoutLoading={checkoutLoading} checkoutError={checkoutError} />
@@ -227,6 +247,9 @@ export default function App() {
       <BottomNav nav={nav} view={view} setView={setView} />
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
+      {showFriends && session && (
+        <FriendsModal session={session} profile={profile} onClose={() => setShowFriends(false)} onUsernameSet={handleUsernameSet} />
+      )}
     </div>
   );
 }
@@ -240,7 +263,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, onSignIn, onSignOut }: any) {
+function Header({ isPremium, streak, session, onSignIn, onSignOut, onOpenRoom, onOpenFriends }: any) {
   return (
     <header className="flex flex-wrap items-center justify-between gap-y-2">
       <div className="flex items-baseline gap-3">
@@ -254,6 +277,7 @@ function Header({ isPremium, streak, session, onSignIn, onSignOut }: any) {
             <Crown size={13} /> Premium
           </span>
         )}
+        {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} />}
         {session ? (
           <button onClick={onSignOut} className="text-xs text-muted-foreground underline">Sign out</button>
         ) : (
@@ -1051,52 +1075,6 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 font-display text-2xl font-semibold">{value}</div>
       {sub && <div className="text-xs text-primary">{sub}</div>}
-    </div>
-  );
-}
-
-function RoomsView({ isPremium, gateThen }: any) {
-  const [joined, setJoined] = useState<string | null>(null);
-  return (
-    <div className="mx-auto max-w-3xl">
-      <div className="flex items-end justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">Study rooms</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Focus alongside other PA students in real time.</p>
-        </div>
-        <button onClick={() => gateThen(() => {})} className="flex items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-sm font-semibold text-white shadow-glow transition active:scale-95">
-          <Plus size={16} /> Host
-        </button>
-      </div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        {ROOMS.map((r) => {
-          const full = r.members >= r.cap;
-          const isJoined = joined === r.id;
-          return (
-            <div key={r.id} className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="font-semibold">{r.name}</h3>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{r.focus} · hosted by {r.host}</p>
-                </div>
-                <span className="mt-1.5 h-2 w-2 animate-pulse rounded-full bg-roamly-green" />
-              </div>
-              <div className="mt-4 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Users size={13} /> {r.members}/{r.cap}
-                </div>
-                <button onClick={() => setJoined(isJoined ? null : r.id)} disabled={full && !isJoined}
-                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${isJoined ? "border border-roamly-green bg-roamly-green/10 text-roamly-green" : full ? "cursor-not-allowed border border-border bg-secondary text-muted-foreground" : "gradient-primary text-white shadow-glow active:scale-95"}`}>
-                  {isJoined ? "Leave" : full ? "Full" : "Join"}
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {!isPremium && (
-        <p className="mt-5 text-center text-xs text-muted-foreground">Free plan: join up to 3 sessions a day. <span className="text-primary">Premium</span> removes all limits.</p>
-      )}
     </div>
   );
 }

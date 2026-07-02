@@ -52,14 +52,38 @@ The PRD's full stack (Node/Express, PostgreSQL, Redis, Socket.IO, Stripe, JWT/OA
 
 When you're ready, set those up and I'll write the integration code and tell you exactly which environment variables go where.
 
+## Live study rooms (Supabase)
+
+Rooms are real-time when Supabase is connected (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`):
+
+- **Shared timers with zero server ticking** — a room's phase is derived from wall-clock
+  time since its `started_at`, so every participant computes the identical countdown.
+- **Four always-on community rooms** that cycle continuously, staggered so their breaks
+  don't all land at once.
+- **Friends & notifications** — pick a username, add classmates, get notified when a
+  friend creates/joins a room or invites you to one.
+- **Break-only chat** — the chat input unlocks during short/long breaks, and the database
+  trigger `room_messages_break_only` enforces it server-side too.
+
+Setup: run `supabase/schema.sql` first, then `supabase/rooms_schema.sql`, in
+Supabase Dashboard → SQL Editor. The second file also seeds the 4 always-on rooms and
+adds `rooms`, `room_messages`, and `notifications` to the realtime publication.
+
 ## Project structure
 
 ```
 src/
-  App.tsx       # all views: Focus, Tasks, Analytics, Rooms, Premium
-  useTimer.ts   # timer logic (phases, cycles, audio cue)
-  data.ts       # methods, seed tasks, mock analytics, themes, rooms
-  spotify.ts    # Spotify presets + link parsing for the Music panel
-  index.css     # fonts + base styles
+  App.tsx           # views: Focus, Tasks, Analytics, Premium + app shell
+  RoomsLive.tsx     # live rooms: lobby, synced room timer, presence, break-only chat
+  Friends.tsx       # username setup, friend search/requests
+  Notifications.tsx # header bell (friend requests, room invites/activity)
+  rooms.ts          # room/friend/notification data layer + shared phase math
+  useTimer.ts       # personal timer logic (phases, cycles, audio cue)
+  data.ts           # methods, seed tasks, mock analytics, themes, demo rooms
+  spotify.ts        # Spotify presets + link parsing for the Music panel
+  index.css         # fonts + base styles
+supabase/
+  schema.sql        # profiles, focus_sessions, tasks (run first)
+  rooms_schema.sql  # rooms, friendships, notifications, break-only chat (run second)
 tailwind.config.js  # custom palette (ink / lamp / sage / clay) and fonts
 ```
