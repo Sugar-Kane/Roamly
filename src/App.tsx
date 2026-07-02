@@ -5,7 +5,7 @@ import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, type Profile } from "./db";
+import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel } from "./Auth";
@@ -51,12 +51,23 @@ export default function App() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Load this user's profile + recent focus sessions whenever they sign in/out.
+  // Load this user's profile, recent focus sessions, and tasks whenever they sign
+  // in/out. Signed-out users keep working with the local in-memory demo tasks.
   useEffect(() => {
     const userId = session?.user.id;
-    if (!userId) { setProfile(null); setSessions([]); return; }
+    if (!userId) {
+      setProfile(null);
+      setSessions([]);
+      setTasks(SEED_TASKS);
+      setActiveTask(SEED_TASKS[0]?.id ?? null);
+      return;
+    }
     fetchProfile(userId).then(setProfile);
     fetchRecentSessions(userId).then(setSessions);
+    fetchTasks(userId).then((rows) => {
+      setTasks(rows);
+      setActiveTask(rows[0]?.id ?? null);
+    });
   }, [session?.user.id]);
 
   // Reflect a Stripe webhook's is_premium update live, without a manual refresh.
@@ -102,6 +113,32 @@ export default function App() {
     updateGoalAndExam({ exam_date: date });
   };
 
+  // Task CRUD: optimistic local update always; when signed in, also persist to
+  // Supabase (tasks table) so they survive across devices/sessions.
+  const addTask = useCallback((title: string, tag: string) => {
+    const userId = session?.user.id;
+    if (userId) {
+      createTask(userId, title, tag).then((row) => {
+        if (row) setTasks((prev) => [row, ...prev]);
+      });
+    } else {
+      setTasks((prev) => [{ id: crypto.randomUUID(), title, tag, done: false, poms: 0, est: 2 }, ...prev]);
+    }
+  }, [session?.user.id]);
+
+  const toggleTask = useCallback((id: string) => {
+    const current = tasks.find((t) => t.id === id);
+    if (!current) return;
+    const nextDone = !current.done;
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: nextDone } : t)));
+    if (session?.user.id) updateTask(id, { done: nextDone });
+  }, [tasks, session?.user.id]);
+
+  const removeTask = useCallback((id: string) => {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    if (session?.user.id) deleteTask(id);
+  }, [session?.user.id]);
+
   const startCheckout = useCallback(async () => {
     if (!session) { setShowAuth(true); return; }
     setCheckoutError(null);
@@ -144,7 +181,11 @@ export default function App() {
               examDate={examDate} setExamDate={setExamDate} alerts={alerts}
               session={session} onSignIn={onSignIn} />
           )}
-          {view === "tasks" && <TasksView tasks={tasks} setTasks={setTasks} activeTask={activeTask} setActiveTask={setActiveTask} />}
+          {view === "tasks" && (
+            <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
+              addTask={addTask} toggleTask={toggleTask} removeTask={removeTask}
+              session={session} onSignIn={onSignIn} />
+          )}
           {view === "analytics" && (
             <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
               streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
@@ -603,22 +644,25 @@ function MusicPanel({ isPremium, gateThen }: any) {
   );
 }
 
-function TasksView({ tasks, setTasks, activeTask, setActiveTask }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, session, onSignIn }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("Pharm");
   const add = () => {
     if (!draft.trim()) return;
-    setTasks([{ id: crypto.randomUUID(), title: draft.trim(), tag, done: false, poms: 0, est: 2 }, ...tasks]);
+    addTask(draft.trim(), tag);
     setDraft("");
   };
-  const toggle = (id: string) => setTasks(tasks.map((t: Task) => (t.id === id ? { ...t, done: !t.done } : t)));
-  const remove = (id: string) => setTasks(tasks.filter((t: Task) => t.id !== id));
   const tags = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
 
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 text-sm text-muted-foreground">Queue what you'll study. Pick one to focus on.</p>
+      {!session && (
+        <div className="mt-4">
+          <SignInPrompt onSignIn={onSignIn} message="Sign in to save your tasks across devices." />
+        </div>
+      )}
       <div className="mt-6 flex gap-2">
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add a study task…"
@@ -631,7 +675,7 @@ function TasksView({ tasks, setTasks, activeTask, setActiveTask }: any) {
       <div className="mt-6 space-y-2">
         {tasks.map((t: Task) => (
           <div key={t.id} className={`group flex items-center gap-3 rounded-xl border p-3 transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
-            <button onClick={() => toggle(t.id)} className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${t.done ? "border-roamly-green bg-roamly-green" : "border-muted-foreground/40 hover:border-primary"}`}>
+            <button onClick={() => toggleTask(t.id)} className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${t.done ? "border-roamly-green bg-roamly-green" : "border-muted-foreground/40 hover:border-primary"}`}>
               {t.done && <Check size={14} className="text-white" />}
             </button>
             <button onClick={() => setActiveTask(t.id)} className="flex flex-1 items-center gap-3 text-left">
@@ -639,7 +683,7 @@ function TasksView({ tasks, setTasks, activeTask, setActiveTask }: any) {
               <span className={`flex-1 text-sm ${t.done ? "text-muted-foreground line-through" : ""}`}>{t.title}</span>
             </button>
             <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
-            <button onClick={() => remove(t.id)} className="text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"><X size={16} /></button>
+            <button onClick={() => removeTask(t.id)} className="text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"><X size={16} /></button>
           </div>
         ))}
       </div>
