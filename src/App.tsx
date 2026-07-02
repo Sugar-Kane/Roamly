@@ -242,12 +242,12 @@ function StreakBadge({ streak }: any) {
 
 function Header({ isPremium, streak, session, onSignIn, onSignOut }: any) {
   return (
-    <header className="flex items-center justify-between">
+    <header className="flex flex-wrap items-center justify-between gap-y-2">
       <div className="flex items-baseline gap-3">
         <span className="font-display text-2xl font-semibold tracking-tight text-gradient">Roamly</span>
         <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">Focus</span>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <StreakBadge streak={streak} />
         {isPremium && (
           <span className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
@@ -433,7 +433,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         <div className="space-y-6">
           <div>
             <h2 className="mb-3 font-display text-lg font-semibold">Method</h2>
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               {METHODS.map((m) => {
                 const locked = m.premium && !isPremium;
                 const active = m.id === methodId;
@@ -524,8 +524,8 @@ function CustomEditor({ custom, setCustom, onSave }: any) {
       <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Custom settings</p>
       <div className="space-y-2.5">
         {rows.map((r) => (
-          <div key={r.key} className="flex items-center justify-between gap-3">
-            <span className="text-sm">{r.label}</span>
+          <div key={r.key} className="flex flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0 text-sm">{r.label}</span>
             <NumberField value={custom[r.key]} unit={r.unit} min={r.min} max={r.max} label={r.label}
               onChange={(v: number) => setCustom({ ...custom, [r.key]: v })} />
           </div>
@@ -659,7 +659,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
 
         {service === "spotify" ? (
           <>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {SPOTIFY_PRESETS.map((p) => {
                 const active = !spotifyCustomTarget && spotifySelectedId === p.id;
                 return (
@@ -693,7 +693,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
             <div className="mt-4 overflow-hidden rounded-xl">
               {spotifyTarget ? (
                 <iframe key={`spotify-${spotifyTarget.type}-${spotifyTarget.id}`} src={toEmbedSrc(spotifyTarget)} width="100%" height={embedHeight(spotifyTarget.type)}
-                  style={{ borderRadius: 12, border: "none" }}
+                  className="w-full" style={{ border: "none" }}
                   allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
                   loading="lazy" title="Spotify player" />
               ) : (
@@ -705,7 +705,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
           </>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {APPLE_MUSIC_PRESETS.map((p) => {
                 const active = !appleCustomTarget && appleSelectedId === p.id;
                 return (
@@ -739,7 +739,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
             <div className="mt-4 overflow-hidden rounded-xl">
               {appleTarget ? (
                 <iframe key={`apple-${appleTarget.type}-${appleTarget.path}`} src={toAppleEmbedSrc(appleTarget)} width="100%" height={appleEmbedHeight(appleTarget.type)}
-                  style={{ borderRadius: 12, border: "none" }}
+                  className="w-full" style={{ border: "none" }}
                   allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
                   loading="lazy" title="Apple Music player" />
               ) : (
@@ -932,16 +932,16 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
             </button>
             <div className="flex shrink-0 items-center gap-1">
               <button onClick={() => updateTaskEst(t.id, t.est - 1)} aria-label="Decrease estimated Pomodoros"
-                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100">
                 <Minus size={11} />
               </button>
               <span className="w-10 text-center font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
               <button onClick={() => updateTaskEst(t.id, t.est + 1)} aria-label="Increase estimated Pomodoros"
-                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition hover:text-foreground group-hover:opacity-100">
+                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100">
                 <Plus size={11} />
               </button>
             </div>
-            <button onClick={() => removeTask(t.id)} className="text-muted-foreground opacity-0 transition hover:text-destructive group-hover:opacity-100"><X size={16} /></button>
+            <button onClick={() => removeTask(t.id)} className="text-muted-foreground opacity-100 transition hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"><X size={16} /></button>
           </div>
         ))}
       </div>
@@ -966,8 +966,8 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
       <div className="mt-2 h-3 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
         <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%`, transition: "width 0.4s ease" }} />
       </div>
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <span className="text-sm text-muted-foreground">Daily goal</span>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <span className="min-w-0 text-sm text-muted-foreground">Daily goal</span>
         <NumberField value={dailyGoal} unit="min" min={5} max={600} label="Daily goal" onChange={setDailyGoal} />
       </div>
     </div>
@@ -1015,7 +1015,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
           <h2 className="text-sm font-semibold">Subject breakdown</h2>
           {!isPremium && <span className="flex items-center gap-1 text-xs text-primary"><Crown size={12} /> Premium</span>}
         </div>
-        <div className={`mt-2 flex items-center gap-6 ${!isPremium ? "blur-sm" : ""}`}>
+        <div className={`mt-2 flex flex-col items-center gap-4 sm:flex-row sm:gap-6 ${!isPremium ? "blur-sm" : ""}`}>
           <div className="h-40 w-40">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -1150,7 +1150,7 @@ function Upsell({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => 
 
 function BottomNav({ nav, view, setView }: any) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 backdrop-blur-lg">
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg">
       <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
         {nav.map((n: any) => {
           const Icon = n.icon;
