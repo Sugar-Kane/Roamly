@@ -9,6 +9,8 @@ export type Profile = {
   stripe_subscription_id: string | null;
   daily_goal_minutes: number;
   exam_date: string | null;
+  ai_uploads_count: number;
+  ai_uploads_period: string | null;
 };
 
 export type FocusSessionRow = { date: string; minutes: number };
