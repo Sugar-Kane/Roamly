@@ -92,3 +92,17 @@ export async function deleteTask(id: string) {
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) console.warn("[Roamly] deleteTask failed", error.message);
 }
+
+const STUDY_UPLOADS_BUCKET = "study-uploads";
+
+// Uploads directly to Supabase Storage (client -> Storage), bypassing Vercel's
+// 4.5MB serverless request-body limit entirely. The server only ever handles
+// a short storage path, not the file bytes.
+export async function uploadStudyMaterial(userId: string, file: File): Promise<string | null> {
+  if (!supabase) return null;
+  const ext = (file.name.split(".").pop() || "bin").replace(/[^a-zA-Z0-9]/g, "").slice(0, 10) || "bin";
+  const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(STUDY_UPLOADS_BUCKET).upload(path, file, { contentType: file.type });
+  if (error) { console.warn("[Roamly] uploadStudyMaterial failed", error.message); return null; }
+  return path;
+}
