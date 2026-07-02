@@ -84,11 +84,19 @@ export default function App() {
 
   const handlePhaseComplete = useCallback((finishedPhase: Phase) => {
     alerts.notify(finishedPhase);
-    if (finishedPhase === "focus" && session?.user.id) {
+    if (finishedPhase !== "focus") return;
+    // Credit the completed Pomodoro to whichever task was active when the phase finished.
+    const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
+    if (current) {
+      const nextPoms = current.poms + 1;
+      setTasks((prev) => prev.map((t) => (t.id === activeTask ? { ...t, poms: nextPoms } : t)));
+      if (session?.user.id) updateTask(activeTask!, { poms: nextPoms });
+    }
+    if (session?.user.id) {
       setSessions((prev) => addSession(prev, method.focus));
       logFocusMinutes(dateKey(), method.focus);
     }
-  }, [alerts.notify, session?.user.id, method.focus]);
+  }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks]);
 
   const timer = useTimer(method, handlePhaseComplete);
 
