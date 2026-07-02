@@ -5,7 +5,7 @@ import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, type Profile } from "./db";
+import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel } from "./Auth";
@@ -653,26 +653,14 @@ function MusicPanel({ isPremium, gateThen }: any) {
 
 const FREE_MONTHLY_UPLOAD_QUOTA = 3;
 const ALLOWED_UPLOAD_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 22 * 1024 * 1024;
 
 function currentUploadPeriod() {
   const now = new Date();
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      resolve(result.slice(result.indexOf(",") + 1)); // strip the "data:<type>;base64," prefix
-    };
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-function UploadTasksPanel({ profile, onImported, onUpgrade }: any) {
+function UploadTasksPanel({ profile, session, onImported, onUpgrade }: any) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -691,18 +679,23 @@ function UploadTasksPanel({ profile, onImported, onUpgrade }: any) {
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError("That file is too large — try something under 15MB.");
+      setError("That file is too large — try something under 22MB.");
       return;
     }
+    const userId = session?.user.id;
+    if (!userId) { setError("Sign in to upload study material."); return; }
     setLoading(true);
     try {
+      // Upload straight to Storage first — the file never passes through our
+      // serverless function, which is capped at a 4.5MB request body by Vercel.
+      const storagePath = await uploadStudyMaterial(userId, file);
+      if (!storagePath) { setError("Couldn't upload that file — try again."); return; }
       const token = await getAccessToken();
-      if (!token) { setError("Sign in to upload study material."); setLoading(false); return; }
-      const fileBase64 = await fileToBase64(file);
+      if (!token) { setError("Sign in to upload study material."); return; }
       const res = await fetch("/api/generate-tasks", {
         method: "POST",
         headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ fileBase64, mediaType: file.type }),
+        body: JSON.stringify({ storagePath, mediaType: file.type }),
       });
       const result = await res.json();
       if (res.status === 403 && result.error === "quota_exceeded") {
@@ -785,7 +778,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       )}
       {session && (
         <div className="mt-4">
-          <UploadTasksPanel profile={profile} onImported={addImportedTasks} onUpgrade={onSubscribe} />
+          <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} />
         </div>
       )}
       <div className="mt-6 flex gap-2">
