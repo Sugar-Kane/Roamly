@@ -5,8 +5,9 @@ const ALLOWED_MEDIA_TYPES = ["application/pdf", "image/jpeg", "image/png", "imag
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 
 const TAGS = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"] as const;
-const MAX_FILE_BYTES = 15 * 1024 * 1024;
 const FREE_MONTHLY_QUOTA = 3;
+const STORAGE_BUCKET = "study-uploads";
+const SIGNED_URL_TTL_SECONDS = 300;
 
 const TASKS_SCHEMA = {
   type: "object",
@@ -61,20 +62,23 @@ export async function POST(request: Request): Promise<Response> {
   }
   const user = userData.user;
 
-  let body: { fileBase64?: string; mediaType?: string };
+  let body: { storagePath?: string; mediaType?: string };
   try {
     body = await request.json();
   } catch {
     return jsonResponse({ error: "Invalid request body" }, 400);
   }
 
-  const { fileBase64, mediaType } = body;
-  if (!fileBase64 || !mediaType || !(ALLOWED_MEDIA_TYPES as readonly string[]).includes(mediaType)) {
-    return jsonResponse({ error: "Unsupported file type — upload a PDF or photo (JPEG/PNG/WebP/GIF)." }, 400);
+  const { storagePath, mediaType } = body;
+  // The client always uploads into its own `${user.id}/...` folder (enforced by
+  // storage RLS), but the service-role client bypasses RLS entirely — so we must
+  // re-check ownership here ourselves, or any signed-in user could pass another
+  // user's storagePath and get a signed URL (and Claude's read) of their file.
+  if (!storagePath || !storagePath.startsWith(`${user.id}/`)) {
+    return jsonResponse({ error: "Invalid file reference" }, 403);
   }
-  // Rough decoded-size check: base64 is ~4/3 the size of the raw bytes.
-  if (fileBase64.length > (MAX_FILE_BYTES * 4) / 3) {
-    return jsonResponse({ error: "That file is too large — try something under 15MB." }, 400);
+  if (!mediaType || !(ALLOWED_MEDIA_TYPES as readonly string[]).includes(mediaType)) {
+    return jsonResponse({ error: "Unsupported file type — upload a PDF or photo (JPEG/PNG/WebP/GIF)." }, 400);
   }
   const validatedMediaType = mediaType as MediaType;
 
@@ -95,20 +99,25 @@ export async function POST(request: Request): Promise<Response> {
     return jsonResponse({ error: "quota_exceeded" }, 403);
   }
 
+  // Give Claude a short-lived signed URL rather than pulling the file through this
+  // function ourselves — keeps us well clear of Vercel's 4.5MB request-body limit
+  // (which only applies to the incoming request, not what we hand to Claude).
+  const { data: signed, error: signError } = await admin.storage
+    .from(STORAGE_BUCKET)
+    .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
+  if (signError || !signed) {
+    return jsonResponse({ error: "Couldn't read the uploaded file — try again." }, 500);
+  }
+
   const anthropic = new Anthropic({ apiKey: anthropicKey });
 
   const fileBlock =
     validatedMediaType === "application/pdf"
-      ? {
-          type: "document" as const,
-          source: { type: "base64" as const, media_type: "application/pdf" as const, data: fileBase64 },
-        }
-      : {
-          type: "image" as const,
-          source: { type: "base64" as const, media_type: validatedMediaType, data: fileBase64 },
-        };
+      ? { type: "document" as const, source: { type: "url" as const, url: signed.signedUrl } }
+      : { type: "image" as const, source: { type: "url" as const, url: signed.signedUrl } };
 
-  let tasks: { title: string; tag: string; est: number }[];
+  let tasks: { title: string; tag: string; est: number }[] = [];
+  let claudeError: Response | null = null;
   try {
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
@@ -140,8 +149,18 @@ export async function POST(request: Request): Promise<Response> {
       }));
   } catch (err) {
     console.warn("[Roamly] generate-tasks: Claude call failed", err);
-    return jsonResponse({ error: "Couldn't read that file — try a clearer PDF or photo." }, 502);
+    claudeError = jsonResponse({ error: "Couldn't read that file — try a clearer PDF or photo." }, 502);
   }
+
+  // Best-effort cleanup now that Claude has (or hasn't) read the file — we don't
+  // retain uploaded study material once it's been processed.
+  try {
+    await admin.storage.from(STORAGE_BUCKET).remove([storagePath]);
+  } catch (err) {
+    console.warn("[Roamly] generate-tasks: cleanup failed", err);
+  }
+
+  if (claudeError) return claudeError;
 
   if (tasks.length === 0) {
     return jsonResponse({ error: "Couldn't find any tasks in that file." }, 422);
