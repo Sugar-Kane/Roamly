@@ -46,6 +46,29 @@ export async function adminSetPremium(userId: string, premium: boolean): Promise
   return "Couldn't update that account — try again.";
 }
 
+// ---- Invites ----
+// Invite someone by email (api/invite). Returns { status } on success —
+// "invited" (email sent) or "friend_request" (they're already a user) — or
+// { error } with a user-facing message.
+export type InviteResult = { status?: "invited" | "friend_request"; error?: string; note?: string };
+
+export async function sendInvite(email: string): Promise<InviteResult> {
+  const token = await getAccessToken();
+  if (!token) return { error: "Sign in to invite people." };
+  try {
+    const res = await fetch("/api/invite", {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email }),
+    });
+    const data = (await res.json().catch(() => ({}))) as InviteResult;
+    if (!res.ok) return { error: data.error ?? "Couldn't send that invite — try again." };
+    return data;
+  } catch {
+    return { error: "Couldn't reach the server. Try again soon." };
+  }
+}
+
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();

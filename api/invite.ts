@@ -1,0 +1,90 @@
+import { createClient } from "@supabase/supabase-js";
+
+const GENERAL_DAILY_LIMIT = 5;
+const ADMIN_DAILY_LIMIT = 50;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+// Invite someone to Roamly by email. If they're already a user, this just
+// sends a friend request; otherwise it emails them a Supabase Auth invite and
+// pre-creates a pending friend request from the inviter, so they're connected
+// the moment they sign up.
+export async function POST(request: Request): Promise<Response> {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  const appUrl = process.env.APP_URL;
+  if (!supabaseUrl || !serviceRoleKey || !anonKey) {
+    return json({ error: "Invites aren't configured yet." }, 503);
+  }
+
+  const authHeader = request.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return json({ error: "Missing auth token" }, 401);
+
+  const admin = createClient(supabaseUrl, serviceRoleKey);
+  const { data: userData, error: userError } = await admin.auth.getUser(token);
+  if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
+  const inviter = userData.user;
+
+  let body: { email?: string };
+  try { body = await request.json(); } catch { return json({ error: "Invalid request body" }, 400); }
+  const email = (body.email ?? "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return json({ error: "Enter a valid email address." }, 400);
+  if (email === (inviter.email ?? "").toLowerCase()) return json({ error: "That's your own email." }, 400);
+
+  // Inviter must have claimed a username (same bar as the other social features).
+  const { data: inviterProfile } = await admin.from("profiles").select("username").eq("id", inviter.id).single();
+  if (!inviterProfile?.username) return json({ error: "Pick a username first so friends can recognize you." }, 400);
+
+  // Rate limit: admins get a higher daily cap.
+  const { data: adminRow } = await admin.from("admins").select("user_id").eq("user_id", inviter.id).maybeSingle();
+  const limit = adminRow ? ADMIN_DAILY_LIMIT : GENERAL_DAILY_LIMIT;
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count } = await admin
+    .from("invitations")
+    .select("id", { count: "exact", head: true })
+    .eq("inviter_id", inviter.id)
+    .gte("created_at", dayAgo);
+  if ((count ?? 0) >= limit) {
+    return json({ error: `You've hit today's invite limit (${limit}). Try again tomorrow.` }, 429);
+  }
+
+  // Already a Roamly user? Send a friend request instead of an email.
+  const { data: existing } = await admin.from("profiles").select("id").ilike("email", email).maybeSingle();
+  if (existing?.id) {
+    if (existing.id === inviter.id) return json({ error: "That's your own account." }, 400);
+    const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
+    const { error: frErr } = await userClient.rpc("send_friend_request", { p_target: existing.id });
+    if (frErr) {
+      if (frErr.message.includes("already_exists")) return json({ status: "friend_request", note: "already_connected" }, 200);
+      return json({ error: "Couldn't send that friend request — try again." }, 500);
+    }
+    return json({ status: "friend_request" }, 200);
+  }
+
+  // New person: email them a Supabase Auth invite (creates the auth user).
+  const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
+    email,
+    appUrl ? { redirectTo: appUrl } : undefined
+  );
+  if (inviteErr || !invited?.user) {
+    console.warn("[Roamly] inviteUserByEmail failed", inviteErr?.message);
+    // A race where they signed up between our check and now surfaces here.
+    if (inviteErr?.message?.toLowerCase().includes("already been registered")) {
+      return json({ error: "That person already has an account — search their email to add them." }, 409);
+    }
+    return json({ error: "Couldn't send the invite email — try again shortly." }, 502);
+  }
+
+  // Pre-create the pending friend request so they're connected on signup, plus
+  // a notification, and record the invitation for rate-limiting/audit.
+  await admin.from("friendships").insert({ requester: inviter.id, addressee: invited.user.id, status: "pending" });
+  await admin.from("notifications").insert({ user_id: invited.user.id, actor_id: inviter.id, kind: "friend_request" });
+  await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: invited.user.id });
+
+  return json({ status: "invited" }, 200);
+}

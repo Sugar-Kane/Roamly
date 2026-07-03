@@ -162,6 +162,23 @@ create policy "tasks_delete_own"
   using (auth.uid() = user_id);
 
 
+-- ============ invitations ============
+-- Audit + rate-limit for the "invite by email" flow. Written only by the
+-- api/invite serverless function (service role); no client RLS policies.
+create table public.invitations (
+  id uuid primary key default gen_random_uuid(),
+  inviter_id uuid not null references auth.users (id) on delete cascade,
+  email text not null,
+  invited_user_id uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index invitations_inviter_created
+  on public.invitations (inviter_id, created_at desc);
+
+alter table public.invitations enable row level security;
+
+
 -- ============ admins ============
 -- Allowlist of admin user ids. No RLS policies are added, so clients can't
 -- read or write this table directly — only the SECURITY DEFINER functions

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { X, UserPlus, Check, Search, Users } from "lucide-react";
+import { X, UserPlus, Check, Search, Users, Mail } from "lucide-react";
 import {
   fetchFriendships, searchUsers, findUserByEmail, sendFriendRequest, respondFriendRequest, removeFriendship,
   setUsername, getPublicProfiles, type Friendship, type PublicProfile,
 } from "./rooms";
-import type { Profile } from "./db";
+import { sendInvite, type Profile } from "./db";
 import type { Session } from "@supabase/supabase-js";
 
 export function displayNameOf(p: PublicProfile | undefined | null): string {
@@ -58,6 +58,20 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const [emailNoMatch, setEmailNoMatch] = useState(false);
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [inviting, setInviting] = useState(false);
+  const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+
+  const invite = async (addr: string) => {
+    setInviting(true); setInviteError(null); setInviteMsg(null);
+    const res = await sendInvite(addr);
+    setInviting(false);
+    if (res.error) { setInviteError(res.error); return; }
+    setInvitedEmail(addr.toLowerCase());
+    setInviteMsg(res.status === "friend_request" ? "They're already on Roamly — friend request sent." : "Invite sent — they'll get an email to join.");
+    reload();
+  };
 
   const reload = useCallback(async () => {
     const rows = await fetchFriendships();
@@ -133,7 +147,20 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
             </div>
             {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
             {emailNoMatch && (
-              <p className="mt-1.5 text-xs text-muted-foreground">No Roamly account uses that email yet — double-check it, or invite them to sign up.</p>
+              <div className="mt-2 rounded-xl border border-dashed border-border bg-card/60 p-3">
+                {invitedEmail === query.trim().toLowerCase() ? (
+                  <p className="flex items-center gap-1.5 text-xs text-roamly-green"><Check size={13} /> {inviteMsg}</p>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted-foreground">No Roamly account uses that email yet.</p>
+                    <button onClick={() => invite(query.trim())} disabled={inviting}
+                      className="mt-2 flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
+                      <Mail size={12} /> {inviting ? "Sending…" : `Invite ${query.trim()} to Roamly`}
+                    </button>
+                    {inviteError && <p className="mt-1.5 text-xs text-destructive">{inviteError}</p>}
+                  </>
+                )}
+              </div>
             )}
             {results.length > 0 && (
               <div className="mt-2 space-y-1.5">

@@ -6,7 +6,7 @@ import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embe
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, checkIsAdmin, adminSearchUsers, adminSetPremium, type Profile, type AdminUser } from "./db";
+import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, type Profile, type AdminUser } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel } from "./Auth";
@@ -1436,6 +1436,21 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const invite = async () => {
+    if (!inviteEmail.trim() || inviting) return;
+    setInviting(true);
+    setInviteMsg(null);
+    const res = await sendInvite(inviteEmail.trim());
+    setInviting(false);
+    if (res.error) { setInviteMsg({ ok: false, text: res.error }); return; }
+    setInviteMsg({ ok: true, text: res.status === "friend_request" ? "Already a user — friend request sent." : `Invite emailed to ${inviteEmail.trim()}.` });
+    setInviteEmail("");
+  };
+
   const search = async () => {
     if (!query.trim()) return;
     setError(null);
@@ -1464,9 +1479,25 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-display text-3xl font-semibold">Admin</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Find a user by email or username and grant or remove Premium.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Invite people, and grant or remove Premium.</p>
 
-      <div className="mt-6 flex gap-2">
+      <div className="mt-6 rounded-2xl border border-border bg-card/70 p-4">
+        <h2 className="text-sm font-semibold">Invite by email</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">Emails them an invite to join Roamly (or sends a friend request if they're already a user).</p>
+        <div className="mt-3 flex gap-2">
+          <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && invite()}
+            type="email" placeholder="name@example.com"
+            className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          <button onClick={invite} disabled={inviting || !inviteEmail.trim()}
+            className="shrink-0 rounded-xl gradient-primary px-4 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
+            {inviting ? "Sending…" : "Invite"}
+          </button>
+        </div>
+        {inviteMsg && <p className={`mt-2 text-xs ${inviteMsg.ok ? "text-roamly-green" : "text-destructive"}`}>{inviteMsg.text}</p>}
+      </div>
+
+      <h2 className="mt-8 text-sm font-semibold">Manage Premium</h2>
+      <div className="mt-3 flex gap-2">
         <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()}
           placeholder="Search by email or username…"
           className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
