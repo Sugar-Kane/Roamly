@@ -776,25 +776,20 @@ function MusicPanel({ isPremium, gateThen, timer }: any) {
           </button>
         </div>
 
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-3 py-2">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">Sync with timer</p>
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              {service === "spotify"
-                ? "Plays during focus, pauses for breaks."
-                : "Spotify only — Apple Music's player can't be controlled by the page."}
-            </p>
+        {/* Sync is Spotify-only — Apple Music's embed can't be driven by the
+            page, so the toggle isn't shown there. */}
+        {service === "spotify" && (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Sync with timer</p>
+              <p className="text-[11px] leading-snug text-muted-foreground">Plays during focus, pauses for breaks.</p>
+            </div>
+            <button role="switch" aria-checked={sync} aria-label="Sync music with timer" onClick={toggleSync}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${sync ? "bg-primary" : "bg-border"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${sync ? "left-[22px]" : "left-0.5"}`} />
+            </button>
           </div>
-          <button
-            role="switch"
-            aria-checked={sync && service === "spotify"}
-            aria-label="Sync music with timer"
-            disabled={service !== "spotify"}
-            onClick={toggleSync}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition ${service !== "spotify" ? "cursor-not-allowed bg-border opacity-50" : sync ? "bg-primary" : "bg-border"}`}>
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${sync && service === "spotify" ? "left-[22px]" : "left-0.5"}`} />
-          </button>
-        </div>
+        )}
 
         {service === "spotify" ? (
           <>

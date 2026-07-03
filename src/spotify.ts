@@ -22,7 +22,6 @@ export const SPOTIFY_PRESETS: SpotifyPreset[] = [
   { id: "deep-focus", name: "Deep Focus", hint: "Ambient concentration", type: "playlist", spotifyId: "37i9dQZF1DWZeKCadgRdKQ" },
   { id: "lofi-beats", name: "Lo-Fi Beats", hint: "Chill beats to study to", type: "playlist", spotifyId: "37i9dQZF1DWWQRwui0ExPn" },
   { id: "peaceful-piano", name: "Peaceful Piano", hint: "Solo piano, low tempo", type: "playlist", spotifyId: "37i9dQZF1DX4sWSpwq3LiO" },
-  { id: "instrumental-study", name: "Instrumental Study", hint: "Focus without lyrics", type: "playlist", spotifyId: "37i9dQZF1DX9SIqqvKsjG8" },
 ];
 
 const URI_RE = /^spotify:(track|playlist|album|artist|episode|show):([A-Za-z0-9]+)$/i;
