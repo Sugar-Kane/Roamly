@@ -5,6 +5,9 @@ const ALLOWED_MEDIA_TYPES = ["application/pdf", "image/jpeg", "image/png", "imag
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 
 const FREE_MONTHLY_QUOTA = 3;
+// Premium is capped too — "unlimited" uploads would be an open tab on the
+// Anthropic bill. Generous for real studying, hostile to abuse.
+const PREMIUM_MONTHLY_QUOTA = 60;
 const STORAGE_BUCKET = "study-uploads";
 const SIGNED_URL_TTL_SECONDS = 300;
 
@@ -93,10 +96,18 @@ export async function POST(request: Request): Promise<Response> {
   const period = currentPeriod();
   const isPremium = profileRow.is_premium as boolean;
   const usedThisPeriod = profileRow.ai_uploads_period === period ? (profileRow.ai_uploads_count as number) : 0;
+  const quota = isPremium ? PREMIUM_MONTHLY_QUOTA : FREE_MONTHLY_QUOTA;
 
-  if (!isPremium && usedThisPeriod >= FREE_MONTHLY_QUOTA) {
+  if (usedThisPeriod >= quota) {
     return jsonResponse({ error: "quota_exceeded" }, 403);
   }
+
+  // Reserve the quota slot BEFORE the Claude call (refunded on failure below).
+  // Incrementing after the call let parallel requests race past the cap.
+  await admin
+    .from("profiles")
+    .update({ ai_uploads_count: usedThisPeriod + 1, ai_uploads_period: period })
+    .eq("id", user.id);
 
   // Give Claude a short-lived signed URL rather than pulling the file through this
   // function ourselves — keeps us well clear of Vercel's 4.5MB request-body limit
@@ -171,14 +182,28 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // Best-effort cleanup now that Claude has (or hasn't) read the file — we don't
-  // retain uploaded study material once it's been processed.
+  // retain uploaded study material once it's been processed. Also sweep any
+  // stale leftovers in this user's folder (uploads that never reached this
+  // function would otherwise accumulate forever).
   try {
     await admin.storage.from(STORAGE_BUCKET).remove([storagePath]);
+    const { data: leftovers } = await admin.storage.from(STORAGE_BUCKET).list(user.id);
+    const stale = (leftovers ?? [])
+      .filter((f) => f.created_at && Date.now() - new Date(f.created_at).getTime() > 60 * 60 * 1000)
+      .map((f) => `${user.id}/${f.name}`);
+    if (stale.length > 0) await admin.storage.from(STORAGE_BUCKET).remove(stale);
   } catch (err) {
     console.warn("[Roamly] generate-tasks: cleanup failed", err);
   }
 
-  if (claudeError) return claudeError;
+  if (claudeError) {
+    // Refund the reserved quota slot — the user got nothing for it.
+    await admin
+      .from("profiles")
+      .update({ ai_uploads_count: usedThisPeriod, ai_uploads_period: period })
+      .eq("id", user.id);
+    return claudeError;
+  }
 
   if (tasks.length === 0) {
     return jsonResponse({ error: "Couldn't find any tasks in that file." }, 422);
@@ -193,13 +218,6 @@ export async function POST(request: Request): Promise<Response> {
   const { data: inserted, error: insertError } = ins;
   if (insertError || !inserted) {
     return jsonResponse({ error: "Generated tasks but couldn't save them — try again." }, 500);
-  }
-
-  if (!isPremium) {
-    await admin
-      .from("profiles")
-      .update({ ai_uploads_count: usedThisPeriod + 1, ai_uploads_period: period })
-      .eq("id", user.id);
   }
 
   return jsonResponse({ tasks: inserted }, 200);

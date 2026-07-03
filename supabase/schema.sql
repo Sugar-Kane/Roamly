@@ -161,6 +161,24 @@ create policy "tasks_delete_own"
   to authenticated
   using (auth.uid() = user_id);
 
+-- Bloat guard: at most 500 tasks per user.
+create or replace function public.enforce_task_limit()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  if (select count(*) from public.tasks t where t.user_id = new.user_id) >= 500 then
+    raise exception 'task_limit_reached';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger tasks_limit
+  before insert on public.tasks
+  for each row execute function public.enforce_task_limit();
+
 
 -- ============ invitations ============
 -- Audit + rate-limit for the "invite by email" flow. Written only by the
@@ -270,21 +288,61 @@ create policy "rooms_select_all"
   to authenticated
   using (true);
 
+-- Hosting is Premium-only and capped at 3 active hosted rooms per host —
+-- enforced here, not just in the UI, so the API can't be scripted around.
 create policy "rooms_insert_own"
   on public.rooms for insert
   to authenticated
-  with check (auth.uid() = host_id and is_system = false);
+  with check (
+    auth.uid() = host_id
+    and is_system = false
+    and exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_premium)
+    and (select count(*) from public.rooms r where r.host_id = auth.uid() and r.is_system = false) < 3
+  );
 
 create policy "rooms_delete_host"
   on public.rooms for delete
   to authenticated
   using (auth.uid() = host_id);
 
+-- Participants ping a heartbeat while in a room (RoomView upserts every 60s,
+-- deletes on leave), giving the server a real emptiness signal for reaping.
+create table public.room_heartbeats (
+  room_id uuid not null references public.rooms (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  seen_at timestamptz not null default now(),
+  primary key (room_id, user_id)
+);
+
+alter table public.room_heartbeats enable row level security;
+
+create policy "heartbeats_select_own"
+  on public.room_heartbeats for select
+  to authenticated
+  using (auth.uid() = user_id);
+
+create policy "heartbeats_insert_own"
+  on public.room_heartbeats for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+create policy "heartbeats_update_own"
+  on public.room_heartbeats for update
+  to authenticated
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "heartbeats_delete_own"
+  on public.room_heartbeats for delete
+  to authenticated
+  using (auth.uid() = user_id);
+
 -- Auto-cleanup for hosted rooms left empty. The room delete policy above is
--- host-only, but any lobby viewer can observe (via Realtime presence) that a
--- room has sat empty and should be reaped — so this SECURITY DEFINER function
--- lets them delete it, guarded to non-system rooms older than 2 minutes (the
--- age guard prevents ever removing a freshly created room).
+-- host-only, but any lobby viewer can observe that a room has sat empty and
+-- should be reaped — so this SECURITY DEFINER function lets them delete it,
+-- guarded three ways: non-system rooms only, older than 2 minutes, and no
+-- participant heartbeat in the last 2 minutes (so an active room can never be
+-- deleted out from under its members).
 create or replace function public.reap_room(p_room uuid)
 returns void
 language plpgsql
@@ -293,10 +351,15 @@ set search_path = public
 as $$
 begin
   if auth.uid() is null then raise exception 'not_signed_in'; end if;
-  delete from public.rooms
-   where id = p_room
-     and is_system = false
-     and created_at < now() - interval '2 minutes';
+  delete from public.rooms r
+   where r.id = p_room
+     and r.is_system = false
+     and r.created_at < now() - interval '2 minutes'
+     and not exists (
+       select 1 from public.room_heartbeats h
+        where h.room_id = p_room
+          and h.seen_at > now() - interval '2 minutes'
+     );
 end;
 $$;
 
@@ -447,6 +510,13 @@ begin
      and public.room_phase(r, now() - interval '10 seconds') = 'focus'
      and public.room_phase(r, now() + interval '10 seconds') = 'focus' then
     raise exception 'chat_closed_during_focus';
+  end if;
+  -- Flood guard: at most 8 messages per user per room per minute.
+  if (select count(*) from public.room_messages m
+       where m.room_id = new.room_id
+         and m.user_id = new.user_id
+         and m.created_at > now() - interval '60 seconds') >= 8 then
+    raise exception 'chat_rate_limited';
   end if;
   return new;
 end;

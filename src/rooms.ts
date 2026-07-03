@@ -144,8 +144,28 @@ export async function sendMessage(roomId: string, userId: string, body: string):
   const { error } = await supabase.from("room_messages").insert({ room_id: roomId, user_id: userId, body });
   if (!error) return null;
   if (error.message.includes("chat_closed_during_focus")) return "Chat is closed during focus — it opens at the break.";
+  if (error.message.includes("chat_rate_limited")) return "Whoa, slow down a little — you can send more messages in a minute.";
   console.warn("[Roamly] sendMessage failed", error.message);
   return "Couldn't send that message — try again.";
+}
+
+// Room heartbeats: while someone is in a room they upsert a ping every
+// minute; reap_room() refuses to delete a room with a heartbeat fresher than
+// 2 minutes, so an occupied room can never be reaped out from under people.
+// Both no-op quietly if the migration hasn't been applied yet.
+export async function heartbeatRoom(roomId: string, userId: string) {
+  if (!supabase) return;
+  const { error } = await supabase
+    .from("room_heartbeats")
+    .upsert({ room_id: roomId, user_id: userId, seen_at: new Date().toISOString() });
+  if (error && !error.message.includes("does not exist")) {
+    console.warn("[Roamly] heartbeat failed", error.message);
+  }
+}
+
+export async function clearRoomHeartbeat(roomId: string, userId: string) {
+  if (!supabase) return;
+  await supabase.from("room_heartbeats").delete().eq("room_id", roomId).eq("user_id", userId);
 }
 
 export async function fetchFriendships(): Promise<Friendship[]> {

@@ -2,6 +2,10 @@ import { createClient } from "@supabase/supabase-js";
 
 const GENERAL_DAILY_LIMIT = 5;
 const ADMIN_DAILY_LIMIT = 50;
+// Global ceiling across ALL users per 24h. Signups are open, so without this,
+// N throwaway accounts × 5/day each could pump spam through the app's SMTP
+// sender (currently a personal Gmail with its own 500/day cap + reputation).
+const GLOBAL_DAILY_LIMIT = 50;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function json(body: unknown, status: number): Response {
@@ -51,6 +55,13 @@ export async function POST(request: Request): Promise<Response> {
     .gte("created_at", dayAgo);
   if ((count ?? 0) >= limit) {
     return json({ error: `You've hit today's invite limit (${limit}). Try again tomorrow.` }, 429);
+  }
+  const { count: globalCount } = await admin
+    .from("invitations")
+    .select("id", { count: "exact", head: true })
+    .gte("created_at", dayAgo);
+  if ((globalCount ?? 0) >= GLOBAL_DAILY_LIMIT) {
+    return json({ error: "Invites are busy today — try again tomorrow." }, 429);
   }
 
   // Already a Roamly user?

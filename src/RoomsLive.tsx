@@ -3,7 +3,7 @@ import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as Infini
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
-  fetchMessages, sendMessage, fetchFriendships, getPublicProfiles,
+  fetchMessages, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
@@ -110,12 +110,18 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     return () => { client.removeChannel(channel); };
   }, [reload]);
 
-  // Live head-counts: observe each room's presence channel without joining it.
-  const roomIdsKey = rooms.map((r) => r.id).join(",");
+  // Live head-counts: observe presence channels without joining them — but
+  // only for rooms the lobby actually renders (system + newest hosted), so a
+  // pile of stale rooms can't burn a realtime connection per room.
+  const watchedRooms = [
+    ...rooms.filter((r) => r.is_system),
+    ...rooms.filter((r) => !r.is_system).slice(0, 15),
+  ];
+  const roomIdsKey = watchedRooms.map((r) => r.id).join(",");
   useEffect(() => {
     if (!supabase || active) return; // in a room, the lobby isn't visible
     const client = supabase;
-    const channels = rooms.map((room) => {
+    const channels = watchedRooms.map((room) => {
       const ch = client.channel(`room:${room.id}`);
       ch.on("presence", { event: "sync" }, () => {
         const count = Object.keys(ch.presenceState()).length;
@@ -421,6 +427,17 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, o
     });
     return () => { client.removeChannel(ch); };
   }, [room.id, userId, username]);
+
+  // Heartbeat: tells the server this room is occupied, which blocks reap_room
+  // from deleting it. Upsert on join + every minute; clear on leave.
+  useEffect(() => {
+    heartbeatRoom(room.id, userId);
+    const iv = window.setInterval(() => heartbeatRoom(room.id, userId), 60_000);
+    return () => {
+      window.clearInterval(iv);
+      clearRoomHeartbeat(room.id, userId);
+    };
+  }, [room.id, userId]);
 
   // Chime on every shared-timer phase boundary (study session ending and break
   // ending), matching the personal timer. prevPhase seeds to the current phase
