@@ -7,6 +7,7 @@ import {
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
+import { VoiceDock } from "./RoomVoice";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
 import type { Profile } from "./db";
@@ -142,6 +143,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   if (active) {
     return (
       <RoomView room={active} session={session} profile={profile} now={now}
+        isPremium={isPremium} gateThen={gateThen}
         onLeave={() => { setActive(null); reload(); }}
         onEnded={() => { setActive(null); reload(); }} />
     );
@@ -155,7 +157,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
       <div className="flex items-end justify-between">
         <div>
           <h1 className="font-display text-3xl font-semibold">Study rooms</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Live sessions with a shared timer. Chat opens during breaks.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Live sessions with a shared timer. Chat and voice open during breaks.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={onOpenFriends}
@@ -299,11 +301,13 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
 
 type Member = { id: string; username: string };
 
-function RoomView({ room, session, profile, now, onLeave, onEnded }: {
+function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, onEnded }: {
   room: LiveRoom;
   session: Session;
   profile: Profile | null;
   now: number;
+  isPremium: boolean;
+  gateThen: (fn: () => void) => void;
   onLeave: () => void;
   onEnded: () => void;
 }) {
@@ -383,6 +387,10 @@ function RoomView({ room, session, profile, now, onLeave, onEnded }: {
           {members.length === 0 && <span className="text-xs text-muted-foreground">Connecting…</span>}
         </div>
       </section>
+
+      <VoiceDock roomId={room.id} userId={userId} username={username}
+        phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0}
+        isPremium={isPremium} gateThen={gateThen} />
 
       <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} />
 
