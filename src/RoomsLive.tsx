@@ -213,7 +213,11 @@ function RoomCard({ room, now, count, onJoin }: { room: LiveRoom; now: number; c
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate font-semibold">{room.name}</h3>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{room.topic}</p>
+          {/* Always-on community rooms aren't tied to a subject — show their
+              rhythm instead of a topic. */}
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {room.is_system ? `${room.focus_min}/${room.short_min} rhythm · always on` : room.topic}
+          </p>
         </div>
         <span className="mt-1 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] font-medium text-white" style={{ background: phaseColor(info.phase) }}>
           {PHASE_LABEL[info.phase]} · {fmt(info.secondsLeft)}
@@ -344,7 +348,9 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, o
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="truncate font-display text-3xl font-semibold">{room.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{room.topic}{room.is_system && " · always on"}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {room.is_system ? `Always on · ${room.focus_min}/${room.short_min} rhythm — study anything` : room.topic}
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={() => setShowInvite(true)}
