@@ -17,6 +17,35 @@ export type Profile = {
 
 export type FocusSessionRow = { date: string; minutes: number };
 
+// ---- Admin ----
+// All three RPCs are SECURITY DEFINER and gated by is_admin() server-side, so
+// the client checks here are only for showing/hiding the admin UI — a
+// non-admin calling them directly gets nothing / an error.
+export type AdminUser = { id: string; email: string | null; username: string | null; display_name: string | null; is_premium: boolean };
+
+export async function checkIsAdmin(): Promise<boolean> {
+  if (!supabase) return false;
+  const { data, error } = await supabase.rpc("is_admin");
+  if (error) return false; // function not present yet, or not signed in
+  return data === true;
+}
+
+export async function adminSearchUsers(query: string): Promise<AdminUser[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_search_users", { p_query: query });
+  if (error) { console.warn("[Roamly] adminSearchUsers failed", error.message); return []; }
+  return (data ?? []) as AdminUser[];
+}
+
+export async function adminSetPremium(userId: string, premium: boolean): Promise<string | null> {
+  if (!supabase) return "Not available right now.";
+  const { error } = await supabase.rpc("admin_set_premium", { p_user: userId, p_premium: premium });
+  if (!error) return null;
+  if (error.message.includes("not_admin")) return "You don't have admin access.";
+  console.warn("[Roamly] adminSetPremium failed", error.message);
+  return "Couldn't update that account — try again.";
+}
+
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();

@@ -162,6 +162,70 @@ create policy "tasks_delete_own"
   using (auth.uid() = user_id);
 
 
+-- ============ admins ============
+-- Allowlist of admin user ids. No RLS policies are added, so clients can't
+-- read or write this table directly — only the SECURITY DEFINER functions
+-- below and service_role touch it. Seed your own id once, e.g.:
+--   insert into public.admins (user_id)
+--   select id from auth.users where email = 'you@example.com';
+create table public.admins (
+  user_id uuid primary key references auth.users (id) on delete cascade
+);
+alter table public.admins enable row level security;
+
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (select 1 from public.admins where user_id = auth.uid());
+$$;
+
+revoke execute on function public.is_admin() from public, anon;
+grant execute on function public.is_admin() to authenticated;
+
+-- Admin-only user lookup (returns emails + premium status). The is_admin()
+-- guard is in the WHERE clause, so a non-admin caller simply gets no rows.
+create or replace function public.admin_search_users(p_query text)
+returns table (id uuid, email text, username text, display_name text, is_premium boolean)
+language sql
+security definer
+set search_path = public
+as $$
+  select p.id, p.email, p.username, p.display_name, p.is_premium
+    from public.profiles p
+   where public.is_admin()
+     and length(trim(p_query)) >= 1
+     and (p.email ilike '%' || trim(p_query) || '%'
+       or p.username ilike '%' || trim(p_query) || '%'
+       or p.display_name ilike '%' || trim(p_query) || '%')
+   order by p.email
+   limit 25;
+$$;
+
+revoke execute on function public.admin_search_users(text) from public, anon;
+grant execute on function public.admin_search_users(text) to authenticated;
+
+-- Admin-only Premium grant/revoke. Raises if the caller isn't an admin, so it
+-- can't be used to self-upgrade even though it's callable by authenticated.
+create or replace function public.admin_set_premium(p_user uuid, p_premium boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then raise exception 'not_admin'; end if;
+  update public.profiles set is_premium = p_premium, updated_at = now() where id = p_user;
+end;
+$$;
+
+revoke execute on function public.admin_set_premium(uuid, boolean) from public, anon;
+grant execute on function public.admin_set_premium(uuid, boolean) to authenticated;
+
+
 -- ============ rooms ============
 -- Shared Pomodoro study rooms. The timer phase is derived from started_at and
 -- the cycle settings (see room_phase below), so rooms have no mutable "state"

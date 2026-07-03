@@ -6,7 +6,7 @@ import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embe
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, type Profile } from "./db";
+import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, checkIsAdmin, adminSearchUsers, adminSetPremium, type Profile, type AdminUser } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel } from "./Auth";
@@ -16,7 +16,7 @@ import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import type { Session } from "@supabase/supabase-js";
 
-type View = "focus" | "tasks" | "analytics" | "rooms" | "premium";
+type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
 
 export default function App() {
   const [view, setView] = useState<View>("focus");
@@ -36,6 +36,7 @@ export default function App() {
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const alerts = useEndOfPhaseAlerts();
 
   const isPremium = profile?.is_premium ?? false;
@@ -88,6 +89,7 @@ export default function App() {
       setTasks(rows);
       setActiveTask(rows[0]?.id ?? null);
     });
+    checkIsAdmin().then(setIsAdmin);
   }, [session?.user.id]);
 
   // Reflect a Stripe webhook's is_premium update live, without a manual refresh.
@@ -125,8 +127,8 @@ export default function App() {
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
     { id: "focus", label: "Focus", icon: Timer },
     { id: "tasks", label: "Tasks", icon: ListChecks },
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "rooms", label: "Rooms", icon: Users },
+    { id: "analytics", label: "Analytics", icon: BarChart3 },
   ];
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
@@ -284,7 +286,8 @@ export default function App() {
         <Header isPremium={isPremium} streak={streak} session={session} profile={profile}
           onSignIn={onSignIn} onSignOut={onSignOut}
           onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends}
-          a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")} />
+          a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
+          isAdmin={isAdmin} onOpenAdmin={() => setView("admin")} />
         <ThemePicker themeId={themeId} setThemeId={setThemeId} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
@@ -316,6 +319,7 @@ export default function App() {
             <PremiumView isPremium={isPremium} session={session} onSubscribe={startCheckout}
               checkoutLoading={checkoutLoading} checkoutError={checkoutError} />
           )}
+          {view === "admin" && <AdminView isAdmin={isAdmin} />}
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
@@ -337,7 +341,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -357,7 +361,8 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
         )}
         <ProfileMenu session={session} profile={profile} isPremium={isPremium}
           a11y={a11y} setA11y={setA11y}
-          onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends} />
+          onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
+          isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} />
       </div>
     </header>
   );
@@ -1420,6 +1425,77 @@ function PremiumView({ isPremium, session, onSubscribe, checkoutLoading, checkou
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AdminView({ isAdmin }: { isAdmin: boolean }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<AdminUser[]>([]);
+  const [searched, setSearched] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const search = async () => {
+    if (!query.trim()) return;
+    setError(null);
+    setResults(await adminSearchUsers(query.trim()));
+    setSearched(true);
+  };
+
+  const toggle = async (u: AdminUser) => {
+    setBusyId(u.id);
+    setError(null);
+    const err = await adminSetPremium(u.id, !u.is_premium);
+    setBusyId(null);
+    if (err) { setError(err); return; }
+    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: !r.is_premium } : r)));
+  };
+
+  if (!isAdmin) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <h1 className="font-display text-3xl font-semibold">Admin</h1>
+        <p className="mt-2 text-sm text-muted-foreground">You don't have admin access.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      <h1 className="font-display text-3xl font-semibold">Admin</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Find a user by email or username and grant or remove Premium.</p>
+
+      <div className="mt-6 flex gap-2">
+        <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()}
+          placeholder="Search by email or username…"
+          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+        <button onClick={search} className="shrink-0 rounded-xl gradient-primary px-4 text-sm font-semibold text-white shadow-glow transition active:scale-95">Search</button>
+      </div>
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+
+      <div className="mt-6 space-y-2">
+        {searched && results.length === 0 && (
+          <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">No users match that search.</p>
+        )}
+        {results.map((u) => (
+          <div key={u.id} className="flex items-center gap-3 rounded-xl border border-border bg-card/70 p-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{u.display_name || u.username || u.email || "Unnamed user"}</p>
+              <p className="truncate text-xs text-muted-foreground">{u.email}{u.username ? ` · @${u.username}` : ""}</p>
+            </div>
+            {u.is_premium && (
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                <Crown size={11} /> Premium
+              </span>
+            )}
+            <button onClick={() => toggle(u)} disabled={busyId === u.id}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95 disabled:opacity-50 ${u.is_premium ? "border border-border bg-card text-muted-foreground hover:border-destructive/50 hover:text-destructive" : "gradient-primary text-white shadow-glow"}`}>
+              {busyId === u.id ? "…" : u.is_premium ? "Remove" : "Grant Premium"}
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
