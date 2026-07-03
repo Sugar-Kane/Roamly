@@ -478,6 +478,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         </div>
       </section>
 
+      <MusicPanel isPremium={isPremium} gateThen={gateThen} timer={timer} />
+
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="min-w-0 space-y-6">
           <div>
@@ -500,22 +502,19 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             </div>
             {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} onSave={scrollToTimer} />}
           </div>
-          <div>
-            <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
-            <div className="space-y-2">
-              {tasks.filter((t: Task) => !t.done).slice(0, 3).map((t: Task) => (
-                <button key={t.id} onClick={() => setActiveTask(t.id)}
-                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
-        <div className="min-w-0 space-y-6">
-          <MusicPanel isPremium={isPremium} gateThen={gateThen} timer={timer} />
+        <div className="min-w-0">
+          <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
+          <div className="space-y-2">
+            {tasks.filter((t: Task) => !t.done).slice(0, 3).map((t: Task) => (
+              <button key={t.id} onClick={() => setActiveTask(t.id)}
+                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
+                <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -591,36 +590,27 @@ function CustomEditor({ custom, setCustom, onSave }: any) {
 
 function ThemePicker({ themeId, setThemeId }: any) {
   return (
-    <div className="mt-6 rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">
-        <Palette size={16} className="text-primary" />
-        <h2 className="font-display text-lg font-semibold">Theme</h2>
-      </div>
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        {THEMES.map((t: any) => {
-          const active = themeId === t.id;
-          const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
-          return (
-            <button key={t.id} onClick={() => setThemeId(t.id)}
-              className={`relative flex h-24 flex-col justify-between overflow-hidden rounded-xl p-2.5 text-left shadow-sm transition ${active ? "ring-2 ring-primary ring-offset-2 ring-offset-card" : "hover:brightness-95"}`}
-              style={{
-                background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})`,
-                border: `2px solid ${active ? "hsl(var(--primary))" : `hsl(${t.vars["--foreground"]} / 0.35)`}`,
-              }}>
-              <div className="flex gap-1">
-                <span className="h-3.5 w-3.5 rounded-full border border-white/50 shadow-sm" style={{ background: t.ring }} />
-                <span className="h-3.5 w-3.5 rounded-full border border-white/50 shadow-sm" style={{ background: t.rest }} />
-              </div>
-              <span className="font-display text-sm font-semibold" style={{ color: nameColor }}>{t.name}</span>
-              {active && (
-                <span className="absolute right-2 top-2 grid h-4 w-4 place-items-center rounded-full text-white" style={{ background: t.ring }}>
-                  <Check size={10} />
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+    <div className="mt-4 flex flex-wrap items-center gap-2">
+      <span className="flex items-center gap-1.5 pr-1 text-xs font-medium text-muted-foreground">
+        <Palette size={14} className="text-primary" /> Theme
+      </span>
+      {THEMES.map((t: any) => {
+        const active = themeId === t.id;
+        const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
+        return (
+          <button key={t.id} onClick={() => setThemeId(t.id)} aria-pressed={active}
+            className={`relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm transition ${active ? "ring-2 ring-primary ring-offset-1 ring-offset-card" : "hover:brightness-95"}`}
+            style={{
+              background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})`,
+              border: `1.5px solid ${active ? "hsl(var(--primary))" : `hsl(${t.vars["--foreground"]} / 0.3)`}`,
+              color: nameColor,
+            }}>
+            <span className="h-2.5 w-2.5 rounded-full border border-white/50" style={{ background: t.ring }} />
+            {t.name}
+            {active && <Check size={12} />}
+          </button>
+        );
+      })}
     </div>
   );
 }
