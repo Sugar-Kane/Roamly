@@ -121,12 +121,13 @@ export default function App() {
 
   const timer = useTimer(method, handlePhaseComplete);
 
+  // Premium isn't a bottom-nav tab: it's reached from the profile-menu plan
+  // card and the upsell popups, so it doesn't need a permanent slot here.
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
     { id: "focus", label: "Focus", icon: Timer },
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "rooms", label: "Rooms", icon: Users },
-    { id: "premium", label: "Premium", icon: Sparkles },
   ];
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
@@ -388,12 +389,20 @@ function SignInPrompt({ onSignIn, message }: any) {
   );
 }
 
+// Local-time YYYY-MM-DD (not toISOString, which is UTC and can be a day off).
+function localTodayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function ExamCountdownBar({ examDate, setExamDate }: any) {
   const [editing, setEditing] = useState(!examDate);
   const [draft, setDraft] = useState(examDate ?? "");
+  const todayStr = localTodayISO();
+  const isPast = !!draft && draft < todayStr;
 
   const save = () => {
-    if (!draft) return;
+    if (!draft || isPast) return; // the exam can't be in the past
     setExamDate(draft);
     setEditing(false);
   };
@@ -405,10 +414,11 @@ function ExamCountdownBar({ examDate, setExamDate }: any) {
           <CalendarClock size={16} className="text-primary" />
           <span className="text-sm font-medium">Set your PANCE exam date</span>
         </div>
-        <div className="flex items-center gap-2">
-          <input type="date" value={draft} onChange={(e) => setDraft(e.target.value)}
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="date" value={draft} min={todayStr} onChange={(e) => setDraft(e.target.value)}
             className="rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          <button onClick={save} disabled={!draft}
+          {isPast && <span className="w-full text-xs text-destructive sm:w-auto">Pick today or a future date.</span>}
+          <button onClick={save} disabled={!draft || isPast}
             className="rounded-xl gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
             Save
           </button>

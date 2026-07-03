@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Method } from "./data";
+import { playChime } from "./sound";
 
 export type Phase = "focus" | "short" | "long";
 
@@ -45,17 +46,7 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
     tick.current = window.setInterval(() => {
       setSecondsLeft((s) => {
         if (s <= 1) {
-          // Gentle audio cue.
-          try {
-            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-            const o = ctx.createOscillator();
-            const g = ctx.createGain();
-            o.connect(g); g.connect(ctx.destination);
-            o.frequency.value = 528; g.gain.setValueAtTime(0.001, ctx.currentTime);
-            g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.05);
-            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
-            o.start(); o.stop(ctx.currentTime + 1.2);
-          } catch { /* audio not available */ }
+          playChime(); // end-of-phase cue (session end + break over)
           return 0;
         }
         return s - 1;

@@ -10,15 +10,17 @@ export type Method = {
   premium?: boolean;
 };
 
+// Free methods first, then premium ones grouped at the end — the Focus page
+// renders in this order, so premium options stay together at the bottom.
 export const METHODS: Method[] = [
   { id: "classic", name: "Classic 25/5", blurb: "The original. 25 on, 5 off.", focus: 25, short: 5, long: 15, cycles: 4 },
   { id: "deep", name: "Deep Work 50/10", blurb: "Longer blocks for dense material like pharmacology.", focus: 50, short: 10, long: 20, cycles: 3 },
   { id: "rotation", name: "Clinical 90/20", blurb: "Ultradian rhythm. Mirrors a focused rotation block.", focus: 90, short: 20, long: 30, cycles: 2 },
   { id: "sprint", name: "Sprint 15/3", blurb: "Short bursts for flashcards and quick review.", focus: 15, short: 3, long: 10, cycles: 5 },
   { id: "anatomy", name: "Anatomy 45/15", blurb: "Balanced blocks for systems and structures.", focus: 45, short: 15, long: 25, cycles: 3 },
-  { id: "pance", name: "PANCE Drill 60/10", blurb: "Exam-pace endurance blocks.", focus: 60, short: 10, long: 25, cycles: 3, premium: true },
   { id: "gentle", name: "Gentle 20/10", blurb: "Lower-intensity days. More recovery.", focus: 20, short: 10, long: 20, cycles: 4 },
   { id: "fifty2", name: "52/17", blurb: "The productivity-study ratio.", focus: 52, short: 17, long: 25, cycles: 3 },
+  { id: "pance", name: "PANCE Drill 60/10", blurb: "Exam-pace endurance blocks.", focus: 60, short: 10, long: 25, cycles: 3, premium: true },
   { id: "marathon", name: "Marathon 120/30", blurb: "For long library sits before an exam.", focus: 120, short: 30, long: 45, cycles: 2, premium: true },
   { id: "custom", name: "Custom", blurb: "Set your own focus, break, and cadence.", focus: 30, short: 7, long: 20, cycles: 4, premium: true },
 ];
