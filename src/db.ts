@@ -59,7 +59,9 @@ export async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-const TASK_COLUMNS = "id, title, tag, done, poms, est";
+// select("*") on purpose: extra columns are harmless, and it keeps fetches
+// working whether or not the optional sort_order column has been added yet.
+const TASK_COLUMNS = "*";
 
 export async function fetchTasks(userId: string): Promise<Task[]> {
   if (!supabase) return [];
@@ -67,23 +69,28 @@ export async function fetchTasks(userId: string): Promise<Task[]> {
     .from("tasks")
     .select(TASK_COLUMNS)
     .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: true });
   if (error) { console.warn("[Roamly] fetchTasks failed", error.message); return []; }
   return (data ?? []) as Task[];
 }
 
-export async function createTask(userId: string, title: string, tag: string): Promise<Task | null> {
+export async function createTask(userId: string, title: string, tag: string, sortOrder?: number): Promise<Task | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase
+  let res = await supabase
     .from("tasks")
-    .insert({ user_id: userId, title, tag })
+    .insert({ user_id: userId, title, tag, ...(sortOrder != null ? { sort_order: sortOrder } : {}) })
     .select(TASK_COLUMNS)
     .single();
-  if (error) { console.warn("[Roamly] createTask failed", error.message); return null; }
-  return data as Task;
+  // If the sort_order column hasn't been migrated in yet, retry without it —
+  // adding the task always beats preserving its position.
+  if (res.error && sortOrder != null && res.error.message.includes("sort_order")) {
+    res = await supabase.from("tasks").insert({ user_id: userId, title, tag }).select(TASK_COLUMNS).single();
+  }
+  if (res.error) { console.warn("[Roamly] createTask failed", res.error.message); return null; }
+  return res.data as Task;
 }
 
-export async function updateTask(id: string, fields: Partial<{ title: string; tag: string; done: boolean; poms: number; est: number }>) {
+export async function updateTask(id: string, fields: Partial<{ title: string; tag: string; done: boolean; poms: number; est: number; sort_order: number }>) {
   if (!supabase) return;
   const { error } = await supabase.from("tasks").update(fields).eq("id", id);
   if (error) console.warn("[Roamly] updateTask failed", error.message);

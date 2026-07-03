@@ -23,14 +23,34 @@ export const METHODS: Method[] = [
   { id: "custom", name: "Custom", blurb: "Set your own focus, break, and cadence.", focus: 30, short: 7, long: 20, cycles: 4, premium: true },
 ];
 
-export type Task = { id: string; title: string; tag: string; done: boolean; poms: number; est: number };
+export type Task = { id: string; title: string; tag: string; done: boolean; poms: number; est: number; sort_order?: number | null };
 
 export const SEED_TASKS: Task[] = [
-  { id: "t1", title: "Cardiology — review heart failure pathways", tag: "Cardio", done: false, poms: 2, est: 4 },
-  { id: "t2", title: "Pharm flashcards: beta-blockers", tag: "Pharm", done: false, poms: 1, est: 2 },
-  { id: "t3", title: "OSCE practice — abdominal exam", tag: "Clinical", done: true, poms: 3, est: 3 },
-  { id: "t4", title: "PANCE practice block (50 questions)", tag: "PANCE", done: false, poms: 0, est: 3 },
+  { id: "t1", title: "Cardiology — review heart failure pathways", tag: "Cardio", done: false, poms: 2, est: 4, sort_order: 1 },
+  { id: "t2", title: "Pharm flashcards: beta-blockers", tag: "Pharm", done: false, poms: 1, est: 2, sort_order: 2 },
+  { id: "t3", title: "OSCE practice — abdominal exam", tag: "Clinical", done: true, poms: 3, est: 3, sort_order: 3 },
+  { id: "t4", title: "PANCE practice block (50 questions)", tag: "PANCE", done: false, poms: 0, est: 3, sort_order: 4 },
 ];
+
+// User-controlled task order: sort_order ascending, unnumbered tasks last
+// (JS sort is stable, so ties keep their fetch order).
+export function sortTasks(list: Task[]): Task[] {
+  return [...list].sort((a, b) => (a.sort_order ?? Infinity) - (b.sort_order ?? Infinity));
+}
+
+// Stable accent color per subject tag (aligned with SUBJECT_SPLIT below);
+// unknown tags fall back to a warm neutral.
+const TAG_COLORS: Record<string, string> = {
+  Pharm: "#7C5CFA",
+  Cardio: "#3B82F6",
+  Clinical: "#E8765A",
+  PANCE: "#16A34A",
+  Anatomy: "#D97706",
+};
+
+export function tagColor(tag: string): string {
+  return TAG_COLORS[tag] ?? "#8A8177";
+}
 
 // Mock weekly focus minutes for the analytics dashboard.
 export const WEEK_DATA = [

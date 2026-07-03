@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info } from "lucide-react";
-import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, type Task } from "./data";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown } from "lucide-react";
+import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { SpotifyEmbed } from "./SpotifyEmbed";
@@ -156,14 +156,48 @@ export default function App() {
   // Supabase (tasks table) so they survive across devices/sessions.
   const addTask = useCallback((title: string, tag: string) => {
     const userId = session?.user.id;
+    const nextOrder = tasks.reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0) + 1;
     if (userId) {
-      createTask(userId, title, tag).then((row) => {
-        if (row) setTasks((prev) => [row, ...prev]);
+      createTask(userId, title, tag, nextOrder).then((row) => {
+        if (row) setTasks((prev) => [...prev, row]);
       });
     } else {
-      setTasks((prev) => [{ id: crypto.randomUUID(), title, tag, done: false, poms: 0, est: 2 }, ...prev]);
+      setTasks((prev) => [...prev, { id: crypto.randomUUID(), title, tag, done: false, poms: 0, est: 2, sort_order: nextOrder }]);
     }
-  }, [session?.user.id]);
+  }, [session?.user.id, tasks]);
+
+  // Move a task one slot up/down within its subject group (open tasks only).
+  // Tasks that predate the sort_order column are first normalized to 1..n in
+  // the current visual order, so the swap is always well-defined.
+  const moveTask = useCallback((id: string, dir: -1 | 1) => {
+    const sorted = sortTasks(tasks);
+    const needsNormalize = sorted.some((t, i) => t.sort_order == null || sorted.findIndex((o) => o.sort_order === t.sort_order) !== i);
+    const orders = new Map(sorted.map((t, i) => [t.id, needsNormalize ? i + 1 : (t.sort_order as number)]));
+
+    const me = sorted.find((t) => t.id === id);
+    if (!me) return;
+    const group = sorted.filter((t) => !t.done && t.tag === me.tag);
+    const i = group.findIndex((t) => t.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= group.length) return;
+    const other = group[j];
+    const a = orders.get(me.id)!;
+    orders.set(me.id, orders.get(other.id)!);
+    orders.set(other.id, a);
+
+    setTasks((prev) => prev.map((t) => (orders.get(t.id) !== t.sort_order ? { ...t, sort_order: orders.get(t.id) } : t)));
+    if (session?.user.id) {
+      for (const t of sorted) {
+        const next = orders.get(t.id)!;
+        if (next !== t.sort_order) updateTask(t.id, { sort_order: next });
+      }
+    }
+  }, [tasks, session?.user.id]);
+
+  const focusTask = useCallback((id: string) => {
+    setActiveTask(id);
+    setView("focus");
+  }, []);
 
   const toggleTask = useCallback((id: string) => {
     const current = tasks.find((t) => t.id === id);
@@ -252,6 +286,7 @@ export default function App() {
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               addTask={addTask} toggleTask={toggleTask} removeTask={removeTask} updateTaskEst={updateTaskEst}
+              moveTask={moveTask} onFocusTask={focusTask}
               session={session} onSignIn={onSignIn}
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout} />
           )}
@@ -506,11 +541,23 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         <div className="min-w-0">
           <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
           <div className="space-y-2">
-            {tasks.filter((t: Task) => !t.done).slice(0, 3).map((t: Task) => (
+            {/* Active task pins to the top so the "Focusing" marker is always visible here. */}
+            {sortTasks(tasks).filter((t: Task) => !t.done)
+              .sort((a: Task, b: Task) => Number(b.id === activeTask) - Number(a.id === activeTask))
+              .slice(0, 3).map((t: Task) => (
               <button key={t.id} onClick={() => setActiveTask(t.id)}
                 className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
-                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
-                <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block min-w-0 truncate text-sm">{t.title}</span>
+                  <span className="mt-1 flex items-center gap-2">
+                    <TagPill tag={t.tag} />
+                    {activeTask === t.id && (
+                      <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                        <Timer size={10} /> Focusing
+                      </span>
+                    )}
+                  </span>
+                </span>
                 <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
               </button>
             ))}
@@ -961,9 +1008,19 @@ function InfoTip({ text }: { text: string }) {
   );
 }
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
+function TagPill({ tag }: { tag: string }) {
+  const c = tagColor(tag);
+  return (
+    <span className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: `${c}1f`, color: c }}>
+      {tag}
+    </span>
+  );
+}
+
+function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, onFocusTask, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("Pharm");
+  const [showDone, setShowDone] = useState(false);
   const add = () => {
     if (!draft.trim()) return;
     addTask(draft.trim(), tag);
@@ -971,13 +1028,29 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
   };
   const tags = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
 
+  const sorted = sortTasks(tasks);
+  const open = sorted.filter((t: Task) => !t.done);
+  const doneTasks = sorted.filter((t: Task) => t.done);
+  const groupNames: string[] = [...new Set<string>(open.map((t: Task) => t.tag))];
+
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Hover a task and use the −/+ buttons to adjust its estimate." />
+        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Use the −/+ buttons to adjust an estimate and the arrows to reorder within a subject." />
       </p>
+      {tasks.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>{doneTasks.length} of {tasks.length} done</span>
+            {doneTasks.length === tasks.length && <span className="text-roamly-green">All clear 🎉</span>}
+          </div>
+          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
+            <div className="h-full rounded-full bg-roamly-green" style={{ width: `${tasks.length ? (doneTasks.length / tasks.length) * 100 : 0}%`, transition: "width 0.4s ease" }} />
+          </div>
+        </div>
+      )}
       {!session && (
         <div className="mt-4">
           <SignInPrompt onSignIn={onSignIn} message="Sign in to save your tasks across devices." />
@@ -991,37 +1064,113 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       <div className="mt-6 flex gap-2">
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add a study task…"
-          className="flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
         <select value={tag} onChange={(e) => setTag(e.target.value)} className="rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
           {tags.map((t) => <option key={t}>{t}</option>)}
         </select>
-        <button onClick={add} className="grid w-12 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95"><Plus size={20} /></button>
+        <button onClick={add} aria-label="Add task" className="grid w-12 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95"><Plus size={20} /></button>
       </div>
-      <div className="mt-6 space-y-2">
-        {tasks.map((t: Task) => (
-          <div key={t.id} className={`group flex items-center gap-3 rounded-xl border p-3 transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
-            <button onClick={() => toggleTask(t.id)} className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${t.done ? "border-roamly-green bg-roamly-green" : "border-muted-foreground/40 hover:border-primary"}`}>
-              {t.done && <Check size={14} className="text-white" />}
-            </button>
-            <button onClick={() => setActiveTask(t.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
-              <span className={`min-w-0 flex-1 break-words text-sm ${t.done ? "text-muted-foreground line-through" : ""}`}>{t.title}</span>
-            </button>
-            <div className="flex shrink-0 items-center gap-1">
-              <button onClick={() => updateTaskEst(t.id, t.est - 1)} aria-label="Decrease estimated Pomodoros"
-                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100">
-                <Minus size={11} />
-              </button>
-              <span className="w-10 text-center font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
-              <button onClick={() => updateTaskEst(t.id, t.est + 1)} aria-label="Increase estimated Pomodoros"
-                className="grid h-5 w-5 shrink-0 place-items-center rounded text-muted-foreground opacity-100 transition hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100">
-                <Plus size={11} />
-              </button>
+
+      {open.length === 0 && tasks.length > 0 && (
+        <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">
+          Everything's done — add your next study task above.
+        </p>
+      )}
+
+      {groupNames.map((g) => {
+        const groupTasks = open.filter((t: Task) => t.tag === g);
+        const c = tagColor(g);
+        return (
+          <section key={g} className="mt-6">
+            <h2 className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+              <span className="h-2 w-2 rounded-full" style={{ background: c }} /> {g} · {groupTasks.length}
+            </h2>
+            <div className="mt-2 space-y-2">
+              {groupTasks.map((t: Task, i: number) => {
+                const active = activeTask === t.id;
+                return (
+                  <div key={t.id} className={`rounded-xl border p-3 transition ${active ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
+                    <div className="flex items-start gap-3">
+                      <button onClick={() => toggleTask(t.id)} aria-label={`Mark ${t.title} done`}
+                        className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-muted-foreground/40 transition hover:border-primary" />
+                      <button onClick={() => setActiveTask(t.id)} className="min-w-0 flex-1 text-left">
+                        <span className="block min-w-0 break-words text-sm leading-snug">{t.title}</span>
+                        <span className="mt-1 flex items-center gap-2">
+                          <TagPill tag={t.tag} />
+                          {active && (
+                            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                              <Timer size={10} /> Focusing
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-0.5">
+                        {!active && (
+                          <button onClick={() => onFocusTask(t.id)} aria-label={`Focus on ${t.title}`}
+                            className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
+                            <Play size={13} />
+                          </button>
+                        )}
+                        <button onClick={() => updateTaskEst(t.id, t.est - 1)} aria-label="Decrease estimated Pomodoros"
+                          className="grid h-7 w-6 place-items-center rounded text-muted-foreground transition hover:text-foreground">
+                          <Minus size={11} />
+                        </button>
+                        <span className="w-8 text-center font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+                        <button onClick={() => updateTaskEst(t.id, t.est + 1)} aria-label="Increase estimated Pomodoros"
+                          className="grid h-7 w-6 place-items-center rounded text-muted-foreground transition hover:text-foreground">
+                          <Plus size={11} />
+                        </button>
+                        <span className="flex flex-col">
+                          <button onClick={() => moveTask(t.id, -1)} disabled={i === 0} aria-label="Move task up"
+                            className="grid h-3.5 w-6 place-items-center text-muted-foreground transition hover:text-foreground disabled:opacity-25">
+                            <ChevronUp size={13} />
+                          </button>
+                          <button onClick={() => moveTask(t.id, 1)} disabled={i === groupTasks.length - 1} aria-label="Move task down"
+                            className="grid h-3.5 w-6 place-items-center text-muted-foreground transition hover:text-foreground disabled:opacity-25">
+                            <ChevronDown size={13} />
+                          </button>
+                        </span>
+                        <button onClick={() => removeTask(t.id)} aria-label={`Delete ${t.title}`}
+                          className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:text-destructive">
+                          <X size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <button onClick={() => removeTask(t.id)} className="text-muted-foreground opacity-100 transition hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100"><X size={16} /></button>
-          </div>
-        ))}
-      </div>
+          </section>
+        );
+      })}
+
+      {doneTasks.length > 0 && (
+        <section className="mt-8">
+          <button onClick={() => setShowDone((s) => !s)}
+            className="flex w-full items-center justify-between rounded-xl border border-border bg-card/60 px-3 py-2.5 text-left text-sm text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+            <span className="flex items-center gap-2"><Check size={14} className="text-roamly-green" /> Completed · {doneTasks.length}</span>
+            <ChevronDown size={15} className={`transition-transform ${showDone ? "rotate-180" : ""}`} />
+          </button>
+          {showDone && (
+            <div className="mt-2 space-y-2">
+              {doneTasks.map((t: Task) => (
+                <div key={t.id} className="flex items-center gap-3 rounded-xl border border-border bg-card/50 p-3">
+                  <button onClick={() => toggleTask(t.id)} aria-label={`Mark ${t.title} not done`}
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-roamly-green bg-roamly-green transition hover:opacity-80">
+                    <Check size={14} className="text-white" />
+                  </button>
+                  <span className="min-w-0 flex-1 break-words text-sm text-muted-foreground line-through">{t.title}</span>
+                  <TagPill tag={t.tag} />
+                  <button onClick={() => removeTask(t.id)} aria-label={`Delete ${t.title}`}
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:text-destructive">
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

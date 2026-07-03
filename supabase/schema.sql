@@ -133,6 +133,7 @@ create table public.tasks (
   done boolean not null default false,
   poms int not null default 0,
   est int not null default 2,
+  sort_order int, -- user-controlled ordering (Tasks page reorder arrows); null sorts last
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
