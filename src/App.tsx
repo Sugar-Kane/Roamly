@@ -423,13 +423,13 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <div className="h-full rounded-full" style={{ width: `${timer.progress * 100}%`, background: ring, transition: "width 1s linear" }} />
               </div>
               <div className="mt-2 flex items-center justify-between">
-                <div className="flex gap-1.5">
+                <div className="flex shrink-0 gap-1.5">
                   {Array.from({ length: method.cycles }).map((_, i) => (
                     <span key={i} className="h-1.5 w-6 rounded-full" style={{ background: i < timer.completedFocus % method.cycles ? ring : "hsl(var(--border))" }} />
                   ))}
                 </div>
                 {task && (
-                  <span className="truncate pl-3 text-sm text-muted-foreground">
+                  <span className="min-w-0 truncate pl-3 text-sm text-muted-foreground">
                     <span className="text-foreground">{task.title}</span>
                   </span>
                 )}
@@ -455,7 +455,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       </section>
 
       <div className="grid gap-8 lg:grid-cols-2">
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <div>
             <h2 className="mb-3 font-display text-lg font-semibold">Method</h2>
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -483,14 +483,14 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <button key={t.id} onClick={() => setActiveTask(t.id)}
                   className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
                   <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
-                  <span className="flex-1 truncate text-sm">{t.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
                   <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
                 </button>
               ))}
             </div>
           </div>
         </div>
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <MusicPanel isPremium={isPremium} gateThen={gateThen} timer={timer} />
         </div>
       </div>
@@ -989,9 +989,9 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
             <button onClick={() => toggleTask(t.id)} className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${t.done ? "border-roamly-green bg-roamly-green" : "border-muted-foreground/40 hover:border-primary"}`}>
               {t.done && <Check size={14} className="text-white" />}
             </button>
-            <button onClick={() => setActiveTask(t.id)} className="flex flex-1 items-center gap-3 text-left">
+            <button onClick={() => setActiveTask(t.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary/10 text-[10px] font-semibold text-primary">{t.tag.slice(0, 2)}</span>
-              <span className={`flex-1 text-sm ${t.done ? "text-muted-foreground line-through" : ""}`}>{t.title}</span>
+              <span className={`min-w-0 flex-1 break-words text-sm ${t.done ? "text-muted-foreground line-through" : ""}`}>{t.title}</span>
             </button>
             <div className="flex shrink-0 items-center gap-1">
               <button onClick={() => updateTaskEst(t.id, t.est - 1)} aria-label="Decrease estimated Pomodoros"
