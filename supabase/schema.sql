@@ -199,6 +199,29 @@ create policy "rooms_delete_host"
   to authenticated
   using (auth.uid() = host_id);
 
+-- Auto-cleanup for hosted rooms left empty. The room delete policy above is
+-- host-only, but any lobby viewer can observe (via Realtime presence) that a
+-- room has sat empty and should be reaped — so this SECURITY DEFINER function
+-- lets them delete it, guarded to non-system rooms older than 2 minutes (the
+-- age guard prevents ever removing a freshly created room).
+create or replace function public.reap_room(p_room uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then raise exception 'not_signed_in'; end if;
+  delete from public.rooms
+   where id = p_room
+     and is_system = false
+     and created_at < now() - interval '2 minutes';
+end;
+$$;
+
+revoke execute on function public.reap_room(uuid) from public, anon;
+grant execute on function public.reap_room(uuid) to authenticated;
+
 -- Pure function: which phase ('focus' | 'short' | 'long') a room is in at a
 -- given instant, derived from its start time and cycle settings.
 create or replace function public.room_phase(p_room public.rooms, p_at timestamptz)

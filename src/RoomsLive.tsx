@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut } from "lucide-react";
+import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
-  fetchRooms, createRoom, deleteRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
+  fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
   fetchMessages, sendMessage, fetchFriendships, getPublicProfiles,
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
+import { playChime } from "./sound";
 import { VoiceDock } from "./RoomVoice";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
@@ -81,10 +82,22 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   const [active, setActive] = useState<LiveRoom | null>(null);
   const [occupancy, setOccupancy] = useState<Map<string, number>>(new Map());
   const [showCreate, setShowCreate] = useState(false);
+  const [query, setQuery] = useState("");
+  const [showAllHosted, setShowAllHosted] = useState(false);
+  const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
+  const emptySince = useRef<Map<string, number>>(new Map()); // hosted roomId → ms it went empty
   const now = useNow();
 
   const reload = useCallback(() => { fetchRooms().then(setRooms); }, []);
   useEffect(() => { reload(); }, [reload]);
+
+  // Accepted friends' user ids — used to surface friends' rooms at the top.
+  useEffect(() => {
+    fetchFriendships().then((rows) => {
+      const me = session.user.id;
+      setFriendIds(new Set(rows.filter((f) => f.status === "accepted").map((f) => (f.requester === me ? f.addressee : f.requester))));
+    });
+  }, [session.user.id]);
 
   // Keep the lobby list live as rooms are created/ended anywhere.
   useEffect(() => {
@@ -105,13 +118,34 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     const channels = rooms.map((room) => {
       const ch = client.channel(`room:${room.id}`);
       ch.on("presence", { event: "sync" }, () => {
-        setOccupancy((prev) => new Map(prev).set(room.id, Object.keys(ch.presenceState()).length));
+        const count = Object.keys(ch.presenceState()).length;
+        setOccupancy((prev) => new Map(prev).set(room.id, count));
+        // Track how long each hosted room has been empty, for the 2-min reap.
+        if (!room.is_system) {
+          if (count > 0) emptySince.current.delete(room.id);
+          else if (!emptySince.current.has(room.id)) emptySince.current.set(room.id, Date.now());
+        }
       }).subscribe();
       return ch;
     });
     return () => { channels.forEach((ch) => client.removeChannel(ch)); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomIdsKey, active]);
+
+  // Auto-end hosted rooms that have sat empty for 2 minutes. reap_room's own
+  // age guard makes this safe even if a room only just went empty.
+  useEffect(() => {
+    if (!supabase || active) return;
+    const iv = window.setInterval(() => {
+      const cutoff = Date.now() - 120_000;
+      let reaped = false;
+      for (const [id, since] of emptySince.current) {
+        if (since <= cutoff) { void reapRoom(id); emptySince.current.delete(id); reaped = true; }
+      }
+      if (reaped) reload();
+    }, 10_000);
+    return () => window.clearInterval(iv);
+  }, [active, reload]);
 
   // Arriving from a notification ("X invited you to …") — jump straight in.
   useEffect(() => {
@@ -150,7 +184,22 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   }
 
   const systemRooms = rooms.filter((r) => r.is_system);
-  const hostedRooms = rooms.filter((r) => !r.is_system);
+  const q = query.trim().toLowerCase();
+  // Hosted rooms: filter by search, then most-active first, then newest.
+  const hostedAll = rooms
+    .filter((r) => !r.is_system)
+    .filter((r) => !q || r.name.toLowerCase().includes(q) || (r.topic ?? "").toLowerCase().includes(q))
+    .sort((a, b) => {
+      const oa = occupancy.get(a.id) ?? 0;
+      const ob = occupancy.get(b.id) ?? 0;
+      if (ob !== oa) return ob - oa;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  const friendsRooms = hostedAll.filter((r) => r.host_id != null && friendIds.has(r.host_id));
+  const otherRooms = hostedAll.filter((r) => !(r.host_id != null && friendIds.has(r.host_id)));
+  const HOSTED_CAP = 10;
+  const visibleOther = showAllHosted ? otherRooms : otherRooms.slice(0, HOSTED_CAP);
+  const totalHosted = rooms.filter((r) => !r.is_system).length;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -170,6 +219,14 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
         </div>
       </div>
 
+      {totalHosted > 0 && (
+        <div className="relative mt-5">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search hosted rooms by name or topic…"
+            className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+        </div>
+      )}
+
       <section className="mt-6">
         <h2 className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
           <InfinityIcon size={13} /> Always-on rooms
@@ -181,18 +238,45 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
         </div>
       </section>
 
-      <section className="mt-6">
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Hosted by students</h2>
-        {hostedRooms.length === 0 ? (
-          <p className="mt-2 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
-            No hosted rooms right now — start one and your friends get notified.
-          </p>
-        ) : (
+      {friendsRooms.length > 0 && (
+        <section className="mt-6">
+          <h2 className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <Heart size={12} className="text-primary" /> Friends' rooms
+          </h2>
           <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            {hostedRooms.map((r) => (
+            {friendsRooms.map((r) => (
               <RoomCard key={r.id} room={r} now={now} count={occupancy.get(r.id) ?? 0} onJoin={() => join(r)} />
             ))}
           </div>
+        </section>
+      )}
+
+      <section className="mt-6">
+        <h2 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          {q ? "Search results" : "Hosted by students"}
+        </h2>
+        {otherRooms.length === 0 ? (
+          <p className="mt-2 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
+            {q
+              ? "No rooms match your search."
+              : friendsRooms.length > 0
+                ? "No other hosted rooms right now."
+                : "No hosted rooms right now — start one and your friends get notified."}
+          </p>
+        ) : (
+          <>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              {visibleOther.map((r) => (
+                <RoomCard key={r.id} room={r} now={now} count={occupancy.get(r.id) ?? 0} onJoin={() => join(r)} />
+              ))}
+            </div>
+            {!showAllHosted && otherRooms.length > HOSTED_CAP && (
+              <button onClick={() => setShowAllHosted(true)}
+                className="mt-3 w-full rounded-xl border border-border bg-card/60 py-2.5 text-sm font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                Show {otherRooms.length - HOSTED_CAP} more
+              </button>
+            )}
+          </>
         )}
       </section>
 
@@ -338,7 +422,22 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, o
     return () => { client.removeChannel(ch); };
   }, [room.id, userId, username]);
 
+  // Chime on every shared-timer phase boundary (study session ending and break
+  // ending), matching the personal timer. prevPhase seeds to the current phase
+  // so entering a room doesn't chime.
+  const prevPhase = useRef(info.phase);
+  useEffect(() => {
+    if (prevPhase.current !== info.phase) {
+      prevPhase.current = info.phase;
+      playChime();
+    }
+  }, [info.phase]);
+
+  // Ending is host-only and blocked during focus, so a host can't pull the room
+  // out from under people who are mid-session.
+  const canEnd = info.phase !== "focus";
   const endRoom = async () => {
+    if (!canEnd) return;
     await deleteRoom(room.id);
     onEnded();
   };
@@ -358,7 +457,9 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, o
             <UserPlus size={13} /> Invite
           </button>
           {isHost && (
-            <button onClick={endRoom} className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:text-destructive">
+            <button onClick={endRoom} disabled={!canEnd}
+              title={canEnd ? undefined : "You can end the room during a break"}
+              className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground">
               End room
             </button>
           )}
@@ -368,6 +469,9 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, o
           </button>
         </div>
       </div>
+      {isHost && !canEnd && (
+        <p className="mt-2 text-[11px] text-muted-foreground">You can end this room once the focus block reaches a break.</p>
+      )}
 
       <section className="mt-5 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
         <div className="flex flex-col items-center">

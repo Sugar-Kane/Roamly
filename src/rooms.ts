@@ -112,6 +112,19 @@ export async function deleteRoom(id: string) {
   if (error) console.warn("[Roamly] deleteRoom failed", error.message);
 }
 
+// Auto-cleanup for a hosted room the caller has observed empty. reap_room is
+// SECURITY DEFINER (so any signed-in lobby viewer can trigger it, not just the
+// host) and only deletes non-system rooms older than 2 minutes — the age guard
+// keeps it from ever removing a freshly created room. No-ops silently if the
+// function/migration isn't present yet.
+export async function reapRoom(id: string) {
+  if (!supabase) return;
+  const { error } = await supabase.rpc("reap_room", { p_room: id });
+  if (error && !error.message.includes("find the function") && !error.message.includes("does not exist")) {
+    console.warn("[Roamly] reapRoom failed", error.message);
+  }
+}
+
 export async function fetchMessages(roomId: string, limit = 50): Promise<RoomMessage[]> {
   if (!supabase) return [];
   const { data, error } = await supabase
