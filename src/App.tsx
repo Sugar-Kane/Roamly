@@ -127,8 +127,10 @@ export default function App() {
   const timer = useTimer(method, handlePhaseComplete);
 
   // --- Built-in focus sounds (free for everyone) ---
+  // Rain is preselected so sound plays the moment anyone hits Start, with no
+  // setup; the "Play with timer" toggle is the off switch.
   const [focusSound, setFocusSound] = useState<FocusSoundId | null>(
-    () => (localStorage.getItem("roamly-focus-sound") as FocusSoundId) || null
+    () => (localStorage.getItem("roamly-focus-sound") as FocusSoundId) || "rain"
   );
   const [soundAuto, setSoundAuto] = useState(() => localStorage.getItem("roamly-sound-auto") !== "off");
   const [soundVolume, setSoundVolume] = useState(() => {
