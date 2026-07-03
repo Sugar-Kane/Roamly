@@ -4,7 +4,6 @@ import Anthropic from "@anthropic-ai/sdk";
 const ALLOWED_MEDIA_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"] as const;
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 
-const DEFAULT_TAGS = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
 const FREE_MONTHLY_QUOTA = 3;
 const STORAGE_BUCKET = "study-uploads";
 const SIGNED_URL_TTL_SECONDS = 300;
@@ -112,7 +111,7 @@ export async function POST(request: Request): Promise<Response> {
   // The student's existing subjects steer Claude's tagging: reuse them when
   // they fit, invent an apt new one only when nothing matches. sort_order
   // continues the user's list; both queries tolerate the column not existing.
-  let existingTags: string[] = DEFAULT_TAGS;
+  let existingTags: string[] = [];
   let maxOrder = 0;
   {
     let q: { data: { tag?: string; sort_order?: number | null }[] | null; error: { message: string } | null } =
@@ -140,8 +139,10 @@ export async function POST(request: Request): Promise<Response> {
       system:
         "You extract a concrete study task list from uploaded lecture slides, syllabi, or notes for a Physician Assistant (PA) student. " +
         "Return one task per distinct topic or section you find (e.g. 'Review heart failure pathways', 'Practice 20 questions on beta-blockers') — skip cover pages, tables of contents, and filler. " +
-        `Assign each task a 'tag': a short subject label of one or two words. The student's existing subjects are: ${existingTags.join(", ")}. ` +
-        "Reuse one of those subjects whenever the material fits it; only introduce a new subject when none of them match (e.g. a neurology deck for a student with no Neuro subject), and use that same new subject consistently across related tasks. " +
+        "Assign each task a 'tag': a short subject label of one or two words. " +
+        (existingTags.length > 0
+          ? `The student's existing subjects are: ${existingTags.join(", ")}. Reuse one of those subjects whenever the material fits it; only introduce a new subject when none of them match, and use that same new subject consistently across related tasks. `
+          : "The student has no subjects yet — create apt short subject labels from the material and use each consistently across related tasks. ") +
         "Estimate 'est' as a rough number of 25-minute focus sessions (Pomodoros) the task would take, between 1 and 6. " +
         "Return at most 15 tasks, ordered by how the material is organized.",
       messages: [

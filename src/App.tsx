@@ -1018,7 +1018,7 @@ type DragState = { id: string; group: string; from: number; over: number; dy: nu
 
 function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, reorderTask, onFocusTask, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
   const [draft, setDraft] = useState("");
-  const [tag, setTag] = useState("Pharm");
+  const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
   const [showDone, setShowDone] = useState(false);
 
@@ -1115,17 +1115,21 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
     return { transition: "transform 0.15s ease" };
   };
 
-  const DEFAULT_TAGS = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
-  // Offer the defaults plus every subject already in use, so custom subjects
-  // stay pickable for the next task.
-  const tags: string[] = [...new Set<string>([...DEFAULT_TAGS, ...tasks.map((t: Task) => t.tag)])];
+  // No preset subjects: the dropdown offers exactly the subjects the user's
+  // own tasks carry. A subject disappears when its last task does.
+  const tags: string[] = [...new Set<string>(tasks.map((t: Task) => t.tag))];
+  const selectedTag = tags.includes(tag) ? tag : (tags[0] ?? "");
+  const noSubjectsYet = tags.length === 0;
+  // Free-typed subject input: explicit "＋ New subject…" pick, or forced when
+  // there are no subjects at all (very first task).
+  const showCustom = customTag !== null || noSubjectsYet;
 
   const add = () => {
-    const chosenTag = customTag !== null ? customTag.trim().slice(0, 24) : tag;
+    const chosenTag = showCustom ? (customTag ?? "").trim().slice(0, 24) : selectedTag;
     if (!draft.trim() || !chosenTag) return;
     addTask(draft.trim(), chosenTag);
     setDraft("");
-    if (customTag !== null) { setTag(chosenTag); setCustomTag(null); }
+    if (showCustom) { setTag(chosenTag); setCustomTag(null); }
   };
 
   const sorted = sortTasks(tasks);
@@ -1165,18 +1169,20 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add a study task…"
           className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-        {customTag !== null ? (
+        {showCustom ? (
           <span className="flex items-center gap-1">
-            <input value={customTag} onChange={(e) => setCustomTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
-              placeholder="New subject" maxLength={24} autoFocus aria-label="New subject name"
+            <input value={customTag ?? ""} onChange={(e) => setCustomTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder={noSubjectsYet ? "Subject — e.g. Pharm" : "New subject"} maxLength={24} autoFocus={customTag !== null} aria-label="New subject name"
               className="w-32 rounded-xl border border-primary bg-card px-3 py-3 text-sm outline-none ring-2 ring-primary/20" />
-            <button onClick={() => setCustomTag(null)} aria-label="Cancel new subject"
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:text-foreground">
-              <X size={15} />
-            </button>
+            {!noSubjectsYet && (
+              <button onClick={() => setCustomTag(null)} aria-label="Cancel new subject"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:text-foreground">
+                <X size={15} />
+              </button>
+            )}
           </span>
         ) : (
-          <select value={tag} aria-label="Subject"
+          <select value={selectedTag} aria-label="Subject"
             onChange={(e) => (e.target.value === "__new__" ? setCustomTag("") : setTag(e.target.value))}
             className="rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
             {tags.map((t) => <option key={t}>{t}</option>)}
