@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { SPOTIFY_PRESETS, parseSpotifyUrl, embedHeight, type SpotifyEmbedType } from "./spotify";
-import { SpotifyEmbed } from "./SpotifyEmbed";
+import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "./supabaseClient";
@@ -535,7 +534,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         </div>
       </section>
 
-      <MusicPanel isPremium={isPremium} gateThen={gateThen} timer={timer} />
+      <MusicPanel isPremium={isPremium} gateThen={gateThen} />
 
       <div className="grid gap-8 lg:grid-cols-2">
         <div className="min-w-0 space-y-6">
@@ -684,14 +683,8 @@ function ThemePicker({ themeId, setThemeId }: any) {
   );
 }
 
-function MusicPanel({ isPremium, gateThen, timer }: any) {
+function MusicPanel({ isPremium, gateThen }: any) {
   const [service, setService] = useState<"spotify" | "apple">("spotify");
-  const [sync, setSync] = useState(() => localStorage.getItem("roamly-music-sync") !== "off");
-  const toggleSync = () => {
-    const next = !sync;
-    setSync(next);
-    localStorage.setItem("roamly-music-sync", next ? "on" : "off");
-  };
 
   const [spotifySelectedId, setSpotifySelectedId] = useState<string | null>(null);
   const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
@@ -708,11 +701,6 @@ function MusicPanel({ isPremium, gateThen, timer }: any) {
 
   const applePreset = appleSelectedId ? APPLE_MUSIC_PRESETS.find((p) => p.id === appleSelectedId) ?? null : null;
   const appleTarget = appleCustomTarget ?? (applePreset ? { type: applePreset.type, path: applePreset.path } : null);
-
-  // Timer sync only works for Spotify (its embed exposes playback controls;
-  // Apple Music's doesn't). null = leave the player alone.
-  const syncActive = sync && isPremium && service === "spotify" && !!spotifyTarget;
-  const desiredPlaying = syncActive ? timer.running && timer.phase === "focus" : null;
 
   const selectSpotifyPreset = (id: string) => {
     setSpotifySelectedId(id);
@@ -776,21 +764,6 @@ function MusicPanel({ isPremium, gateThen, timer }: any) {
           </button>
         </div>
 
-        {/* Sync is Spotify-only — Apple Music's embed can't be driven by the
-            page, so the toggle isn't shown there. */}
-        {service === "spotify" && (
-          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-3 py-2">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Sync with timer</p>
-              <p className="text-[11px] leading-snug text-muted-foreground">Plays during focus, pauses for breaks.</p>
-            </div>
-            <button role="switch" aria-checked={sync} aria-label="Sync music with timer" onClick={toggleSync}
-              className={`relative h-6 w-11 shrink-0 rounded-full transition ${sync ? "bg-primary" : "bg-border"}`}>
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${sync ? "left-[22px]" : "left-0.5"}`} />
-            </button>
-          </div>
-        )}
-
         {service === "spotify" ? (
           <>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -826,17 +799,10 @@ function MusicPanel({ isPremium, gateThen, timer }: any) {
 
             <div className="mt-4 overflow-hidden rounded-xl">
               {spotifyTarget ? (
-                <>
-                  <SpotifyEmbed
-                    uri={`spotify:${spotifyTarget.type}:${spotifyTarget.id}`}
-                    height={embedHeight(spotifyTarget.type)}
-                    playing={desiredPlaying} />
-                  {syncActive && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
-                      If the music doesn't start with your first focus block, tap play in the player once — the browser needs one tap before it allows sound. After that it follows your timer.
-                    </p>
-                  )}
-                </>
+                <iframe key={`spotify-${spotifyTarget.type}-${spotifyTarget.id}`} src={toSpotifyEmbedSrc(spotifyTarget)} width="100%" height={embedHeight(spotifyTarget.type)}
+                  className="w-full" style={{ border: "none" }}
+                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                  loading="lazy" title="Spotify player" />
               ) : (
                 <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
                   Pick a preset or paste a link to start playing.
