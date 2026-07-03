@@ -392,6 +392,22 @@ as $$
    where id = any (p_ids) and auth.uid() is not null;
 $$;
 
+-- Exact-email friend lookup for the "add friend by email" flow. Signed-in
+-- callers only; case-insensitive match on a fully typed address (no partial
+-- search, so emails can't be enumerated); never returns the email itself.
+create or replace function public.find_user_by_email(p_email text)
+returns table (id uuid, username text, display_name text)
+language sql
+security definer
+set search_path = public
+as $$
+  select id, username, display_name
+    from public.profiles
+   where auth.uid() is not null
+     and id <> auth.uid()
+     and lower(email) = lower(trim(p_email));
+$$;
+
 -- Username/display-name search for the "add friend" flow. Requires a query of
 -- at least 2 chars, excludes the caller, and only surfaces users who have
 -- claimed a username.
@@ -512,6 +528,7 @@ $$;
 -- would let anonymous visitors call them through PostgREST. Restrict all of
 -- them to signed-in users (Supabase advisor lint 0028). service_role bypasses
 -- grants and is unaffected.
+revoke execute on function public.find_user_by_email(text) from public, anon;
 revoke execute on function public.get_public_profiles(uuid[]) from public, anon;
 revoke execute on function public.invite_to_room(uuid, uuid) from public, anon;
 revoke execute on function public.notify_friends_of_room(uuid, text) from public, anon;
@@ -520,6 +537,7 @@ revoke execute on function public.search_users(text) from public, anon;
 revoke execute on function public.send_friend_request(uuid) from public, anon;
 revoke execute on function public.set_username(text) from public, anon;
 
+grant execute on function public.find_user_by_email(text) to authenticated;
 grant execute on function public.get_public_profiles(uuid[]) to authenticated;
 grant execute on function public.invite_to_room(uuid, uuid) to authenticated;
 grant execute on function public.notify_friends_of_room(uuid, text) to authenticated;

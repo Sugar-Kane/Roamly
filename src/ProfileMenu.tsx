@@ -5,7 +5,7 @@
 // settings work signed-out too — they're stored locally on the device.
 
 import { useEffect, useRef, useState } from "react";
-import { Crown, LogIn, LogOut, ChevronRight } from "lucide-react";
+import { Crown, LogIn, LogOut, ChevronRight, Users } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import type { Profile } from "./db";
 
@@ -47,7 +47,7 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSignIn, onSignOut, onOpenPremium }: {
+export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSignIn, onSignOut, onOpenPremium, onOpenFriends }: {
   session: Session | null;
   profile: Profile | null;
   isPremium: boolean;
@@ -56,6 +56,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSign
   onSignIn: () => void;
   onSignOut: () => void;
   onOpenPremium: () => void;
+  onOpenFriends: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -110,6 +111,21 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSign
                   <span className="block truncate text-[11px] text-muted-foreground">
                     {isPremium ? "All features unlocked — view details" : "Upgrade for music, hosting, and more"}
                   </span>
+                </span>
+              </span>
+              <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
+            </button>
+          )}
+
+          {/* Friends */}
+          {session && (
+            <button onClick={() => { setOpen(false); onOpenFriends(); }}
+              className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2.5 text-left transition hover:border-primary/40">
+              <span className="flex min-w-0 items-center gap-2">
+                <Users size={15} className="shrink-0 text-primary" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">Friends</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">Add classmates by username or email</span>
                 </span>
               </span>
               <ChevronRight size={15} className="shrink-0 text-muted-foreground" />

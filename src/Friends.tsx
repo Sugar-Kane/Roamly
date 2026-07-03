@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { X, UserPlus, Check, Search, Users } from "lucide-react";
 import {
-  fetchFriendships, searchUsers, sendFriendRequest, respondFriendRequest, removeFriendship,
+  fetchFriendships, searchUsers, findUserByEmail, sendFriendRequest, respondFriendRequest, removeFriendship,
   setUsername, getPublicProfiles, type Friendship, type PublicProfile,
 } from "./rooms";
 import type { Profile } from "./db";
@@ -55,6 +55,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const [people, setPeople] = useState<Map<string, PublicProfile>>(new Map());
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PublicProfile[]>([]);
+  const [emailNoMatch, setEmailNoMatch] = useState(false);
   const [requested, setRequested] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
@@ -67,11 +68,24 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
 
   useEffect(() => { reload(); }, [reload]);
 
-  // Debounced user search.
+  // Debounced search: a full email address does an exact-match lookup (works
+  // even for classmates who haven't picked a username yet); anything else
+  // searches usernames/display names.
   useEffect(() => {
     const q = query.trim();
+    setEmailNoMatch(false);
     if (q.length < 2) { setResults([]); return; }
-    const t = setTimeout(() => searchUsers(q).then(setResults), 300);
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(q);
+    const t = setTimeout(() => {
+      if (isEmail) {
+        findUserByEmail(q).then((p) => {
+          setResults(p ? [p] : []);
+          setEmailNoMatch(!p);
+        });
+      } else {
+        searchUsers(q).then(setResults);
+      }
+    }, 300);
     return () => clearTimeout(t);
   }, [query]);
 
@@ -114,17 +128,20 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
 
             <div className="relative mt-4">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find classmates by username…"
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find classmates by username or email…"
                 className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
             </div>
             {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
+            {emailNoMatch && (
+              <p className="mt-1.5 text-xs text-muted-foreground">No Roamly account uses that email yet — double-check it, or invite them to sign up.</p>
+            )}
             {results.length > 0 && (
               <div className="mt-2 space-y-1.5">
                 {results.map((p) => {
                   const already = linkedIds.has(p.id) || requested.has(p.id);
                   return (
                     <div key={p.id} className="flex items-center justify-between rounded-xl border border-border bg-card/70 px-3 py-2">
-                      <PersonLabel person={p} />
+                      <PersonLabel person={p} fallbackName={query.trim()} />
                       <button onClick={() => add(p)} disabled={already}
                         className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
                         <UserPlus size={12} /> {already ? "Sent" : "Add"}
@@ -186,8 +203,10 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   );
 }
 
-function PersonLabel({ person }: { person: PublicProfile | undefined | null }) {
-  const name = displayNameOf(person);
+function PersonLabel({ person, fallbackName }: { person: PublicProfile | undefined | null; fallbackName?: string }) {
+  // fallbackName covers email-lookup results for users with no username yet:
+  // show the address the searcher typed rather than an anonymous "someone".
+  const name = person?.display_name || person?.username || fallbackName || "someone";
   return (
     <span className="flex min-w-0 items-center gap-2.5">
       <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-[10px] font-semibold uppercase text-primary">

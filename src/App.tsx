@@ -310,7 +310,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
         )}
         <ProfileMenu session={session} profile={profile} isPremium={isPremium}
           a11y={a11y} setA11y={setA11y}
-          onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} />
+          onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends} />
       </div>
     </header>
   );

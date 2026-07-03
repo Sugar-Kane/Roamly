@@ -149,6 +149,15 @@ export async function searchUsers(query: string): Promise<PublicProfile[]> {
   return (data ?? []) as PublicProfile[];
 }
 
+// Exact-email lookup (find_user_by_email is SECURITY DEFINER: signed-in
+// callers, full address required, returns public fields only — never emails).
+export async function findUserByEmail(email: string): Promise<PublicProfile | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("find_user_by_email", { p_email: email });
+  if (error) { console.warn("[Roamly] findUserByEmail failed", error.message); return null; }
+  return ((data ?? [])[0] as PublicProfile) ?? null;
+}
+
 export async function sendFriendRequest(targetId: string): Promise<string | null> {
   if (!supabase) return "Friends aren't available right now.";
   const { error } = await supabase.rpc("send_friend_request", { p_target: targetId });
