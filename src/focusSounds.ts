@@ -17,6 +17,39 @@ let source: AudioBufferSourceNode | null = null;
 let masterGain: GainNode | null = null;
 let lfo: OscillatorNode | null = null;
 let currentVolume = 0.5;
+let keeper: HTMLAudioElement | null = null;
+
+// ~50ms of silence as a WAV data URI, built deterministically at runtime.
+function silentWavURI(): string {
+  const n = 400;
+  const bytes = new Uint8Array(44 + n);
+  const dv = new DataView(bytes.buffer);
+  const w = (o: number, str: string) => { for (let i = 0; i < str.length; i++) bytes[o + i] = str.charCodeAt(i); };
+  w(0, "RIFF"); dv.setUint32(4, 36 + n, true); w(8, "WAVE");
+  w(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 8000, true); dv.setUint32(28, 8000, true); dv.setUint16(32, 1, true); dv.setUint16(34, 8, true);
+  w(36, "data"); dv.setUint32(40, n, true);
+  bytes.fill(128, 44); // 8-bit silence midpoint
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return "data:audio/wav;base64," + btoa(bin);
+}
+
+// Must be called synchronously inside a real tap/click. Two iOS Safari rules
+// make this necessary: (1) an AudioContext only starts inside a user gesture;
+// (2) WebAudio is muted by the hardware silent switch unless an HTML <audio>
+// element is playing, which promotes the session to "playback". The looping
+// silent keeper element satisfies both — on other browsers it's a no-op.
+export function unlockAudio() {
+  audioCtx();
+  if (!keeper) {
+    keeper = new Audio(silentWavURI());
+    keeper.loop = true;
+    keeper.volume = 0.01;
+    keeper.setAttribute("playsinline", "");
+  }
+  keeper.play().catch(() => { /* browsers that don't need the trick may refuse; fine */ });
+}
 
 function audioCtx(): AudioContext | null {
   const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -59,6 +92,9 @@ export function stopFocusSound(fadeSeconds = 0.6) {
     try { s?.stop(); } catch { /* already stopped */ }
     try { l?.stop(); } catch { /* already stopped */ }
     s?.disconnect(); l?.disconnect(); g.disconnect();
+    // Pause the iOS keeper after the fade (kept alive through it so the
+    // end-of-phase chime still plays in the unlocked session).
+    if (!source) keeper?.pause();
   }, fadeSeconds * 1000 + 100);
   source = null;
   masterGain = null;
@@ -75,6 +111,7 @@ export function setFocusVolume(volume: number) {
 export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   const audio = audioCtx();
   if (!audio) return;
+  keeper?.play().catch(() => { /* not unlocked yet; harmless */ });
   stopFocusSound(0.15); // replace whatever is playing
   currentVolume = volume;
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, type FocusSoundId } from "./focusSounds";
+import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
@@ -145,6 +145,7 @@ export default function App() {
     volume: soundVolume,
     playing: soundPlaying,
     choose: (id: FocusSoundId) => {
+      unlockAudio(); // synchronous, inside the tap — required by iOS
       localStorage.setItem("roamly-focus-sound", id);
       if (focusSound === id && soundPlaying) { stopFocusSound(); setSoundPlaying(false); return; }
       setFocusSound(id);
@@ -153,6 +154,7 @@ export default function App() {
     },
     toggle: () => {
       if (!focusSound) return;
+      unlockAudio();
       if (soundPlaying) { stopFocusSound(); setSoundPlaying(false); }
       else { startFocusSound(focusSound, soundVolume); setSoundPlaying(true); }
     },
@@ -593,7 +595,13 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             </div>
 
             <div className="flex items-center gap-3">
-              <button onClick={timer.running ? timer.pause : timer.start}
+              <button
+                onClick={() => {
+                  // Unlock audio inside the tap itself: iOS refuses to start
+                  // sound from the effect that fires after this handler.
+                  if (!timer.running) unlockAudio();
+                  (timer.running ? timer.pause : timer.start)();
+                }}
                 className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]"
                 style={{ background: ring }} aria-label={timer.running ? "Pause" : "Start"}>
                 {timer.running ? <><Pause size={22} fill="currentColor" /> Pause</> : <><Play size={22} fill="currentColor" /> Start</>}
