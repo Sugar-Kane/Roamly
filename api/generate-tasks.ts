@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 const ALLOWED_MEDIA_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"] as const;
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 
-const TAGS = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"] as const;
+const DEFAULT_TAGS = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
 const FREE_MONTHLY_QUOTA = 3;
 const STORAGE_BUCKET = "study-uploads";
 const SIGNED_URL_TTL_SECONDS = 300;
@@ -18,7 +18,7 @@ const TASKS_SCHEMA = {
         type: "object",
         properties: {
           title: { type: "string" },
-          tag: { type: "string", enum: [...TAGS] },
+          tag: { type: "string", description: "Short subject label, one or two words (e.g. 'Cardio', 'Neuro')" },
           est: { type: "integer" },
         },
         required: ["title", "tag", "est"],
@@ -109,6 +109,21 @@ export async function POST(request: Request): Promise<Response> {
     return jsonResponse({ error: "Couldn't read the uploaded file — try again." }, 500);
   }
 
+  // The student's existing subjects steer Claude's tagging: reuse them when
+  // they fit, invent an apt new one only when nothing matches. sort_order
+  // continues the user's list; both queries tolerate the column not existing.
+  let existingTags: string[] = DEFAULT_TAGS;
+  let maxOrder = 0;
+  {
+    let q: { data: { tag?: string; sort_order?: number | null }[] | null; error: { message: string } | null } =
+      await admin.from("tasks").select("tag, sort_order").eq("user_id", user.id);
+    if (q.error) q = await admin.from("tasks").select("tag").eq("user_id", user.id);
+    if (!q.error && q.data && q.data.length > 0) {
+      existingTags = [...new Set(q.data.map((r) => r.tag).filter((t): t is string => !!t))];
+      maxOrder = q.data.reduce((m, r) => Math.max(m, r.sort_order ?? 0), 0);
+    }
+  }
+
   const anthropic = new Anthropic({ apiKey: anthropicKey });
 
   const fileBlock =
@@ -125,7 +140,9 @@ export async function POST(request: Request): Promise<Response> {
       system:
         "You extract a concrete study task list from uploaded lecture slides, syllabi, or notes for a Physician Assistant (PA) student. " +
         "Return one task per distinct topic or section you find (e.g. 'Review heart failure pathways', 'Practice 20 questions on beta-blockers') — skip cover pages, tables of contents, and filler. " +
-        "Pick the closest matching tag for each task from the allowed set. Estimate 'est' as a rough number of 25-minute focus sessions (Pomodoros) the task would take, between 1 and 6. " +
+        `Assign each task a 'tag': a short subject label of one or two words. The student's existing subjects are: ${existingTags.join(", ")}. ` +
+        "Reuse one of those subjects whenever the material fits it; only introduce a new subject when none of them match (e.g. a neurology deck for a student with no Neuro subject), and use that same new subject consistently across related tasks. " +
+        "Estimate 'est' as a rough number of 25-minute focus sessions (Pomodoros) the task would take, between 1 and 6. " +
         "Return at most 15 tasks, ordered by how the material is organized.",
       messages: [
         {
@@ -144,7 +161,7 @@ export async function POST(request: Request): Promise<Response> {
       .slice(0, 15)
       .map((t) => ({
         title: t.title.trim(),
-        tag: (TAGS as readonly string[]).includes(t.tag) ? t.tag : "Clinical",
+        tag: (t.tag ?? "").trim().replace(/\s+/g, " ").slice(0, 24) || "General",
         est: Math.max(1, Math.min(6, Math.round(t.est) || 2)),
       }));
   } catch (err) {
@@ -166,10 +183,13 @@ export async function POST(request: Request): Promise<Response> {
     return jsonResponse({ error: "Couldn't find any tasks in that file." }, 422);
   }
 
-  const { data: inserted, error: insertError } = await admin
-    .from("tasks")
-    .insert(tasks.map((t) => ({ user_id: user.id, title: t.title, tag: t.tag, est: t.est })))
-    .select("id, title, tag, done, poms, est");
+  const rows = tasks.map((t, i) => ({ user_id: user.id, title: t.title, tag: t.tag, est: t.est, sort_order: maxOrder + i + 1 }));
+  let ins = await admin.from("tasks").insert(rows).select("*");
+  if (ins.error && ins.error.message.includes("sort_order")) {
+    // sort_order column not migrated in yet — insert without it.
+    ins = await admin.from("tasks").insert(rows.map(({ sort_order: _so, ...r }) => r)).select("*");
+  }
+  const { data: inserted, error: insertError } = ins;
   if (insertError || !inserted) {
     return jsonResponse({ error: "Generated tasks but couldn't save them — try again." }, 500);
   }

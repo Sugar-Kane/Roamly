@@ -166,10 +166,11 @@ export default function App() {
     }
   }, [session?.user.id, tasks]);
 
-  // Move a task one slot up/down within its subject group (open tasks only).
+  // Move a task to a target position within its subject group (open tasks
+  // only) — used by both the arrow buttons and press-and-hold dragging.
   // Tasks that predate the sort_order column are first normalized to 1..n in
-  // the current visual order, so the swap is always well-defined.
-  const moveTask = useCallback((id: string, dir: -1 | 1) => {
+  // the current visual order, so positions are always well-defined.
+  const reorderTask = useCallback((id: string, targetIndex: number) => {
     const sorted = sortTasks(tasks);
     const needsNormalize = sorted.some((t, i) => t.sort_order == null || sorted.findIndex((o) => o.sort_order === t.sort_order) !== i);
     const orders = new Map(sorted.map((t, i) => [t.id, needsNormalize ? i + 1 : (t.sort_order as number)]));
@@ -177,13 +178,16 @@ export default function App() {
     const me = sorted.find((t) => t.id === id);
     if (!me) return;
     const group = sorted.filter((t) => !t.done && t.tag === me.tag);
-    const i = group.findIndex((t) => t.id === id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= group.length) return;
-    const other = group[j];
-    const a = orders.get(me.id)!;
-    orders.set(me.id, orders.get(other.id)!);
-    orders.set(other.id, a);
+    const from = group.findIndex((t) => t.id === id);
+    const to = Math.max(0, Math.min(targetIndex, group.length - 1));
+    if (from < 0 || to === from) return;
+
+    // The group keeps its existing order slots; only membership order changes.
+    const slots = group.map((t) => orders.get(t.id)!);
+    const ids = group.map((t) => t.id);
+    ids.splice(from, 1);
+    ids.splice(to, 0, id);
+    ids.forEach((tid, i) => orders.set(tid, slots[i]));
 
     setTasks((prev) => prev.map((t) => (orders.get(t.id) !== t.sort_order ? { ...t, sort_order: orders.get(t.id) } : t)));
     if (session?.user.id) {
@@ -193,6 +197,14 @@ export default function App() {
       }
     }
   }, [tasks, session?.user.id]);
+
+  const moveTask = useCallback((id: string, dir: -1 | 1) => {
+    const sorted = sortTasks(tasks);
+    const me = sorted.find((t) => t.id === id);
+    if (!me) return;
+    const i = sorted.filter((t) => !t.done && t.tag === me.tag).findIndex((t) => t.id === id);
+    reorderTask(id, i + dir);
+  }, [tasks, reorderTask]);
 
   const focusTask = useCallback((id: string) => {
     setActiveTask(id);
@@ -225,7 +237,7 @@ export default function App() {
   // Tasks generated server-side by /api/generate-tasks are already persisted —
   // just prepend them to local state, no additional Supabase call needed.
   const addImportedTasks = useCallback((rows: Task[]) => {
-    setTasks((prev) => [...rows, ...prev]);
+    setTasks((prev) => [...prev, ...rows]);
   }, []);
 
   const startCheckout = useCallback(async () => {
@@ -286,7 +298,7 @@ export default function App() {
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               addTask={addTask} toggleTask={toggleTask} removeTask={removeTask} updateTaskEst={updateTaskEst}
-              moveTask={moveTask} onFocusTask={focusTask}
+              moveTask={moveTask} reorderTask={reorderTask} onFocusTask={focusTask}
               session={session} onSignIn={onSignIn}
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout} />
           )}
@@ -1017,11 +1029,106 @@ function TagPill({ tag }: { tag: string }) {
   );
 }
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, onFocusTask, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
+type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
+
+function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, reorderTask, onFocusTask, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("Pharm");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
   const [showDone, setShowDone] = useState(false);
+
+  // --- Press-and-hold drag reordering (works with touch and mouse) ---
+  // Hold a row ~0.4s to lift it, drag to a new spot in its subject group,
+  // release to drop. A quick tap or an immediate move (scrolling) never
+  // triggers it, and the arrow buttons remain as the accessible alternative.
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const dragRef = useRef<DragState | null>(null);
+  useEffect(() => { dragRef.current = drag; }, [drag]);
+  const press = useRef<{ id: string; group: string; groupIds: string[]; index: number; y: number; el: HTMLDivElement; pointerId: number; timer: number } | null>(null);
+  const rects = useRef<{ id: string; mid: number }[]>([]);
+  const justDragged = useRef(false);
+
+  const onRowPointerDown = (e: React.PointerEvent<HTMLDivElement>, id: string, group: string, groupIds: string[], index: number) => {
+    if ((e.target as HTMLElement).closest("[data-nodrag]")) return;
+    if (press.current) return;
+    const el = e.currentTarget;
+    const pointerId = e.pointerId;
+    const timer = window.setTimeout(() => {
+      const p = press.current;
+      if (!p) return;
+      rects.current = p.groupIds.map((gid) => {
+        const r = rowRefs.current.get(gid)?.getBoundingClientRect();
+        return { id: gid, mid: r ? r.top + r.height / 2 : 0 };
+      });
+      try { p.el.setPointerCapture(p.pointerId); } catch { /* pointer already gone */ }
+      (navigator as any).vibrate?.(10);
+      setDrag({ id: p.id, group: p.group, from: p.index, over: p.index, dy: 0, height: p.el.getBoundingClientRect().height });
+    }, 400);
+    press.current = { id, group, groupIds, index, y: e.clientY, el, pointerId, timer };
+  };
+
+  const onRowPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const p = press.current;
+    if (!p) return;
+    const d = dragRef.current;
+    if (!d) {
+      // Moved before the hold completed → it's a scroll, not a drag.
+      if (Math.abs(e.clientY - p.y) > 12) { clearTimeout(p.timer); press.current = null; }
+      return;
+    }
+    const dy = e.clientY - p.y;
+    const center = rects.current[d.from]?.mid + dy;
+    let over = d.from, best = Infinity;
+    rects.current.forEach((r, i) => {
+      const dist = Math.abs(center - r.mid);
+      if (dist < best) { best = dist; over = i; }
+    });
+    setDrag({ ...d, dy, over });
+  };
+
+  const onRowPointerUp = () => {
+    const p = press.current;
+    const d = dragRef.current;
+    if (p) clearTimeout(p.timer);
+    press.current = null;
+    if (d) {
+      if (d.over !== d.from) reorderTask(d.id, d.over);
+      justDragged.current = true;
+      window.setTimeout(() => { justDragged.current = false; }, 80);
+      setDrag(null);
+    }
+  };
+
+  const onRowPointerCancel = () => {
+    const p = press.current;
+    if (p) clearTimeout(p.timer);
+    press.current = null;
+    if (dragRef.current) setDrag(null);
+  };
+
+  // While a drag is live, stop the page from scrolling under the finger.
+  useEffect(() => {
+    if (!drag) return;
+    const stop = (e: TouchEvent) => e.preventDefault();
+    document.addEventListener("touchmove", stop, { passive: false });
+    document.body.style.userSelect = "none";
+    return () => {
+      document.removeEventListener("touchmove", stop);
+      document.body.style.userSelect = "";
+    };
+  }, [drag !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dragStyleFor = (group: string, id: string, index: number): React.CSSProperties | undefined => {
+    if (!drag || drag.group !== group) return undefined;
+    if (id === drag.id) {
+      return { transform: `translateY(${drag.dy}px) scale(1.02)`, zIndex: 20, position: "relative", boxShadow: "0 10px 28px rgba(0,0,0,0.18)", transition: "none" };
+    }
+    const shift = drag.height + 8; // 8px = space-y-2 gap
+    if (index > drag.from && index <= drag.over) return { transform: `translateY(${-shift}px)`, transition: "transform 0.15s ease" };
+    if (index < drag.from && index >= drag.over) return { transform: `translateY(${shift}px)`, transition: "transform 0.15s ease" };
+    return { transition: "transform 0.15s ease" };
+  };
 
   const DEFAULT_TAGS = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
   // Offer the defaults plus every subject already in use, so custom subjects
@@ -1046,7 +1153,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Use the −/+ buttons to adjust an estimate and the arrows to reorder within a subject." />
+        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Use the −/+ buttons to adjust an estimate. To reorder within a subject, use the arrows — or press and hold a task, then drag it." />
       </p>
       {tasks.length > 0 && (
         <div className="mt-4">
@@ -1102,6 +1209,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
 
       {groupNames.map((g) => {
         const groupTasks = open.filter((t: Task) => t.tag === g);
+        const groupIds = groupTasks.map((t: Task) => t.id);
         const c = tagColor(g);
         return (
           <section key={g} className="mt-6">
@@ -1111,12 +1219,20 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
             <div className="mt-2 space-y-2">
               {groupTasks.map((t: Task, i: number) => {
                 const active = activeTask === t.id;
+                const beingDragged = drag?.id === t.id;
                 return (
-                  <div key={t.id} className={`rounded-xl border p-3 transition ${active ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
+                  <div key={t.id}
+                    ref={(el) => { if (el) rowRefs.current.set(t.id, el); else rowRefs.current.delete(t.id); }}
+                    onPointerDown={(e) => onRowPointerDown(e, t.id, g, groupIds, i)}
+                    onPointerMove={onRowPointerMove}
+                    onPointerUp={onRowPointerUp}
+                    onPointerCancel={onRowPointerCancel}
+                    style={dragStyleFor(g, t.id, i)}
+                    className={`rounded-xl border p-3 transition ${beingDragged ? "border-primary bg-card" : active ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
                     <div className="flex items-start gap-3">
-                      <button onClick={() => toggleTask(t.id)} aria-label={`Mark ${t.title} done`}
+                      <button data-nodrag onClick={() => toggleTask(t.id)} aria-label={`Mark ${t.title} done`}
                         className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-muted-foreground/40 transition hover:border-primary" />
-                      <button onClick={() => setActiveTask(t.id)} className="min-w-0 flex-1 text-left">
+                      <button onClick={() => { if (!justDragged.current) setActiveTask(t.id); }} className="min-w-0 flex-1 text-left">
                         <span className="block min-w-0 break-words text-sm leading-snug">{t.title}</span>
                         <span className="mt-1 flex items-center gap-2">
                           <TagPill tag={t.tag} />
@@ -1127,7 +1243,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
                           )}
                         </span>
                       </button>
-                      <div className="flex shrink-0 items-center gap-0.5">
+                      <div data-nodrag className="flex shrink-0 items-center gap-0.5">
                         {!active && (
                           <button onClick={() => onFocusTask(t.id)} aria-label={`Focus on ${t.title}`}
                             className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
