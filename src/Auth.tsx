@@ -68,3 +68,54 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
     </div>
   );
 }
+
+// Shown when someone arrives from an invite (or password-recovery) email
+// link: they're already signed in magic-link-style but have no password, so
+// without this they couldn't sign back in later. Skippable — they're in a
+// valid session either way.
+export function SetPasswordModal({ onDone }: { onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  if (!supabase) return null;
+  const client = supabase;
+
+  const save = async () => {
+    if (password.length < 8) { setError("Use at least 8 characters."); return; }
+    if (password !== confirm) { setError("Passwords don't match."); return; }
+    setSaving(true);
+    setError(null);
+    const { error: err } = await client.auth.updateUser({ password });
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    onDone();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
+        <h3 className="font-display text-xl font-semibold">Welcome to Roamly!</h3>
+        <p className="mt-1.5 text-sm text-muted-foreground">
+          You're signed in. Set a password so you can sign back in next time.
+        </p>
+        <div className="mt-4 space-y-2.5">
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="New password (8+ characters)"
+            className="w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Confirm password"
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            className="w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+        </div>
+        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+        <button onClick={save} disabled={saving}
+          className="mt-4 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
+          {saving ? "Saving…" : "Save password"}
+        </button>
+        <button onClick={onDone} className="mt-3 w-full text-center text-xs text-muted-foreground underline">
+          Skip for now
+        </button>
+      </div>
+    </div>
+  );
+}

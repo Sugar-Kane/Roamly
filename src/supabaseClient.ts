@@ -4,6 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
+// Did this page load come from an invite/recovery email link? Must be read
+// here, before createClient below — Supabase's detectSessionInUrl consumes and
+// strips the #access_token=…&type=invite hash shortly after initialization.
+export const arrivedViaEmailLink =
+  typeof window !== "undefined" && /type=(invite|recovery)/.test(window.location.hash);
+
 export const supabaseEnabled = Boolean(url && anonKey);
 
 if (!supabaseEnabled) {

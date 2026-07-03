@@ -5,11 +5,11 @@ import { useTimer, fmt, type Phase } from "./useTimer";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
-import { supabase } from "./supabaseClient";
+import { supabase, arrivedViaEmailLink } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, type Profile, type AdminUser } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
-import { AuthPanel } from "./Auth";
+import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { RoomsLive } from "./RoomsLive";
 import { NotificationsBell } from "./Notifications";
@@ -37,6 +37,9 @@ export default function App() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  // True when this page load came from an invite/recovery email link — the
+  // user is signed in but passwordless, so we prompt them to set one.
+  const [needsPassword, setNeedsPassword] = useState(arrivedViaEmailLink);
   const alerts = useEndOfPhaseAlerts();
 
   const isPremium = profile?.is_premium ?? false;
@@ -325,6 +328,12 @@ export default function App() {
       <BottomNav nav={nav} view={view} setView={setView} />
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
+      {needsPassword && session && (
+        <SetPasswordModal onDone={() => {
+          setNeedsPassword(false);
+          history.replaceState(null, "", window.location.pathname);
+        }} />
+      )}
       {showFriends && session && (
         <FriendsModal session={session} profile={profile} onClose={() => setShowFriends(false)} onUsernameSet={handleUsernameSet} />
       )}
