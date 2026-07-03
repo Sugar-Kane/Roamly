@@ -8,10 +8,13 @@
 // oscillators with slow envelopes instead of static.
 
 export type FocusSoundId =
+  | "melody" | "lofi"
   | "bowl" | "om" | "chimes" | "stream"
   | "rain" | "ocean" | "brown" | "white";
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
+  { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
+  { id: "lofi", name: "Lofi beats", hint: "Mellow beat, jazzy chords" },
   { id: "bowl", name: "Singing bowl", hint: "Soft strikes, long resonance" },
   { id: "om", name: "Calm drone", hint: "Warm meditative hum" },
   { id: "chimes", name: "Wind chimes", hint: "Gentle drifting tones" },
@@ -234,6 +237,202 @@ function buildChimes(audio: AudioContext, out: GainNode): () => void {
   return () => { timers.forEach((t) => window.clearTimeout(t)); padStop(); };
 }
 
+function buildMelody(audio: AudioContext, out: GainNode): () => void {
+  const timers: number[] = [];
+  const oscs: OscillatorNode[] = [];
+
+  // Chord pad: Am → F → C → G voicings, one gain per chord, crossfaded on a
+  // slow loop. All 12 oscillators run continuously; only the ramps move.
+  const padLp = audio.createBiquadFilter(); padLp.type = "lowpass"; padLp.frequency.value = 800;
+  padLp.connect(out);
+  const chords: number[][] = [
+    [220.0, 261.63, 329.63], // Am
+    [174.61, 220.0, 261.63], // F
+    [196.0, 261.63, 329.63], // C (2nd inversion-ish)
+    [196.0, 246.94, 293.66], // G
+  ];
+  const chordGains: GainNode[] = chords.map((freqs, i) => {
+    const g = audio.createGain();
+    g.gain.value = i === 0 ? 0.11 : 0.0001;
+    g.connect(padLp);
+    for (const f of freqs) {
+      // Detuned pair per voice for warmth.
+      for (const det of [0.9985, 1.0015]) {
+        const o = audio.createOscillator(); o.type = "triangle"; o.frequency.value = f * det;
+        const vg = audio.createGain(); vg.gain.value = 0.33;
+        o.connect(vg); vg.connect(g); o.start();
+        oscs.push(o);
+      }
+    }
+    return g;
+  });
+  let chordIdx = 0;
+  const CHORD_SECONDS = 12;
+  const nextChord = () => {
+    const from = chordGains[chordIdx];
+    chordIdx = (chordIdx + 1) % chords.length;
+    const to = chordGains[chordIdx];
+    const t = audio.currentTime;
+    from.gain.cancelScheduledValues(t);
+    from.gain.setValueAtTime(from.gain.value, t);
+    from.gain.linearRampToValueAtTime(0.0001, t + 3);
+    to.gain.cancelScheduledValues(t);
+    to.gain.setValueAtTime(to.gain.value, t);
+    to.gain.linearRampToValueAtTime(0.11, t + 3);
+    timers.push(window.setTimeout(nextChord, CHORD_SECONDS * 1000));
+  };
+  timers.push(window.setTimeout(nextChord, CHORD_SECONDS * 1000));
+
+  // Lead: A-minor pentatonic, mostly stepwise motion so it reads as a tune.
+  const scale = [440.0, 523.25, 587.33, 659.25, 783.99, 880.0]; // A C D E G A
+  let noteIdx = Math.floor(Math.random() * scale.length);
+  const note = () => {
+    // Prefer a neighbor step; occasionally leap or repeat.
+    const r = Math.random();
+    if (r < 0.4) noteIdx = Math.min(scale.length - 1, noteIdx + 1);
+    else if (r < 0.8) noteIdx = Math.max(0, noteIdx - 1);
+    else noteIdx = Math.floor(Math.random() * scale.length);
+    const o = audio.createOscillator(); o.type = "sine"; o.frequency.value = scale[noteIdx];
+    const g = audio.createGain();
+    const t = audio.currentTime;
+    const release = rand(2, 3);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(rand(0.14, 0.2), t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + release);
+    let tail: AudioNode = g;
+    if (audio.createStereoPanner) {
+      const pan = audio.createStereoPanner(); pan.pan.value = rand(-0.35, 0.35);
+      g.connect(pan); tail = pan;
+    }
+    o.connect(g); tail.connect(out);
+    o.start(t); o.stop(t + release + 0.2);
+  };
+  const scheduleNote = () => {
+    // ~15% of slots are rests (schedule the wait, skip the note).
+    const id = window.setTimeout(() => {
+      if (Math.random() > 0.15) note();
+      scheduleNote();
+    }, rand(2000, 4500));
+    timers.push(id);
+  };
+  note();
+  scheduleNote();
+
+  return () => {
+    timers.forEach((t) => window.clearTimeout(t));
+    for (const o of oscs) { try { o.stop(); } catch { /* stopped */ } o.disconnect(); }
+  };
+}
+
+function buildLofi(audio: AudioContext, out: GainNode): () => void {
+  // Everything runs through one warm lowpass bus.
+  const bus = audio.createGain(); bus.gain.value = 1;
+  const warm = audio.createBiquadFilter(); warm.type = "lowpass"; warm.frequency.value = 3500;
+  bus.connect(warm); warm.connect(out);
+
+  const noise = noiseBuffer(audio, "white");
+
+  // Vinyl bed: faint hiss plus sparse crackle pops.
+  const hiss = audio.createBufferSource(); hiss.buffer = noise; hiss.loop = true;
+  const hissBp = audio.createBiquadFilter(); hissBp.type = "bandpass"; hissBp.frequency.value = 4500; hissBp.Q.value = 0.5;
+  const hissG = audio.createGain(); hissG.gain.value = 0.012;
+  hiss.connect(hissBp); hissBp.connect(hissG); hissG.connect(out); hiss.start();
+  const crackleTimers: number[] = [];
+  const crackle = () => {
+    const s = audio.createBufferSource(); s.buffer = noise;
+    const g = audio.createGain();
+    const t = audio.currentTime;
+    g.gain.setValueAtTime(rand(0.03, 0.09), t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.02);
+    const hp = audio.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 2000;
+    s.connect(hp); hp.connect(g); g.connect(out);
+    s.start(t); s.stop(t + 0.03);
+    crackleTimers.push(window.setTimeout(crackle, rand(150, 900)));
+  };
+  crackle();
+
+  // Drum voices, scheduled on the audio clock for tight timing.
+  const kick = (t: number) => {
+    const o = audio.createOscillator(); o.type = "sine";
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+    o.connect(g); g.connect(bus);
+    o.start(t); o.stop(t + 0.3);
+  };
+  const snare = (t: number) => {
+    const s = audio.createBufferSource(); s.buffer = noise;
+    const bp = audio.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1800; bp.Q.value = 0.8;
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    s.connect(bp); bp.connect(g); g.connect(bus);
+    s.start(t); s.stop(t + 0.2);
+  };
+  const hat = (t: number, open: boolean) => {
+    const s = audio.createBufferSource(); s.buffer = noise;
+    const hp = audio.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 7000;
+    const g = audio.createGain();
+    const decay = open ? 0.12 : 0.04;
+    g.gain.setValueAtTime(open ? 0.07 : 0.05, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    s.connect(hp); hp.connect(g); g.connect(bus);
+    s.start(t); s.stop(t + decay + 0.02);
+  };
+  // One jazzy 7th chord per bar, alternating Fmaj7 / Em7.
+  const chordFreqs: number[][] = [
+    [174.61, 220.0, 261.63, 329.63], // Fmaj7
+    [164.81, 196.0, 246.94, 293.66], // Em7
+  ];
+  const chord = (t: number, bar: number, beatLen: number) => {
+    const freqs = chordFreqs[bar % 2];
+    const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1200;
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.085, t + 0.15);
+    g.gain.setTargetAtTime(0.0001, t + beatLen * 3, 0.5);
+    lp.connect(g); g.connect(bus);
+    for (const f of freqs) {
+      const o = audio.createOscillator(); o.type = "triangle"; o.frequency.value = f;
+      o.connect(lp);
+      o.start(t); o.stop(t + beatLen * 4 + 1.5);
+    }
+  };
+
+  // Lookahead scheduler: a coarse interval walks a 16-step (one bar) swung
+  // pattern, always booking events ~0.3s ahead on the audio clock so JS timer
+  // jitter never reaches the groove. 74 BPM, swung 8ths.
+  const BPM = 74;
+  const beatLen = 60 / BPM;
+  const stepLen = beatLen / 4; // 16th-note grid
+  const SWING = stepLen * 0.55; // pushes off-beat 8ths late
+  let step = 0;
+  let bar = 0;
+  let nextStepTime = audio.currentTime + 0.1;
+  const tick = window.setInterval(() => {
+    while (nextStepTime < audio.currentTime + 0.3) {
+      const swungTime = step % 4 === 2 ? nextStepTime + SWING : nextStepTime;
+      if (step === 0) { kick(swungTime); chord(swungTime, bar, beatLen); }
+      if (step === 7 && Math.random() < 0.35) kick(swungTime); // syncopated ghost kick
+      if (step === 8) kick(swungTime);
+      if (step === 4 || step === 12) snare(swungTime);
+      if (step % 2 === 0) hat(swungTime, step === 14 && Math.random() < 0.3);
+      step = (step + 1) % 16;
+      if (step === 0) bar++;
+      nextStepTime += stepLen;
+    }
+  }, 100);
+
+  return () => {
+    window.clearInterval(tick);
+    crackleTimers.forEach((t) => window.clearTimeout(t));
+    try { hiss.stop(); } catch { /* stopped */ }
+    hiss.disconnect();
+  };
+}
+
 // ---- public controls ----
 
 export function stopFocusSound(fadeSeconds = 0.6) {
@@ -277,7 +476,9 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   gain.connect(audio.destination);
 
   let stop: () => void;
-  if (id === "om") stop = buildOm(audio, gain);
+  if (id === "melody") stop = buildMelody(audio, gain);
+  else if (id === "lofi") stop = buildLofi(audio, gain);
+  else if (id === "om") stop = buildOm(audio, gain);
   else if (id === "bowl") stop = buildBowl(audio, gain);
   else if (id === "chimes") stop = buildChimes(audio, gain);
   else stop = buildNoise(audio, gain, id);
