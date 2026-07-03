@@ -1020,13 +1020,21 @@ function TagPill({ tag }: { tag: string }) {
 function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, onFocusTask, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("Pharm");
+  const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
   const [showDone, setShowDone] = useState(false);
+
+  const DEFAULT_TAGS = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
+  // Offer the defaults plus every subject already in use, so custom subjects
+  // stay pickable for the next task.
+  const tags: string[] = [...new Set<string>([...DEFAULT_TAGS, ...tasks.map((t: Task) => t.tag)])];
+
   const add = () => {
-    if (!draft.trim()) return;
-    addTask(draft.trim(), tag);
+    const chosenTag = customTag !== null ? customTag.trim().slice(0, 24) : tag;
+    if (!draft.trim() || !chosenTag) return;
+    addTask(draft.trim(), chosenTag);
     setDraft("");
+    if (customTag !== null) { setTag(chosenTag); setCustomTag(null); }
   };
-  const tags = ["Pharm", "Cardio", "Clinical", "PANCE", "Anatomy"];
 
   const sorted = sortTasks(tasks);
   const open = sorted.filter((t: Task) => !t.done);
@@ -1065,9 +1073,24 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add a study task…"
           className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-        <select value={tag} onChange={(e) => setTag(e.target.value)} className="rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
-          {tags.map((t) => <option key={t}>{t}</option>)}
-        </select>
+        {customTag !== null ? (
+          <span className="flex items-center gap-1">
+            <input value={customTag} onChange={(e) => setCustomTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
+              placeholder="New subject" maxLength={24} autoFocus aria-label="New subject name"
+              className="w-32 rounded-xl border border-primary bg-card px-3 py-3 text-sm outline-none ring-2 ring-primary/20" />
+            <button onClick={() => setCustomTag(null)} aria-label="Cancel new subject"
+              className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:text-foreground">
+              <X size={15} />
+            </button>
+          </span>
+        ) : (
+          <select value={tag} aria-label="Subject"
+            onChange={(e) => (e.target.value === "__new__" ? setCustomTag("") : setTag(e.target.value))}
+            className="rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+            {tags.map((t) => <option key={t}>{t}</option>)}
+            <option value="__new__">＋ New subject…</option>
+          </select>
+        )}
         <button onClick={add} aria-label="Add task" className="grid w-12 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95"><Plus size={20} /></button>
       </div>
 

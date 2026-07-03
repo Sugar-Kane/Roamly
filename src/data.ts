@@ -38,8 +38,9 @@ export function sortTasks(list: Task[]): Task[] {
   return [...list].sort((a, b) => (a.sort_order ?? Infinity) - (b.sort_order ?? Infinity));
 }
 
-// Stable accent color per subject tag (aligned with SUBJECT_SPLIT below);
-// unknown tags fall back to a warm neutral.
+// Stable accent color per subject tag (aligned with SUBJECT_SPLIT below).
+// Custom subjects hash into a fixed palette so each one keeps the same color
+// everywhere (pills, group headers) across sessions and devices.
 const TAG_COLORS: Record<string, string> = {
   Pharm: "#7C5CFA",
   Cardio: "#3B82F6",
@@ -48,8 +49,13 @@ const TAG_COLORS: Record<string, string> = {
   Anatomy: "#D97706",
 };
 
+const TAG_PALETTE = ["#DB2777", "#0D9488", "#9333EA", "#CA8A04", "#0284C7", "#DC2626", "#65A30D", "#7C3AED"];
+
 export function tagColor(tag: string): string {
-  return TAG_COLORS[tag] ?? "#8A8177";
+  if (TAG_COLORS[tag]) return TAG_COLORS[tag];
+  let h = 0;
+  for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
+  return TAG_PALETTE[h % TAG_PALETTE.length];
 }
 
 // Mock weekly focus minutes for the analytics dashboard.
