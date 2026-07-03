@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
+import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
@@ -124,6 +125,65 @@ export default function App() {
   }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks]);
 
   const timer = useTimer(method, handlePhaseComplete);
+
+  // --- Built-in focus sounds (free for everyone) ---
+  const [focusSound, setFocusSound] = useState<FocusSoundId | null>(
+    () => (localStorage.getItem("roamly-focus-sound") as FocusSoundId) || null
+  );
+  const [soundAuto, setSoundAuto] = useState(() => localStorage.getItem("roamly-sound-auto") !== "off");
+  const [soundVolume, setSoundVolume] = useState(() => {
+    const v = parseFloat(localStorage.getItem("roamly-sound-vol") ?? "0.5");
+    return Number.isNaN(v) ? 0.5 : v;
+  });
+  const [soundPlaying, setSoundPlaying] = useState(false);
+
+  const sounds = {
+    sound: focusSound,
+    auto: soundAuto,
+    volume: soundVolume,
+    playing: soundPlaying,
+    choose: (id: FocusSoundId) => {
+      localStorage.setItem("roamly-focus-sound", id);
+      if (focusSound === id && soundPlaying) { stopFocusSound(); setSoundPlaying(false); return; }
+      setFocusSound(id);
+      startFocusSound(id, soundVolume);
+      setSoundPlaying(true);
+    },
+    toggle: () => {
+      if (!focusSound) return;
+      if (soundPlaying) { stopFocusSound(); setSoundPlaying(false); }
+      else { startFocusSound(focusSound, soundVolume); setSoundPlaying(true); }
+    },
+    setAuto: (next: boolean) => {
+      setSoundAuto(next);
+      localStorage.setItem("roamly-sound-auto", next ? "on" : "off");
+    },
+    setVolume: (v: number) => {
+      setSoundVolume(v);
+      localStorage.setItem("roamly-sound-vol", String(v));
+      setFocusVolume(v);
+    },
+  };
+
+  // Sound follows the timer: plays during a running focus block, fades out for
+  // breaks and pauses. Lives here (not in the panel) so it keeps working when
+  // the user browses other tabs mid-session. It only reacts to TIMER
+  // transitions — manual previews while the timer is idle, and manual pauses
+  // mid-focus, are left alone.
+  const prevShouldPlay = useRef(false);
+  useEffect(() => {
+    if (!soundAuto || !focusSound) return;
+    const shouldPlay = timer.running && timer.phase === "focus";
+    if (shouldPlay === prevShouldPlay.current) return;
+    prevShouldPlay.current = shouldPlay;
+    if (shouldPlay) {
+      if (!focusSoundActive()) { startFocusSound(focusSound, soundVolume); setSoundPlaying(true); }
+    } else if (focusSoundActive()) {
+      stopFocusSound();
+      setSoundPlaying(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timer.running, timer.phase, soundAuto, focusSound]);
 
   // Premium isn't a bottom-nav tab: it's reached from the profile-menu plan
   // card and the upsell popups, so it doesn't need a permanent slot here.
@@ -299,7 +359,7 @@ export default function App() {
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} setExamDate={setExamDate} alerts={alerts}
-              session={session} onSignIn={onSignIn} />
+              session={session} onSignIn={onSignIn} sounds={sounds} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
@@ -488,7 +548,7 @@ function NotificationToggle({ alerts }: any) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn, sounds }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -547,6 +607,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           </div>
         </div>
       </section>
+
+      <FocusSoundsPanel sounds={sounds} />
 
       <MusicPanel isPremium={isPremium} gateThen={gateThen} />
 
@@ -693,6 +755,61 @@ function ThemePicker({ themeId, setThemeId }: any) {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// Built-in ambient sounds, free for everyone. Unlike the streaming embeds,
+// the app owns this audio, so it can follow the timer perfectly.
+function FocusSoundsPanel({ sounds }: any) {
+  return (
+    <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Volume2 size={16} className="text-primary" />
+          <h2 className="font-display text-lg font-semibold">Focus sounds</h2>
+        </div>
+        <button onClick={sounds.toggle} disabled={!sounds.sound}
+          aria-label={sounds.playing ? "Pause sound" : "Play sound"}
+          className="grid h-9 w-9 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">
+          {sounds.playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {FOCUS_SOUNDS.map((s) => {
+          const active = sounds.sound === s.id;
+          return (
+            <button key={s.id} onClick={() => sounds.choose(s.id)}
+              className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">{s.name}</span>
+                {active && sounds.playing && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+              </div>
+              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{s.hint}</p>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-3 py-2">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Play with timer</p>
+          <p className="text-[11px] leading-snug text-muted-foreground">Starts on focus, fades out for breaks.</p>
+        </div>
+        <button role="switch" aria-checked={sounds.auto} aria-label="Play sound with timer" onClick={() => sounds.setAuto(!sounds.auto)}
+          className={`relative h-6 w-11 shrink-0 rounded-full transition ${sounds.auto ? "bg-primary" : "bg-border"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${sounds.auto ? "left-[22px]" : "left-0.5"}`} />
+        </button>
+      </div>
+
+      <div className="mt-3 flex items-center gap-3 px-1">
+        <Volume2 size={14} className="shrink-0 text-muted-foreground" />
+        <input type="range" min={0} max={1} step={0.05} value={sounds.volume}
+          onChange={(e) => sounds.setVolume(Number(e.target.value))}
+          aria-label="Sound volume"
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-border accent-[hsl(var(--primary))]" />
+      </div>
     </div>
   );
 }
