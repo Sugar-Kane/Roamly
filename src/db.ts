@@ -4,6 +4,8 @@ import type { Task } from "./data";
 export type Profile = {
   id: string;
   email: string | null;
+  username: string | null;
+  display_name: string | null;
   is_premium: boolean;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
