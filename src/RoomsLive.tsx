@@ -573,11 +573,13 @@ function RoomChat({ room, userId, phase, secondsToBreak }: { room: LiveRoom; use
         )}
         {messages.map((m) => {
           const mine = m.user_id === userId;
-          const name = displayNameOf(names.get(m.user_id));
+          // Always attribute the message — the sender's name for others, "You"
+          // for your own — so every line shows who posted it.
+          const name = mine ? "You" : displayNameOf(names.get(m.user_id));
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[80%] rounded-2xl px-3 py-2 ${mine ? "gradient-primary text-white" : "bg-secondary text-secondary-foreground"}`}>
-                {!mine && <span className="block text-[10px] font-semibold opacity-70">{name}</span>}
+                <span className="block text-[10px] font-semibold opacity-70">{name}</span>
                 <span className="block whitespace-pre-wrap break-words text-sm leading-snug">{m.body}</span>
               </div>
             </div>

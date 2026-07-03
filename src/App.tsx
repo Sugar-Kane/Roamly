@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { SPOTIFY_PRESETS, parseSpotifyUrl, embedHeight, type SpotifyEmbedType } from "./spotify";
+import { parseSpotifyUrl, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { SpotifyEmbed } from "./SpotifyEmbed";
-import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
+import { parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, type Profile } from "./db";
@@ -684,6 +684,23 @@ function ThemePicker({ themeId, setThemeId }: any) {
   );
 }
 
+// A user-saved music station. There are no built-in presets — the list is
+// entirely whatever the user pastes and names, stored on-device.
+type SavedStation =
+  | { id: string; service: "spotify"; name: string; type: SpotifyEmbedType; spotifyId: string }
+  | { id: string; service: "apple"; name: string; type: AppleMusicEmbedType; path: string };
+
+function loadStations(): SavedStation[] {
+  try {
+    const v = JSON.parse(localStorage.getItem("roamly-stations") ?? "[]");
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+const capWord = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function MusicPanel({ isPremium, gateThen, timer }: any) {
   const [service, setService] = useState<"spotify" | "apple">("spotify");
   const [sync, setSync] = useState(() => localStorage.getItem("roamly-music-sync") !== "off");
@@ -693,65 +710,72 @@ function MusicPanel({ isPremium, gateThen, timer }: any) {
     localStorage.setItem("roamly-music-sync", next ? "on" : "off");
   };
 
-  const [spotifySelectedId, setSpotifySelectedId] = useState<string | null>(null);
-  const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
-  const [spotifyCustomError, setSpotifyCustomError] = useState(false);
-  const [spotifyCustomTarget, setSpotifyCustomTarget] = useState<{ type: SpotifyEmbedType; id: string } | null>(null);
+  const [stations, setStations] = useState<SavedStation[]>(loadStations);
+  const persist = (next: SavedStation[]) => {
+    setStations(next);
+    localStorage.setItem("roamly-stations", JSON.stringify(next));
+  };
 
-  const [appleSelectedId, setAppleSelectedId] = useState<string | null>(null);
-  const [appleCustomUrl, setAppleCustomUrl] = useState("");
-  const [appleCustomError, setAppleCustomError] = useState(false);
-  const [appleCustomTarget, setAppleCustomTarget] = useState<{ type: AppleMusicEmbedType; path: string } | null>(null);
+  // Currently loaded target for each service's embed.
+  const [spotifyTarget, setSpotifyTarget] = useState<{ type: SpotifyEmbedType; id: string } | null>(null);
+  const [appleTarget, setAppleTarget] = useState<{ type: AppleMusicEmbedType; path: string } | null>(null);
+  const [activeStationId, setActiveStationId] = useState<string | null>(null);
 
-  const spotifyPreset = spotifySelectedId ? SPOTIFY_PRESETS.find((p) => p.id === spotifySelectedId) ?? null : null;
-  const spotifyTarget = spotifyCustomTarget ?? (spotifyPreset ? { type: spotifyPreset.type, id: spotifyPreset.spotifyId } : null);
-
-  const applePreset = appleSelectedId ? APPLE_MUSIC_PRESETS.find((p) => p.id === appleSelectedId) ?? null : null;
-  const appleTarget = appleCustomTarget ?? (applePreset ? { type: applePreset.type, path: applePreset.path } : null);
+  const [url, setUrl] = useState("");
+  const [stationName, setStationName] = useState("");
+  const [error, setError] = useState(false);
 
   // Timer sync only works for Spotify (its embed exposes playback controls;
-  // Apple Music's doesn't). null = leave the player alone.
+  // Apple Music's iframe can't be driven by the page). null = leave alone.
   const syncActive = sync && isPremium && service === "spotify" && !!spotifyTarget;
   const desiredPlaying = syncActive ? timer.running && timer.phase === "focus" : null;
 
-  const selectSpotifyPreset = (id: string) => {
-    setSpotifySelectedId(id);
-    setSpotifyCustomTarget(null);
-    setSpotifyCustomUrl("");
-    setSpotifyCustomError(false);
+  const serviceStations = stations.filter((s) => s.service === service);
+  const canAdd = !!url.trim() && !!(service === "spotify" ? parseSpotifyUrl(url) : parseAppleMusicUrl(url));
+
+  const playStation = (s: SavedStation) => {
+    setActiveStationId(s.id);
+    setService(s.service);
+    if (s.service === "spotify") setSpotifyTarget({ type: s.type, id: s.spotifyId });
+    else setAppleTarget({ type: s.type, path: s.path });
   };
 
-  const applySpotifyUrl = (value: string) => {
-    setSpotifyCustomUrl(value);
-    if (!value.trim()) { setSpotifyCustomError(false); return; }
-    const parsed = parseSpotifyUrl(value);
-    if (parsed) {
-      setSpotifySelectedId(null);
-      setSpotifyCustomTarget(parsed);
-      setSpotifyCustomError(false);
+  // Pasting a valid link plays it immediately (no save required).
+  const onUrlChange = (v: string) => {
+    setUrl(v);
+    setError(false);
+    if (!v.trim()) return;
+    if (service === "spotify") {
+      const p = parseSpotifyUrl(v);
+      if (!p) { setError(true); return; }
+      setActiveStationId(null); setSpotifyTarget(p);
     } else {
-      setSpotifyCustomError(true);
+      const p = parseAppleMusicUrl(v);
+      if (!p) { setError(true); return; }
+      setActiveStationId(null); setAppleTarget(p);
     }
   };
 
-  const selectApplePreset = (id: string) => {
-    setAppleSelectedId(id);
-    setAppleCustomTarget(null);
-    setAppleCustomUrl("");
-    setAppleCustomError(false);
+  const addStation = () => {
+    if (service === "spotify") {
+      const p = parseSpotifyUrl(url);
+      if (!p) { setError(true); return; }
+      const station: SavedStation = { id: crypto.randomUUID(), service: "spotify", name: stationName.trim() || capWord(p.type), type: p.type, spotifyId: p.id };
+      persist([...stations, station]);
+      setActiveStationId(station.id); setSpotifyTarget({ type: p.type, id: p.id });
+    } else {
+      const p = parseAppleMusicUrl(url);
+      if (!p) { setError(true); return; }
+      const station: SavedStation = { id: crypto.randomUUID(), service: "apple", name: stationName.trim() || capWord(p.type), type: p.type, path: p.path };
+      persist([...stations, station]);
+      setActiveStationId(station.id); setAppleTarget({ type: p.type, path: p.path });
+    }
+    setUrl(""); setStationName("");
   };
 
-  const applyAppleUrl = (value: string) => {
-    setAppleCustomUrl(value);
-    if (!value.trim()) { setAppleCustomError(false); return; }
-    const parsed = parseAppleMusicUrl(value);
-    if (parsed) {
-      setAppleSelectedId(null);
-      setAppleCustomTarget(parsed);
-      setAppleCustomError(false);
-    } else {
-      setAppleCustomError(true);
-    }
+  const removeStation = (id: string) => {
+    persist(stations.filter((s) => s.id !== id));
+    if (activeStationId === id) setActiveStationId(null);
   };
 
   return (
@@ -776,126 +800,92 @@ function MusicPanel({ isPremium, gateThen, timer }: any) {
           </button>
         </div>
 
-        <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-3 py-2">
-          <div className="min-w-0">
-            <p className="text-sm font-medium">Sync with timer</p>
-            <p className="text-[11px] leading-snug text-muted-foreground">
-              {service === "spotify"
-                ? "Plays during focus, pauses for breaks."
-                : "Spotify only — Apple Music's player can't be controlled by the page."}
-            </p>
+        {/* Timer sync is Spotify-only — Apple Music's embed can't be driven by
+            the page, so the toggle simply isn't offered there. */}
+        {service === "spotify" && (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Sync with timer</p>
+              <p className="text-[11px] leading-snug text-muted-foreground">Plays during focus, pauses for breaks.</p>
+            </div>
+            <button role="switch" aria-checked={sync} aria-label="Sync music with timer" onClick={toggleSync}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${sync ? "bg-primary" : "bg-border"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${sync ? "left-[22px]" : "left-0.5"}`} />
+            </button>
           </div>
-          <button
-            role="switch"
-            aria-checked={sync && service === "spotify"}
-            aria-label="Sync music with timer"
-            disabled={service !== "spotify"}
-            onClick={toggleSync}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition ${service !== "spotify" ? "cursor-not-allowed bg-border opacity-50" : sync ? "bg-primary" : "bg-border"}`}>
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${sync && service === "spotify" ? "left-[22px]" : "left-0.5"}`} />
-          </button>
+        )}
+
+        {/* Your saved stations */}
+        {serviceStations.length > 0 ? (
+          <div className="space-y-1.5">
+            {serviceStations.map((s) => {
+              const active = activeStationId === s.id;
+              return (
+                <div key={s.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 transition ${active ? "border-primary bg-primary/5" : "border-border bg-card/60"}`}>
+                  <button onClick={() => playStation(s)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                    {active ? <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary" /> : <Play size={12} className="shrink-0 text-muted-foreground" />}
+                    <span className="min-w-0 truncate text-sm font-medium">{s.name}</span>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">{s.type}</span>
+                  </button>
+                  <button onClick={() => removeStation(s.id)} aria-label={`Remove ${s.name}`}
+                    className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground transition hover:text-destructive">
+                    <X size={13} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="rounded-xl border border-dashed border-border p-3 text-center text-[11px] text-muted-foreground">
+            No saved {service === "spotify" ? "Spotify" : "Apple Music"} stations yet — add one below.
+          </p>
+        )}
+
+        {/* Add your own */}
+        <div className="mt-3 space-y-2">
+          <input value={stationName} onChange={(e) => setStationName(e.target.value)} placeholder="Name (optional) — e.g. Lo-fi focus"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          <div className="flex gap-2">
+            <input value={url} onChange={(e) => onUrlChange(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && canAdd) addStation(); }}
+              placeholder={service === "spotify" ? "Paste a Spotify link…" : "Paste an Apple Music link…"}
+              className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            <button onClick={addStation} disabled={!canAdd} aria-label="Save station"
+              className="flex shrink-0 items-center gap-1 rounded-xl gradient-primary px-3 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-40">
+              <Plus size={16} /> Save
+            </button>
+          </div>
+          {error && (
+            <p className="text-[11px] text-destructive">
+              Couldn't read that link — paste a {service === "spotify" ? "track, playlist, album, artist, episode, or show URL from Spotify" : "album, playlist, song, artist, or station URL from Apple Music"}.
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground">Paste a link to play it now; add a name and Save to keep it here.</p>
         </div>
 
-        {service === "spotify" ? (
-          <>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {SPOTIFY_PRESETS.map((p) => {
-                const active = !spotifyCustomTarget && spotifySelectedId === p.id;
-                return (
-                  <button key={p.id} onClick={() => selectSpotifyPreset(p.id)}
-                    className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{p.name}</span>
-                      {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-                    </div>
-                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-4">
-              <label htmlFor="spotify-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                Or paste a Spotify link
-              </label>
-              <input id="spotify-url" type="text" value={spotifyCustomUrl}
-                onChange={(e) => applySpotifyUrl(e.target.value)}
-                placeholder="https://open.spotify.com/playlist/..."
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-              {spotifyCustomError && (
-                <p className="mt-1.5 text-[11px] text-destructive">
-                  Couldn't read that link — paste a track, playlist, album, artist, episode, or show URL from Spotify.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-4 overflow-hidden rounded-xl">
-              {spotifyTarget ? (
-                <>
-                  <SpotifyEmbed
-                    uri={`spotify:${spotifyTarget.type}:${spotifyTarget.id}`}
-                    height={embedHeight(spotifyTarget.type)}
-                    playing={desiredPlaying} />
-                  {syncActive && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
-                      If the music doesn't start with your first focus block, tap play in the player once — the browser needs one tap before it allows sound. After that it follows your timer.
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                  Pick a preset or paste a link to start playing.
-                </p>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {APPLE_MUSIC_PRESETS.map((p) => {
-                const active = !appleCustomTarget && appleSelectedId === p.id;
-                return (
-                  <button key={p.id} onClick={() => selectApplePreset(p.id)}
-                    className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{p.name}</span>
-                      {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-                    </div>
-                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-4">
-              <label htmlFor="apple-music-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                Or paste an Apple Music link
-              </label>
-              <input id="apple-music-url" type="text" value={appleCustomUrl}
-                onChange={(e) => applyAppleUrl(e.target.value)}
-                placeholder="https://music.apple.com/us/playlist/..."
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-              {appleCustomError && (
-                <p className="mt-1.5 text-[11px] text-destructive">
-                  Couldn't read that link — paste an album, playlist, song, artist, or station URL from Apple Music.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-4 overflow-hidden rounded-xl">
-              {appleTarget ? (
-                <iframe key={`apple-${appleTarget.type}-${appleTarget.path}`} src={toAppleEmbedSrc(appleTarget)} width="100%" height={appleEmbedHeight(appleTarget.type)}
-                  className="w-full" style={{ border: "none" }}
-                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                  loading="lazy" title="Apple Music player" />
-              ) : (
-                <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                  Pick a preset or paste a link to start playing.
-                </p>
-              )}
-            </div>
-          </>
-        )}
+        {/* Player */}
+        <div className="mt-4 overflow-hidden rounded-xl">
+          {service === "spotify" ? (
+            spotifyTarget ? (
+              <>
+                <SpotifyEmbed uri={`spotify:${spotifyTarget.type}:${spotifyTarget.id}`} height={embedHeight(spotifyTarget.type)} playing={desiredPlaying} />
+                {syncActive && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    If the music doesn't start with your first focus block, tap play in the player once — the browser needs one tap before it allows sound. After that it follows your timer.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Add a station or paste a Spotify link to start playing.</p>
+            )
+          ) : appleTarget ? (
+            <iframe key={`apple-${appleTarget.type}-${appleTarget.path}`} src={toAppleEmbedSrc(appleTarget)} width="100%" height={appleEmbedHeight(appleTarget.type)}
+              className="w-full" style={{ border: "none" }}
+              allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+              loading="lazy" title="Apple Music player" />
+          ) : (
+            <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Add a station or paste an Apple Music link to start playing.</p>
+          )}
+        </div>
       </div>
 
       {!isPremium && (
