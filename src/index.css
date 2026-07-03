@@ -43,6 +43,16 @@
   body { @apply bg-background text-foreground font-sans; margin: 0; -webkit-font-smoothing: antialiased; }
 }
 
+/* Accessibility: "Reduce motion" setting (profile menu). Near-zero durations
+   instead of `none` so transitionend/animationend events still fire. */
+.a11y-reduce-motion *,
+.a11y-reduce-motion *::before,
+.a11y-reduce-motion *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+}
+
 /* Custom utilities */
 @layer utilities {
   .gradient-primary { background: linear-gradient(135deg, hsl(var(--roamly-purple)), hsl(var(--roamly-blue))); }

@@ -11,6 +11,7 @@ import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, 
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel } from "./Auth";
+import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { RoomsLive } from "./RoomsLive";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
@@ -48,7 +49,20 @@ export default function App() {
     const base = METHODS.find((m) => m.id === methodId)!;
     return base.id === "custom" ? { ...base, ...custom } : base;
   }, [methodId, custom]);
-  const theme = useMemo(() => THEMES.find((t) => t.id === themeId)!, [themeId]);
+
+  const [a11y, setA11yState] = useState<A11ySettings>(loadA11y);
+  const setA11y = (next: A11ySettings) => {
+    setA11yState(next);
+    localStorage.setItem("roamly-a11y", JSON.stringify(next));
+  };
+
+  // Color-blind mode swaps the functional colors (focus vs break/success) to
+  // the Okabe-Ito blue/orange pair, which stays distinguishable across all
+  // common color-vision deficiencies. Decorative theme colors are untouched.
+  const theme = useMemo(() => {
+    const base = THEMES.find((t) => t.id === themeId)!;
+    return a11y.colorBlind ? { ...base, ring: "#0072B2", rest: "#E69F00" } : base;
+  }, [themeId, a11y.colorBlind]);
 
   // Track the signed-in session.
   useEffect(() => {
@@ -202,17 +216,29 @@ export default function App() {
 
   // Apply the active theme's palette to the document root so every CSS variable
   // (background, card, primary, etc.) updates live across the whole app.
+  // Accessibility overrides layer on top: they must run here (not as CSS
+  // classes) because the theme vars are inline styles, which beat stylesheets.
   useEffect(() => {
     const root = document.documentElement;
     Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
     root.classList.toggle("dark", !!theme.dark);
-  }, [theme]);
+    if (a11y.colorBlind) root.style.setProperty("--roamly-green", "41 100% 45%"); // Okabe-Ito orange
+    else root.style.removeProperty("--roamly-green"); // fall back to the stylesheet green
+    if (a11y.highContrast) {
+      root.style.setProperty("--muted-foreground", theme.vars["--foreground"]);
+      root.style.setProperty("--border", theme.vars["--foreground"]);
+    }
+    root.classList.toggle("a11y-reduce-motion", a11y.reduceMotion);
+    root.style.fontSize = a11y.largeText ? "112.5%" : "";
+  }, [theme, a11y]);
 
   return (
     <div className="min-h-screen w-full text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <div className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-7 md:px-8">
-        <Header isPremium={isPremium} streak={streak} session={session} onSignIn={onSignIn} onSignOut={onSignOut}
-          onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends} />
+        <Header isPremium={isPremium} streak={streak} session={session} profile={profile}
+          onSignIn={onSignIn} onSignOut={onSignOut}
+          onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends}
+          a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")} />
         <ThemePicker themeId={themeId} setThemeId={setThemeId} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
@@ -264,29 +290,27 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, onSignIn, onSignOut, onOpenRoom, onOpenFriends }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium }: any) {
+  // Single row on every screen size: the avatar (with the profile menu behind
+  // it) is always pinned to the top right. Plan status and sign out live
+  // inside the menu instead of loose header chips.
   return (
-    <header className="flex flex-wrap items-center justify-between gap-y-2">
-      <div className="flex items-baseline gap-3">
+    <header className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-baseline gap-3">
         <span className="font-display text-2xl font-semibold tracking-tight text-gradient">Roamly</span>
-        <span className="font-mono text-[11px] uppercase tracking-[0.22em] text-primary">Focus</span>
+        <span className="hidden font-mono text-[11px] uppercase tracking-[0.22em] text-primary sm:inline">Focus</span>
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <StreakBadge streak={streak} />
-        {isPremium && (
-          <span className="flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            <Crown size={13} /> Premium
-          </span>
-        )}
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="hidden sm:block"><StreakBadge streak={streak} /></span>
         {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} />}
-        {session ? (
-          <button onClick={onSignOut} className="text-xs text-muted-foreground underline">Sign out</button>
-        ) : (
+        {!session && (
           <button onClick={onSignIn} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
             <LogIn size={13} /> Sign in
           </button>
         )}
-        <div className="grid h-9 w-9 place-items-center rounded-full gradient-primary text-sm font-semibold text-white shadow-glow">PA</div>
+        <ProfileMenu session={session} profile={profile} isPremium={isPremium}
+          a11y={a11y} setA11y={setA11y}
+          onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} />
       </div>
     </header>
   );
