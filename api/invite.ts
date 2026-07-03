@@ -53,17 +53,35 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: `You've hit today's invite limit (${limit}). Try again tomorrow.` }, 429);
   }
 
-  // Already a Roamly user? Send a friend request instead of an email.
+  // Already a Roamly user?
   const { data: existing } = await admin.from("profiles").select("id").ilike("email", email).maybeSingle();
+  let resend = false;
   if (existing?.id) {
     if (existing.id === inviter.id) return json({ error: "That's your own account." }, 400);
-    const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
-    const { error: frErr } = await userClient.rpc("send_friend_request", { p_target: existing.id });
-    if (frErr) {
-      if (frErr.message.includes("already_exists")) return json({ status: "friend_request", note: "already_connected" }, 200);
-      return json({ error: "Couldn't send that friend request — try again." }, 500);
+
+    // A previously invited person who never accepted (invited, zero sign-ins)
+    // gets a fresh invite: delete the stale placeholder account (cascades its
+    // profile + the old pending friendship/notification) and fall through to
+    // re-invite below. Anyone who has ever signed in is a real account and is
+    // never deleted — they get a friend request instead.
+    const { data: authUser } = await admin.auth.admin.getUserById(existing.id);
+    const pendingInvitee = !!authUser?.user && !authUser.user.last_sign_in_at && !!authUser.user.invited_at;
+    if (pendingInvitee) {
+      const { error: delErr } = await admin.auth.admin.deleteUser(existing.id);
+      if (delErr) {
+        console.warn("[Roamly] invite resend: deleteUser failed", delErr.message);
+        return json({ error: "Couldn't resend that invite — try again." }, 500);
+      }
+      resend = true;
+    } else {
+      const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
+      const { error: frErr } = await userClient.rpc("send_friend_request", { p_target: existing.id });
+      if (frErr) {
+        if (frErr.message.includes("already_exists")) return json({ status: "friend_request", note: "already_connected" }, 200);
+        return json({ error: "Couldn't send that friend request — try again." }, 500);
+      }
+      return json({ status: "friend_request" }, 200);
     }
-    return json({ status: "friend_request" }, 200);
   }
 
   // New person: email them a Supabase Auth invite (creates the auth user).
@@ -86,5 +104,5 @@ export async function POST(request: Request): Promise<Response> {
   await admin.from("notifications").insert({ user_id: invited.user.id, actor_id: inviter.id, kind: "friend_request" });
   await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: invited.user.id });
 
-  return json({ status: "invited" }, 200);
+  return json(resend ? { status: "invited", note: "resent" } : { status: "invited" }, 200);
 }

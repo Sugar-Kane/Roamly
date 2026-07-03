@@ -1456,7 +1456,14 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
     const res = await sendInvite(inviteEmail.trim());
     setInviting(false);
     if (res.error) { setInviteMsg({ ok: false, text: res.error }); return; }
-    setInviteMsg({ ok: true, text: res.status === "friend_request" ? "Already a user — friend request sent." : `Invite emailed to ${inviteEmail.trim()}.` });
+    setInviteMsg({
+      ok: true,
+      text: res.status === "friend_request"
+        ? "Already a user — friend request sent."
+        : res.note === "resent"
+          ? `Invite re-sent to ${inviteEmail.trim()}.`
+          : `Invite emailed to ${inviteEmail.trim()}.`,
+    });
     setInviteEmail("");
   };
 

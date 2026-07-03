@@ -69,7 +69,13 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
     setInviting(false);
     if (res.error) { setInviteError(res.error); return; }
     setInvitedEmail(addr.toLowerCase());
-    setInviteMsg(res.status === "friend_request" ? "They're already on Roamly — friend request sent." : "Invite sent — they'll get an email to join.");
+    setInviteMsg(
+      res.status === "friend_request"
+        ? "They're already on Roamly — friend request sent."
+        : res.note === "resent"
+          ? "Invite re-sent — they'll get a fresh email."
+          : "Invite sent — they'll get an email to join."
+    );
     reload();
   };
 
@@ -166,16 +172,33 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
               <div className="mt-2 space-y-1.5">
                 {results.map((p) => {
                   const already = linkedIds.has(p.id) || requested.has(p.id);
+                  // No username/display name = almost certainly someone who was
+                  // invited but hasn't accepted yet — offer a resend (the
+                  // server verifies they've truly never signed in).
+                  const looksPending = !p.username && !p.display_name;
                   return (
-                    <div key={p.id} className="flex items-center justify-between rounded-xl border border-border bg-card/70 px-3 py-2">
+                    <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2">
                       <PersonLabel person={p} fallbackName={query.trim()} />
-                      <button onClick={() => add(p)} disabled={already}
-                        className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
-                        <UserPlus size={12} /> {already ? "Sent" : "Add"}
-                      </button>
+                      <span className="flex shrink-0 items-center gap-1.5">
+                        {looksPending && (
+                          invitedEmail === query.trim().toLowerCase() ? (
+                            <span className="text-[11px] text-roamly-green">Re-sent ✓</span>
+                          ) : (
+                            <button onClick={() => invite(query.trim())} disabled={inviting}
+                              className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-50">
+                              <Mail size={12} /> {inviting ? "Sending…" : "Resend invite"}
+                            </button>
+                          )
+                        )}
+                        <button onClick={() => add(p)} disabled={already}
+                          className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
+                          <UserPlus size={12} /> {already ? "Sent" : "Add"}
+                        </button>
+                      </span>
                     </div>
                   );
                 })}
+                {inviteError && <p className="text-xs text-destructive">{inviteError}</p>}
               </div>
             )}
 
