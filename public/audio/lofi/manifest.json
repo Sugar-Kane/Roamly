@@ -4,55 +4,167 @@
     "title": "Airport Lounge",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
   },
   {
     "file": "/audio/lofi/backbay-lounge.mp3",
     "title": "Backbay Lounge",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
   },
   {
     "file": "/audio/lofi/lobby-time.mp3",
     "title": "Lobby Time",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
   },
   {
     "file": "/audio/lofi/george-street-shuffle.mp3",
     "title": "George Street Shuffle",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
   },
   {
     "file": "/audio/lofi/i-knew-a-guy.mp3",
     "title": "I Knew a Guy",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
   },
   {
     "file": "/audio/lofi/bass-walker.mp3",
     "title": "Bass Walker",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
   },
   {
     "file": "/audio/lofi/smooth-lovin.mp3",
     "title": "Smooth Lovin",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
   },
   {
     "file": "/audio/lofi/dreams-become-real.mp3",
     "title": "Dreams Become Real",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
-    "license": "CC BY 4.0"
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/wallpaper.mp3",
+    "title": "Wallpaper",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/cool-vibes.mp3",
+    "title": "Cool Vibes",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/local-forecast-elevator.mp3",
+    "title": "Local Forecast - Elevator",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/the-curtain-rises.mp3",
+    "title": "The Curtain Rises",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/vibe-ace.mp3",
+    "title": "Vibe Ace",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/meditation-impromptu-01.mp3",
+    "title": "Meditation Impromptu 01",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/meditation-impromptu-02.mp3",
+    "title": "Meditation Impromptu 02",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/meditation-impromptu-03.mp3",
+    "title": "Meditation Impromptu 03",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/healing.mp3",
+    "title": "Healing",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/reawakening.mp3",
+    "title": "Reawakening",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/peace-of-mind.mp3",
+    "title": "Peace of Mind",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/relaxing-piano-music.mp3",
+    "title": "Relaxing Piano Music",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/ossuary-1-a-beginning.mp3",
+    "title": "Ossuary 1 - A Beginning",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
   }
 ]
