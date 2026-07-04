@@ -43,6 +43,7 @@ export type MusicTrack = { file: string; title: string; artist: string; license:
 let playlist: MusicTrack[] | null = null; // null = manifest not loaded yet
 let musicEl: HTMLAudioElement | null = null;
 let musicSrcNode: MediaElementAudioSourceNode | null = null;
+let musicToken: object | null = null; // identifies the active music build (see buildMusic)
 
 const playlistReady = fetch("/audio/lofi/manifest.json")
   .then((r) => (r.ok ? r.json() : []))
@@ -559,6 +560,12 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
   musicSrcNode.connect(out);
   el.loop = false;
   el.volume = 1;
+  // All music builds share the one <audio> element and source node. When you
+  // switch tracks (e.g. Café → Calm) the previous sound's teardown fires ~250ms
+  // later (after its fade); this token makes that stale teardown a no-op so it
+  // can't pause/disconnect the track that just took over.
+  const token = {};
+  musicToken = token;
 
   let stopped = false;
   let order: MusicTrack[] = [];
@@ -581,10 +588,12 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
 
   return () => {
     stopped = true;
+    if (musicToken !== token) return; // a newer music build already took over
     el.onended = null;
     el.pause();
     el.removeAttribute("src");
     musicSrcNode?.disconnect();
+    musicToken = null;
   };
 }
 
