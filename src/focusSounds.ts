@@ -8,13 +8,14 @@
 // /audio/lofi and played as a shuffled playlist through the same graph.
 
 export type FocusSoundId =
-  | "melody" | "lofi"
+  | "melody" | "lofi" | "calm"
   | "bowl" | "om" | "chimes" | "stream"
   | "rain" | "ocean" | "brown" | "white";
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
   { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
   { id: "lofi", name: "Café music", hint: "Real tracks · mellow jazz" },
+  { id: "calm", name: "Calm music", hint: "Real tracks · ambient, meditative" },
   { id: "bowl", name: "Singing bowl", hint: "Soft strikes, long resonance" },
   { id: "om", name: "Calm drone", hint: "Warm meditative hum" },
   { id: "chimes", name: "Wind chimes", hint: "Gentle drifting tones" },
@@ -36,7 +37,9 @@ let keeper: HTMLAudioElement | null = null;
 // per-track licensing) bundled under /audio/lofi by the fetch-music workflow.
 // They play through one persistent <audio> element routed into the WebAudio
 // graph, so volume, fades, and the iOS handling all work like the synth sounds.
-export type MusicTrack = { file: string; title: string; artist: string; license: string };
+// category: "lofi" = chill jazz/lounge (Café music), "calm" = ambient/meditation.
+export type MusicCategory = "lofi" | "calm";
+export type MusicTrack = { file: string; title: string; artist: string; license: string; category?: MusicCategory };
 let playlist: MusicTrack[] | null = null; // null = manifest not loaded yet
 let musicEl: HTMLAudioElement | null = null;
 let musicSrcNode: MediaElementAudioSourceNode | null = null;
@@ -46,10 +49,27 @@ const playlistReady = fetch("/audio/lofi/manifest.json")
   .then((rows: MusicTrack[]) => { playlist = Array.isArray(rows) ? rows : []; })
   .catch(() => { playlist = []; });
 
+// Tracks in a category (falls back to the whole playlist if none are tagged
+// that way, so an unpopulated category still plays something).
+function tracksFor(category: MusicCategory): MusicTrack[] {
+  if (!playlist) return [];
+  const tagged = playlist.filter((t) => t.category === category);
+  return tagged.length > 0 ? tagged : playlist;
+}
+
+// Whether real tracks are available for a category. Returns false only once the
+// manifest has loaded and the category is genuinely empty (so we fall back to
+// synth); while loading (playlist === null) we optimistically say true.
+export function hasTracks(category: MusicCategory): boolean {
+  if (playlist === null) return true;
+  if (playlist.length === 0) return false;
+  return tracksFor(category).length > 0;
+}
+
 // CC BY 4.0 requires visible attribution — the sounds panel shows this line.
 export function musicCredit(): string | null {
   if (!playlist || playlist.length === 0) return null;
-  return `Café music: ${playlist[0].artist} (incompetech.com) · CC BY 4.0`;
+  return `Music: ${playlist[0].artist} (incompetech.com) · CC BY 4.0`;
 }
 
 function musicElement(): HTMLAudioElement {
@@ -530,9 +550,10 @@ function buildLofi(audio: AudioContext, out: GainNode): () => void {
   };
 }
 
-// Real-track playlist: shuffled order, advances on track end, reshuffles when
-// exhausted. The element routes through `out`, so fades/volume are shared.
-function buildMusic(audio: AudioContext, out: GainNode): () => void {
+// Real-track playlist for one category: shuffled order, advances on track end,
+// reshuffles when exhausted. The element routes through `out`, so fades/volume
+// are shared.
+function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory): () => void {
   const el = musicElement();
   if (!musicSrcNode) musicSrcNode = audio.createMediaElementSource(el);
   musicSrcNode.connect(out);
@@ -542,9 +563,11 @@ function buildMusic(audio: AudioContext, out: GainNode): () => void {
   let stopped = false;
   let order: MusicTrack[] = [];
   const nextTrack = () => {
-    if (stopped || !playlist || playlist.length === 0) return;
+    if (stopped) return;
+    const pool = tracksFor(category);
+    if (pool.length === 0) return;
     if (order.length === 0) {
-      order = [...playlist];
+      order = [...pool];
       for (let i = order.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [order[i], order[j]] = [order[j], order[i]];
@@ -609,9 +632,10 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
 
   let stop: () => void;
   if (id === "melody") stop = buildMelody(audio, gain);
-  // Café music plays real bundled tracks; the synth beat remains only as the
-  // fallback while the manifest is missing (e.g. before the music workflow ran).
-  else if (id === "lofi") stop = playlist === null || playlist.length > 0 ? buildMusic(audio, gain) : buildLofi(audio, gain);
+  // Café / Calm play real bundled tracks; the synth builders remain only as the
+  // fallback while that category's manifest is missing (e.g. before the workflow ran).
+  else if (id === "lofi") stop = hasTracks("lofi") ? buildMusic(audio, gain, "lofi") : buildLofi(audio, gain);
+  else if (id === "calm") stop = hasTracks("calm") ? buildMusic(audio, gain, "calm") : buildOm(audio, gain);
   else if (id === "om") stop = buildOm(audio, gain);
   else if (id === "bowl") stop = buildBowl(audio, gain);
   else if (id === "chimes") stop = buildChimes(audio, gain);

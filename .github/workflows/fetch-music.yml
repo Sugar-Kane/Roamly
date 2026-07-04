@@ -16,20 +16,37 @@ jobs:
         run: |
           set -e
           mkdir -p public/audio/lofi
-          # slug|Title — mellow jazz-lounge and calm instrumentals that suit studying.
+          # slug|Title|category — "lofi" = chill jazz/lounge, "calm" = ambient/
+          # meditation. A generous candidate list; the MIME/size check below
+          # drops any title that doesn't resolve, so extras are harmless.
           tracks=(
-            "airport-lounge|Airport Lounge"
-            "backbay-lounge|Backbay Lounge"
-            "lobby-time|Lobby Time"
-            "george-street-shuffle|George Street Shuffle"
-            "i-knew-a-guy|I Knew a Guy"
-            "bass-walker|Bass Walker"
-            "smooth-lovin|Smooth Lovin"
-            "dreams-become-real|Dreams Become Real"
+            "airport-lounge|Airport Lounge|lofi"
+            "backbay-lounge|Backbay Lounge|lofi"
+            "lobby-time|Lobby Time|lofi"
+            "george-street-shuffle|George Street Shuffle|lofi"
+            "i-knew-a-guy|I Knew a Guy|lofi"
+            "bass-walker|Bass Walker|lofi"
+            "smooth-lovin|Smooth Lovin|lofi"
+            "dreams-become-real|Dreams Become Real|lofi"
+            "wallpaper|Wallpaper|lofi"
+            "cool-vibes|Cool Vibes|lofi"
+            "local-forecast-elevator|Local Forecast - Elevator|lofi"
+            "the-curtain-rises|The Curtain Rises|lofi"
+            "vibe-ace|Vibe Ace|lofi"
+            "meditation-impromptu-01|Meditation Impromptu 01|calm"
+            "meditation-impromptu-02|Meditation Impromptu 02|calm"
+            "meditation-impromptu-03|Meditation Impromptu 03|calm"
+            "healing|Healing|calm"
+            "almost-in-f-tranquility|Almost in F - Tranquility|calm"
+            "serenity|Serenity|calm"
+            "reawakening|Reawakening|calm"
+            "peace-of-mind|Peace of Mind|calm"
+            "relaxing-piano-music|Relaxing Piano Music|calm"
+            "ossuary-1-a-beginning|Ossuary 1 - A Beginning|calm"
           )
           : > /tmp/manifest-lines
           for entry in "${tracks[@]}"; do
-            slug="${entry%%|*}"; title="${entry#*|}"
+            slug="${entry%%|*}"; rest="${entry#*|}"; title="${rest%%|*}"; category="${rest#*|}"
             enc=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$title")
             out="public/audio/lofi/$slug.mp3"
             got=""
@@ -41,8 +58,8 @@ jobs:
                 type=$(file -b --mime-type "$out")
                 size=$(stat -c%s "$out")
                 if [ "$type" = "audio/mpeg" ] && [ "$size" -gt 800000 ]; then
-                  echo "OK: $slug ($size bytes, $name)"
-                  echo "$slug|$title|$name" >> /tmp/manifest-lines
+                  echo "OK: $slug ($size bytes, $name, $category)"
+                  echo "$slug|$title|$name|$category" >> /tmp/manifest-lines
                   got=1; break
                 fi
                 echo "rejected: $slug from $name (type=$type size=$size)"
@@ -58,10 +75,11 @@ jobs:
           import json
           rows = []
           for line in open("/tmp/manifest-lines"):
-              slug, title, source = line.strip().split("|")
+              slug, title, source, category = line.strip().split("|")
               rows.append({"file": f"/audio/lofi/{slug}.mp3", "title": title,
                            "artist": "Kevin MacLeod", "source": source,
-                           "license": "CC0" if source == "freepd" else "CC BY 4.0"})
+                           "license": "CC0" if source == "freepd" else "CC BY 4.0",
+                           "category": category})
           json.dump(rows, open("public/audio/lofi/manifest.json", "w"), indent=2)
           EOF
       - name: Commit tracks

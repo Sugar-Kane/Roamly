@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music } from "lucide-react";
+import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
@@ -443,6 +443,9 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   const isHost = room.host_id === userId;
   const music = ((room.music || "lofi") as FocusSoundId);
   const canPickMusic = isHost && !room.is_system;
+  // Local, per-listener music mute — silences the background music just for you,
+  // completely separate from the voice controls (muting a mic / people talking).
+  const [musicMuted, setMusicMuted] = useState(() => localStorage.getItem("roamly-room-music-muted") === "on");
 
   // The room owns the audio engine while you're in it: tell App to stand down
   // its personal-timer sound sync, and hand control back on leave.
@@ -452,14 +455,23 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   }, [onInRoom]);
 
   // Room music follows the shared timer: the room's track plays during focus
-  // blocks and stops for breaks (honoring the global "Play with timer" switch).
-  // Deps only change at phase boundaries or when the host swaps the track, so
-  // this doesn't re-fire every tick. Stop on leave/unmount.
+  // blocks and stops for breaks (honoring the global "Play with timer" switch
+  // and this listener's local mute). Deps only change at phase boundaries, when
+  // the host swaps the track, or when you mute — not every tick. Stop on leave.
   useEffect(() => {
-    if (soundAuto && info.phase === "focus") startFocusSound(music);
+    if (soundAuto && !musicMuted && info.phase === "focus") startFocusSound(music);
     else stopFocusSound();
-  }, [info.phase, soundAuto, music]);
+  }, [info.phase, soundAuto, music, musicMuted]);
   useEffect(() => () => { stopFocusSound(); }, []);
+
+  const toggleMusicMuted = () => {
+    unlockAudio(); // iOS-safe resume when unmuting mid-focus
+    setMusicMuted((m) => {
+      const next = !m;
+      localStorage.setItem("roamly-room-music-muted", next ? "on" : "off");
+      return next;
+    });
+  };
 
   const chooseMusic = (id: FocusSoundId) => {
     unlockAudio();
@@ -576,11 +588,20 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           <h2 className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
             <Music size={13} className="text-primary" /> Room music
           </h2>
-          {!canPickMusic && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Lock size={11} /> {musicName}{room.is_system ? " · always on" : ""}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {!canPickMusic && (
+              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Lock size={11} /> {musicName}{room.is_system ? " · always on" : ""}
+              </span>
+            )}
+            {/* Mutes just the music for you — the voice/mic controls below are
+                separate and unaffected. */}
+            <button onClick={toggleMusicMuted}
+              aria-label={musicMuted ? "Unmute music" : "Mute music"}
+              className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${musicMuted ? "border-border bg-card text-muted-foreground hover:text-foreground" : "border-primary/50 bg-primary/10 text-primary"}`}>
+              {musicMuted ? <VolumeX size={13} /> : <Volume2 size={13} />} {musicMuted ? "Music muted" : "Music on"}
+            </button>
+          </div>
         </div>
         {canPickMusic ? (
           <>
