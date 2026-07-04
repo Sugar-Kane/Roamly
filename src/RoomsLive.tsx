@@ -480,7 +480,6 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   };
 
   const [roomImmersive, setRoomImmersive] = useState(false); // room focus-mode takeover
-  const [focusChatOpen, setFocusChatOpen] = useState(false); // chat panel inside focus mode
   const musicName = FOCUS_SOUNDS.find((s) => s.id === music)?.name ?? "Lofi beats";
 
   // Join the room's presence channel: everyone in it sees everyone else live,
@@ -651,12 +650,6 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         cycles={room.cycles} completed={info.focusIndex - 1}
         ring={phaseColor(info.phase)}
         onExit={() => setRoomImmersive(false)}
-        controls={
-          <button onClick={() => setFocusChatOpen((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition ${focusChatOpen ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-            <MessageCircle size={15} /> Chat
-          </button>
-        }
         music={
           <div>
             <div className="flex items-center justify-between gap-2">
@@ -669,7 +662,11 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
             <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · always on" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
           </div>
         }
-        extra={focusChatOpen ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} /> : undefined} />
+        extra={info.phase !== "focus"
+          ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={0} />
+          : <p className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 text-center text-xs text-muted-foreground">
+              <MessageCircle size={13} /> Chat opens when the focus block reaches a break.
+            </p>} />
     </div>
   );
 }
