@@ -381,13 +381,26 @@ function buildLofi(audio: AudioContext, out: GainNode): () => void {
     s.connect(hp); hp.connect(g); g.connect(bus);
     s.start(t); s.stop(t + decay + 0.02);
   };
-  // One jazzy 7th chord per bar, alternating Fmaj7 / Em7.
-  const chordFreqs: number[][] = [
-    [174.61, 220.0, 261.63, 329.63], // Fmaj7
-    [164.81, 196.0, 246.94, 293.66], // Em7
+  // ---- per-session character: every start sounds like a different track ----
+  const BPM = rand(68, 82);
+  const beatLen = 60 / BPM;
+  const stepLen = beatLen / 4; // 16th-note grid
+  const swing = stepLen * rand(0.5, 0.62); // pushes off-beat 8ths late
+  const transpose = Math.pow(2, Math.round(rand(-3, 3)) / 12); // random key
+  // Lofi-friendly 4-chord progressions (root-position 7th voicings), one
+  // chord per bar, looping every 4 bars.
+  const PROGRESSIONS: number[][][] = [
+    [[174.61, 220.0, 261.63, 329.63], [164.81, 196.0, 246.94, 293.66], [146.83, 174.61, 220.0, 261.63], [130.81, 164.81, 196.0, 246.94]], // Fmaj7 Em7 Dm7 Cmaj7
+    [[220.0, 261.63, 329.63, 392.0], [174.61, 220.0, 261.63, 329.63], [130.81, 164.81, 196.0, 246.94], [196.0, 246.94, 293.66, 329.63]],  // Am7 Fmaj7 Cmaj7 G6
+    [[146.83, 174.61, 220.0, 261.63], [196.0, 246.94, 293.66, 349.23], [130.81, 164.81, 196.0, 246.94], [220.0, 261.63, 329.63, 392.0]],  // Dm7 G7 Cmaj7 Am7
+    [[164.81, 196.0, 246.94, 293.66], [220.0, 261.63, 329.63, 392.0], [146.83, 174.61, 220.0, 261.63], [196.0, 246.94, 293.66, 349.23]],  // Em7 Am7 Dm7 G7
+    [[174.61, 220.0, 261.63, 329.63], [220.0, 261.63, 329.63, 392.0], [164.81, 196.0, 246.94, 293.66], [146.83, 174.61, 220.0, 261.63]],  // Fmaj7 Am7 Em7 Dm7
   ];
-  const chord = (t: number, bar: number, beatLen: number) => {
-    const freqs = chordFreqs[bar % 2];
+  const progression = PROGRESSIONS[Math.floor(Math.random() * PROGRESSIONS.length)];
+  const hatGrid = Math.random() < 0.7 ? 2 : 4; // swung 8ths vs sparser quarters
+
+  const chord = (t: number, barNum: number) => {
+    const freqs = progression[barNum % 4];
     const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1200;
     const g = audio.createGain();
     g.gain.setValueAtTime(0.0001, t);
@@ -395,32 +408,78 @@ function buildLofi(audio: AudioContext, out: GainNode): () => void {
     g.gain.setTargetAtTime(0.0001, t + beatLen * 3, 0.5);
     lp.connect(g); g.connect(bus);
     for (const f of freqs) {
-      const o = audio.createOscillator(); o.type = "triangle"; o.frequency.value = f;
+      const o = audio.createOscillator(); o.type = "triangle"; o.frequency.value = f * transpose;
       o.connect(lp);
       o.start(t); o.stop(t + beatLen * 4 + 1.5);
     }
   };
 
-  // Lookahead scheduler: a coarse interval walks a 16-step (one bar) swung
+  // Sparse lead: a soft chord-tone note an octave up, same envelope idea as
+  // the Melody sound's lead.
+  const lead = (t: number, freq: number) => {
+    const o = audio.createOscillator(); o.type = "sine"; o.frequency.value = freq;
+    const g = audio.createGain();
+    const release = rand(1.5, 2.5);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(rand(0.07, 0.11), t + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + release);
+    let tail: AudioNode = g;
+    if (audio.createStereoPanner) {
+      const pan = audio.createStereoPanner(); pan.pan.value = rand(-0.4, 0.4);
+      g.connect(pan); tail = pan;
+    }
+    o.connect(g); tail.connect(bus);
+    o.start(t); o.stop(t + release + 0.2);
+  };
+
+  // ---- per-bar plan: the groove varies bar to bar, with a breather or a
+  // small snare fill every 8th bar and occasional lead notes ----
+  type BarPlan = { kicks: Set<number>; hats: Set<number>; openHat: number; dropout: boolean; fill: boolean; melody: Map<number, number> };
+  const planBar = (barNum: number): BarPlan => {
+    const kicks = new Set<number>([0]);
+    if (Math.random() < 0.85) kicks.add(8);
+    const ghostSlots = [3, 6, 7, 10, 11, 14];
+    const ghosts = 1 + (Math.random() < 0.4 ? 1 : 0);
+    for (let i = 0; i < ghosts; i++) kicks.add(ghostSlots[Math.floor(Math.random() * ghostSlots.length)]);
+    const hats = new Set<number>();
+    for (let s = 0; s < 16; s += hatGrid) if (Math.random() < 0.9) hats.add(s);
+    const openHat = Math.random() < 0.35 ? [6, 10, 14][Math.floor(Math.random() * 3)] : -1;
+    const eighthBar = barNum % 8 === 7;
+    const dropout = eighthBar && Math.random() < 0.5;
+    const fill = eighthBar && !dropout;
+    const melody = new Map<number, number>();
+    if (Math.random() < 0.35) {
+      const chordNow = progression[barNum % 4];
+      const n = Math.random() < 0.5 ? 1 : 2;
+      for (let i = 0; i < n; i++) {
+        const s = [0, 4, 6, 8, 10, 12][Math.floor(Math.random() * 6)];
+        melody.set(s, chordNow[Math.floor(Math.random() * chordNow.length)] * 2 * transpose);
+      }
+    }
+    return { kicks, hats, openHat, dropout, fill, melody };
+  };
+  let plan = planBar(0);
+
+  // Lookahead scheduler: a coarse interval walks the 16-step (one bar) swung
   // pattern, always booking events ~0.3s ahead on the audio clock so JS timer
-  // jitter never reaches the groove. 74 BPM, swung 8ths.
-  const BPM = 74;
-  const beatLen = 60 / BPM;
-  const stepLen = beatLen / 4; // 16th-note grid
-  const SWING = stepLen * 0.55; // pushes off-beat 8ths late
+  // jitter never reaches the groove.
   let step = 0;
   let bar = 0;
   let nextStepTime = audio.currentTime + 0.1;
   const tick = window.setInterval(() => {
     while (nextStepTime < audio.currentTime + 0.3) {
-      const swungTime = step % 4 === 2 ? nextStepTime + SWING : nextStepTime;
-      if (step === 0) { kick(swungTime); chord(swungTime, bar, beatLen); }
-      if (step === 7 && Math.random() < 0.35) kick(swungTime); // syncopated ghost kick
-      if (step === 8) kick(swungTime);
-      if (step === 4 || step === 12) snare(swungTime);
-      if (step % 2 === 0) hat(swungTime, step === 14 && Math.random() < 0.3);
+      const swungTime = step % 4 === 2 ? nextStepTime + swing : nextStepTime;
+      if (step === 0) chord(swungTime, bar);
+      if (!plan.dropout) {
+        if (plan.kicks.has(step)) kick(swungTime);
+        if (step === 4 || step === 12) snare(swungTime);
+        if (plan.fill && (step === 13 || step === 15)) snare(swungTime); // drag into the next bar
+        if (plan.hats.has(step)) hat(swungTime, step === plan.openHat);
+      }
+      const leadFreq = plan.melody.get(step);
+      if (leadFreq) lead(swungTime, leadFreq);
       step = (step + 1) % 16;
-      if (step === 0) bar++;
+      if (step === 0) { bar++; plan = planBar(bar); }
       nextStepTime += stepLen;
     }
   }, 100);
