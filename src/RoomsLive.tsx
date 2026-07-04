@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX } from "lucide-react";
+import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
@@ -10,6 +10,7 @@ import {
 import { fmt } from "./useTimer";
 import { playChime } from "./sound";
 import { startFocusSound, stopFocusSound, unlockAudio, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
+import { FocusMode } from "./FocusMode";
 import { VoiceDock } from "./RoomVoice";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
@@ -478,6 +479,8 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     onMusicChange(id);        // updates local room → restarts the sync effect
     setRoomMusic(room.id, id); // persist so everyone in the room hears it
   };
+
+  const [roomImmersive, setRoomImmersive] = useState(false); // room focus-mode takeover
   const musicName = FOCUS_SOUNDS.find((s) => s.id === music)?.name ?? "Lofi beats";
 
   // Join the room's presence channel: everyone in it sees everyone else live,
@@ -581,6 +584,11 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           ))}
           {members.length === 0 && <span className="text-xs text-muted-foreground">Connecting…</span>}
         </div>
+
+        <button onClick={() => { unlockAudio(); setRoomImmersive(true); }}
+          className="mx-auto mt-5 flex items-center gap-2 rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
+          <Maximize2 size={15} /> Focus mode
+        </button>
       </section>
 
       <section className="mt-4 rounded-3xl border border-border bg-card/80 p-4 shadow-sm">
@@ -635,6 +643,26 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
       <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} />
 
       {showInvite && <InviteModal roomId={room.id} myId={userId} onClose={() => setShowInvite(false)} />}
+
+      <FocusMode open={roomImmersive} phase={info.phase} phaseLabel={PHASE_LABEL[info.phase]}
+        timeText={fmt(info.secondsLeft)} progress={1 - info.secondsLeft / info.phaseTotal}
+        title={room.name}
+        subtitle={room.is_system ? `${room.focus_min}/${room.short_min} rhythm · always on` : room.topic}
+        cycles={room.cycles} completed={info.focusIndex - 1}
+        ring={phaseColor(info.phase)}
+        onExit={() => setRoomImmersive(false)}
+        music={
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Room music</span>
+              <button onClick={toggleMusicMuted} aria-label={musicMuted ? "Unmute music" : "Mute music"}
+                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${musicMuted ? "border-border bg-card text-muted-foreground hover:text-foreground" : "border-primary/50 bg-primary/10 text-primary"}`}>
+                {musicMuted ? <VolumeX size={13} /> : <Volume2 size={13} />} {musicMuted ? "Music muted" : "Music on"}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · always on" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
+          </div>
+        } />
     </div>
   );
 }

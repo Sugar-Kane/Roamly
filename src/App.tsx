@@ -13,6 +13,7 @@ import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { RoomsLive } from "./RoomsLive";
+import { FocusMode, CompactSounds } from "./FocusMode";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import type { Session } from "@supabase/supabase-js";
@@ -21,6 +22,7 @@ type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
 
 export default function App() {
   const [view, setView] = useState<View>("focus");
+  const [immersive, setImmersive] = useState(false); // personal focus-mode takeover
   const [methodId, setMethodId] = useState("classic");
   const [themeId, setThemeId] = useState("coffee");
   const [tasks, setTasks] = useState<Task[]>(SEED_TASKS);
@@ -370,7 +372,8 @@ export default function App() {
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} setExamDate={setExamDate} alerts={alerts}
-              session={session} onSignIn={onSignIn} sounds={sounds} />
+              session={session} onSignIn={onSignIn} sounds={sounds}
+              enterFocus={() => setImmersive(true)} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
@@ -398,6 +401,26 @@ export default function App() {
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
+      <FocusMode open={immersive} phase={timer.phase}
+        phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
+        timeText={fmt(timer.secondsLeft)} progress={timer.progress}
+        title={tasks.find((t) => t.id === activeTask)?.title} subtitle={method.name}
+        cycles={method.cycles} completed={timer.completedFocus}
+        ring={timer.phase === "focus" ? theme.ring : theme.rest}
+        onExit={() => setImmersive(false)}
+        controls={
+          <>
+            <button onClick={() => { if (!timer.running) unlockAudio(); (timer.running ? timer.pause : timer.start)(); }}
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl px-8 font-semibold text-white shadow-glow transition active:scale-[0.98]"
+              style={{ background: timer.phase === "focus" ? theme.ring : theme.rest }} aria-label={timer.running ? "Pause" : "Resume"}>
+              {timer.running ? <><Pause size={20} fill="currentColor" /> Pause</> : <><Play size={20} fill="currentColor" /> Resume</>}
+            </button>
+            <button onClick={timer.skip} className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Skip">
+              <SkipForward size={18} />
+            </button>
+          </>
+        }
+        music={<CompactSounds sounds={sounds} />} />
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
       {needsPassword && session && (
@@ -560,7 +583,7 @@ function NotificationToggle({ alerts }: any) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn, sounds }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn, sounds, enterFocus }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -607,7 +630,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 onClick={() => {
                   // Unlock audio inside the tap itself: iOS refuses to start
                   // sound from the effect that fires after this handler.
-                  if (!timer.running) unlockAudio();
+                  if (!timer.running) { unlockAudio(); enterFocus?.(); } // Start also drops into focus mode
                   (timer.running ? timer.pause : timer.start)();
                 }}
                 className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]"
@@ -621,7 +644,13 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <SkipForward size={19} />
               </button>
             </div>
-            <NotificationToggle alerts={alerts} />
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => enterFocus?.()}
+                className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                <Timer size={13} /> Focus mode
+              </button>
+              <NotificationToggle alerts={alerts} />
+            </div>
           </div>
         </div>
       </section>
