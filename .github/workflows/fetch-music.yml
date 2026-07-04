@@ -1,0 +1,73 @@
+# One-shot helper: downloads free-license focus-music tracks into
+# public/audio/lofi/ and commits them, because the app's development
+# environment can't fetch audio itself. Tracks are Kevin MacLeod's — CC0
+# where mirrored on freepd.com, CC-BY 4.0 from incompetech.com otherwise
+# (credited in the manifest and app).
+name: Fetch focus music
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and validate tracks
+        run: |
+          set -e
+          mkdir -p public/audio/lofi
+          # slug|Title — mellow jazz-lounge and calm instrumentals that suit studying.
+          tracks=(
+            "airport-lounge|Airport Lounge"
+            "backbay-lounge|Backbay Lounge"
+            "lobby-time|Lobby Time"
+            "george-street-shuffle|George Street Shuffle"
+            "i-knew-a-guy|I Knew a Guy"
+            "bass-walker|Bass Walker"
+            "smooth-lovin|Smooth Lovin"
+            "dreams-become-real|Dreams Become Real"
+          )
+          : > /tmp/manifest-lines
+          for entry in "${tracks[@]}"; do
+            slug="${entry%%|*}"; title="${entry#*|}"
+            enc=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$title")
+            out="public/audio/lofi/$slug.mp3"
+            got=""
+            for src in "freepd|https://freepd.com/music/$enc.mp3" \
+                       "incompetech|https://incompetech.com/music/royalty-free/mp3-royaltyfree/$enc.mp3"; do
+              name="${src%%|*}"; url="${src#*|}"
+              echo "trying $url"
+              if curl -fsSL --max-time 120 -A "roamly-music-fetch" -o "$out" "$url"; then
+                type=$(file -b --mime-type "$out")
+                size=$(stat -c%s "$out")
+                if [ "$type" = "audio/mpeg" ] && [ "$size" -gt 800000 ]; then
+                  echo "OK: $slug ($size bytes, $name)"
+                  echo "$slug|$title|$name" >> /tmp/manifest-lines
+                  got=1; break
+                fi
+                echo "rejected: $slug from $name (type=$type size=$size)"
+              fi
+              rm -f "$out"
+            done
+            [ -z "$got" ] && echo "MISS: $title (no working source)"
+          done
+          count=$(wc -l < /tmp/manifest-lines)
+          echo "downloaded $count tracks"
+          [ "$count" -ge 3 ] || { echo "too few tracks — aborting without commit"; exit 1; }
+          python3 - <<'EOF'
+          import json
+          rows = []
+          for line in open("/tmp/manifest-lines"):
+              slug, title, source = line.strip().split("|")
+              rows.append({"file": f"/audio/lofi/{slug}.mp3", "title": title,
+                           "artist": "Kevin MacLeod", "source": source,
+                           "license": "CC0" if source == "freepd" else "CC BY 4.0"})
+          json.dump(rows, open("public/audio/lofi/manifest.json", "w"), indent=2)
+          EOF
+      - name: Commit tracks
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/audio/lofi
+          git commit -m "Add free-license focus music tracks (Kevin MacLeod, CC0/CC-BY)"
+          git push
