@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart } from "lucide-react";
+import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
   fetchMessages, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
+  setRoomMusic,
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
 import { playChime } from "./sound";
+import { startFocusSound, stopFocusSound, unlockAudio, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 import { VoiceDock } from "./RoomVoice";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
@@ -39,6 +41,11 @@ type RoomsLiveProps = {
   onOpenFriends: () => void;
   targetRoomId: string | null;
   onTargetConsumed: () => void;
+  // Whether the user's global "Play with timer" switch is on — the room music
+  // honors it as the mute path. onInRoom lets App hand audio control to the
+  // room (so the personal-timer sound effect doesn't fight it).
+  soundAuto: boolean;
+  onInRoom: (inRoom: boolean) => void;
 };
 
 export function RoomsLive(props: RoomsLiveProps) {
@@ -77,7 +84,7 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed }: RoomsLiveProps & { session: Session }) {
+function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom }: RoomsLiveProps & { session: Session }) {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [active, setActive] = useState<LiveRoom | null>(null);
   const [occupancy, setOccupancy] = useState<Map<string, number>>(new Map());
@@ -164,9 +171,19 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
 
   const join = (room: LiveRoom) => {
     if (!profile?.username) { onNeedUsername(); return; }
+    unlockAudio(); // synchronous, inside the tap — lets room music play on iOS
     setActive(room);
     notifyFriendsOfRoom(room.id, "room_joined");
   };
+
+  // Keep the joined room's fields fresh from the live lobby list — so when a
+  // host changes the room's music, everyone already inside picks it up.
+  useEffect(() => {
+    if (!active) return;
+    const fresh = rooms.find((r) => r.id === active.id);
+    if (fresh && fresh.music !== active.music) setActive(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rooms]);
 
   const host = () => {
     if (!profile?.username) { onNeedUsername(); return; }
@@ -174,6 +191,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   };
 
   const created = (room: LiveRoom) => {
+    unlockAudio(); // room music will start on iOS — this runs off the Create tap
     setShowCreate(false);
     setRooms((prev) => [room, ...prev]);
     setActive(room);
@@ -183,7 +201,8 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   if (active) {
     return (
       <RoomView room={active} session={session} profile={profile} now={now}
-        isPremium={isPremium} gateThen={gateThen}
+        isPremium={isPremium} gateThen={gateThen} soundAuto={soundAuto} onInRoom={onInRoom}
+        onMusicChange={(music) => setActive((prev) => (prev ? { ...prev, music } : prev))}
         onLeave={() => { setActive(null); reload(); }}
         onEnded={() => { setActive(null); reload(); }} />
     );
@@ -339,6 +358,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
   const [topic, setTopic] = useState("");
   const [preset, setPreset] = useState(0);
   const [cap, setCap] = useState(12);
+  const [music, setMusic] = useState<FocusSoundId>("lofi");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -348,7 +368,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
     setError(null);
     const { label, ...method } = ROOM_PRESETS[preset];
     void label;
-    const room = await createRoom(hostId, { name: name.trim(), topic: topic.trim() || "Open study", cap, ...method });
+    const room = await createRoom(hostId, { name: name.trim(), topic: topic.trim() || "Open study", cap, music, ...method });
     setSaving(false);
     if (!room) { setError("Couldn't create the room — try again."); return; }
     onCreated(room);
@@ -382,6 +402,13 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
               {[4, 8, 12, 20, 30].map((n) => <option key={n} value={n}>{n} people</option>)}
             </select>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted-foreground">Music</span>
+            <select value={music} onChange={(e) => setMusic(e.target.value as FocusSoundId)}
+              className="rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-primary">
+              {FOCUS_SOUNDS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
         </div>
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
         <button onClick={create} disabled={saving}
@@ -395,13 +422,16 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
 
 type Member = { id: string; username: string };
 
-function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, onEnded }: {
+function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, onInRoom, onMusicChange, onLeave, onEnded }: {
   room: LiveRoom;
   session: Session;
   profile: Profile | null;
   now: number;
   isPremium: boolean;
   gateThen: (fn: () => void) => void;
+  soundAuto: boolean;
+  onInRoom: (inRoom: boolean) => void;
+  onMusicChange: (music: FocusSoundId) => void;
   onLeave: () => void;
   onEnded: () => void;
 }) {
@@ -411,6 +441,32 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, o
   const [showInvite, setShowInvite] = useState(false);
   const info = roomPhaseAt(room, now);
   const isHost = room.host_id === userId;
+  const music = ((room.music || "lofi") as FocusSoundId);
+  const canPickMusic = isHost && !room.is_system;
+
+  // The room owns the audio engine while you're in it: tell App to stand down
+  // its personal-timer sound sync, and hand control back on leave.
+  useEffect(() => {
+    onInRoom(true);
+    return () => onInRoom(false);
+  }, [onInRoom]);
+
+  // Room music follows the shared timer: the room's track plays during focus
+  // blocks and stops for breaks (honoring the global "Play with timer" switch).
+  // Deps only change at phase boundaries or when the host swaps the track, so
+  // this doesn't re-fire every tick. Stop on leave/unmount.
+  useEffect(() => {
+    if (soundAuto && info.phase === "focus") startFocusSound(music);
+    else stopFocusSound();
+  }, [info.phase, soundAuto, music]);
+  useEffect(() => () => { stopFocusSound(); }, []);
+
+  const chooseMusic = (id: FocusSoundId) => {
+    unlockAudio();
+    onMusicChange(id);        // updates local room → restarts the sync effect
+    setRoomMusic(room.id, id); // persist so everyone in the room hears it
+  };
+  const musicName = FOCUS_SOUNDS.find((s) => s.id === music)?.name ?? "Lofi beats";
 
   // Join the room's presence channel: everyone in it sees everyone else live,
   // and disconnects (closed tabs included) drop out automatically.
@@ -513,6 +569,42 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, onLeave, o
           ))}
           {members.length === 0 && <span className="text-xs text-muted-foreground">Connecting…</span>}
         </div>
+      </section>
+
+      <section className="mt-4 rounded-3xl border border-border bg-card/80 p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            <Music size={13} className="text-primary" /> Room music
+          </h2>
+          {!canPickMusic && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Lock size={11} /> {musicName}{room.is_system ? " · always on" : ""}
+            </span>
+          )}
+        </div>
+        {canPickMusic ? (
+          <>
+            <p className="mt-1 text-xs text-muted-foreground">Your pick plays for everyone in the room, in sync with the timer.</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {FOCUS_SOUNDS.map((s) => {
+                const active = music === s.id;
+                return (
+                  <button key={s.id} onClick={() => chooseMusic(s.id)}
+                    className={`relative rounded-xl border px-3 py-2 text-left text-sm transition ${active ? "border-primary bg-primary/5 font-medium shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                    <span className="flex items-center gap-1.5">{s.name}
+                      {active && info.phase === "focus" && soundAuto && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+                    </span>
+                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{s.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {room.is_system ? "Always-on rooms play lofi beats for everyone." : "The host sets this room's music."}
+          </p>
+        )}
       </section>
 
       <VoiceDock roomId={room.id} userId={userId} username={username}

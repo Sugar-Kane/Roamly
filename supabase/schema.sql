@@ -277,6 +277,7 @@ create table public.rooms (
   long_min int not null default 15 check (long_min >= 5 and long_min <= 90),
   cycles int not null default 4 check (cycles >= 1 and cycles <= 10),
   cap int not null default 12 check (cap >= 2 and cap <= 50),
+  music text not null default 'lofi',
   started_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
@@ -304,6 +305,14 @@ create policy "rooms_delete_host"
   on public.rooms for delete
   to authenticated
   using (auth.uid() = host_id);
+
+-- A host may change their own hosted room's music (client only sends `music`);
+-- the check blocks flipping it into a system room or reassigning the host.
+create policy "rooms_update_host"
+  on public.rooms for update
+  to authenticated
+  using (auth.uid() = host_id)
+  with check (auth.uid() = host_id and is_system = false);
 
 -- Participants ping a heartbeat while in a room (RoomView upserts every 60s,
 -- deletes on leave), giving the server a real emptiness signal for reaping.

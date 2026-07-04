@@ -12,6 +12,7 @@ export type LiveRoom = {
   long_min: number;
   cycles: number;
   cap: number;
+  music: string; // FocusSoundId of the room's shared track; always-on rooms are 'lofi'
   started_at: string;
   created_at: string;
 };
@@ -94,22 +95,44 @@ export async function fetchRooms(): Promise<LiveRoom[]> {
 
 export async function createRoom(
   hostId: string,
-  fields: { name: string; topic: string; focus_min: number; short_min: number; long_min: number; cycles: number; cap: number }
+  fields: { name: string; topic: string; focus_min: number; short_min: number; long_min: number; cycles: number; cap: number; music: string }
 ): Promise<LiveRoom | null> {
   if (!supabase) return null;
-  const { data, error } = await supabase
+  const client = supabase;
+  const { data, error } = await client
     .from("rooms")
     .insert({ host_id: hostId, ...fields })
     .select("*")
     .single();
-  if (error) { console.warn("[Roamly] createRoom failed", error.message); return null; }
-  return data as LiveRoom;
+  if (!error) return data as LiveRoom;
+  // Before the room-music migration is applied, the `music` column doesn't
+  // exist yet — retry without it so hosting still works (room defaults to lofi).
+  if (error.message.includes("music")) {
+    const { music: _music, ...rest } = fields;
+    void _music;
+    const retry = await client.from("rooms").insert({ host_id: hostId, ...rest }).select("*").single();
+    if (!retry.error) return { ...(retry.data as LiveRoom), music: "lofi" };
+    console.warn("[Roamly] createRoom failed", retry.error.message);
+    return null;
+  }
+  console.warn("[Roamly] createRoom failed", error.message);
+  return null;
 }
 
 export async function deleteRoom(id: string) {
   if (!supabase) return;
   const { error } = await supabase.from("rooms").delete().eq("id", id);
   if (error) console.warn("[Roamly] deleteRoom failed", error.message);
+}
+
+// Change a hosted room's shared music track. RLS (rooms_update_host) only lets
+// the room's own host do this. No-ops quietly if the migration isn't applied.
+export async function setRoomMusic(id: string, music: string) {
+  if (!supabase) return;
+  const { error } = await supabase.from("rooms").update({ music }).eq("id", id);
+  if (error && !error.message.includes("music")) {
+    console.warn("[Roamly] setRoomMusic failed", error.message);
+  }
 }
 
 // Auto-cleanup for a hosted room the caller has observed empty. reap_room is

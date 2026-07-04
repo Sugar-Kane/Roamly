@@ -169,6 +169,12 @@ export default function App() {
     },
   };
 
+  // While the user is inside a study room, the room owns the audio engine (its
+  // own music, synced to the shared timer). This ref lets the personal-timer
+  // sound sync below stand down so the two never fight over the singleton engine.
+  const inRoomRef = useRef(false);
+  const handleInRoom = useCallback((v: boolean) => { inRoomRef.current = v; }, []);
+
   // Sound follows the timer: plays during a running focus block, fades out for
   // breaks and pauses. Lives here (not in the panel) so it keeps working when
   // the user browses other tabs mid-session. It only reacts to TIMER
@@ -176,6 +182,7 @@ export default function App() {
   // mid-focus, are left alone.
   const prevShouldPlay = useRef(false);
   useEffect(() => {
+    if (inRoomRef.current) return; // a room is driving the engine
     if (!soundAuto || !focusSound) return;
     const shouldPlay = timer.running && timer.phase === "focus";
     if (shouldPlay === prevShouldPlay.current) return;
@@ -380,7 +387,8 @@ export default function App() {
           {view === "rooms" && (
             <RoomsLive session={session} profile={profile} isPremium={isPremium} gateThen={gateThen} onSignIn={onSignIn}
               onNeedUsername={openFriends} onOpenFriends={openFriends}
-              targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)} />
+              targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
+              soundAuto={soundAuto} onInRoom={handleInRoom} />
           )}
           {view === "premium" && (
             <PremiumView isPremium={isPremium} session={session} onSubscribe={startCheckout}

@@ -77,6 +77,7 @@ create table public.rooms (
   long_min int not null default 15 check (long_min between 5 and 90),
   cycles int not null default 4 check (cycles between 1 and 10),
   cap int not null default 12 check (cap between 2 and 50),
+  music text not null default 'lofi',
   started_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
@@ -133,12 +134,12 @@ $$;
 
 -- The four always-on community rooms. Fixed ids so re-running this file is a
 -- no-op; staggered started_at so their breaks don't all land at once.
-insert into public.rooms (id, name, topic, is_system, focus_min, short_min, long_min, cycles, cap, started_at)
+insert into public.rooms (id, name, topic, is_system, focus_min, short_min, long_min, cycles, cap, music, started_at)
 values
-  ('00000000-0000-4000-a000-000000000001', 'The Grind Hall',    'Classic 25/5 Pomodoro',             true, 25,  5, 15, 4, 50, now()),
-  ('00000000-0000-4000-a000-000000000002', 'Deep Work Hall',    'Long 50/10 blocks for dense material', true, 50, 10, 20, 3, 50, now() - interval '18 minutes'),
-  ('00000000-0000-4000-a000-000000000003', 'Sprint Studio',     'Quick 15/3 bursts for flashcards',  true, 15,  3, 10, 5, 50, now() - interval '7 minutes'),
-  ('00000000-0000-4000-a000-000000000004', 'Marathon Library',  'Endurance 90/20 — library rules',   true, 90, 20, 30, 2, 50, now() - interval '45 minutes')
+  ('00000000-0000-4000-a000-000000000001', 'The Grind Hall',    'Classic 25/5 Pomodoro',             true, 25,  5, 15, 4, 50, 'lofi', now()),
+  ('00000000-0000-4000-a000-000000000002', 'Deep Work Hall',    'Long 50/10 blocks for dense material', true, 50, 10, 20, 3, 50, 'lofi', now() - interval '18 minutes'),
+  ('00000000-0000-4000-a000-000000000003', 'Sprint Studio',     'Quick 15/3 bursts for flashcards',  true, 15,  3, 10, 5, 50, 'lofi', now() - interval '7 minutes'),
+  ('00000000-0000-4000-a000-000000000004', 'Marathon Library',  'Endurance 90/20 — library rules',   true, 90, 20, 30, 2, 50, 'lofi', now() - interval '45 minutes')
 on conflict (id) do nothing;
 
 
