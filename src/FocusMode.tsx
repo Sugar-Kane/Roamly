@@ -40,7 +40,7 @@ function useImmersive(open: boolean) {
 
 export function FocusMode({
   open, phase, phaseLabel, timeText, progress, title, subtitle, cycles, completed, ring,
-  onExit, controls, music,
+  onExit, controls, music, extra,
 }: {
   open: boolean;
   phase: Phase;
@@ -55,6 +55,7 @@ export function FocusMode({
   onExit: () => void;
   controls?: ReactNode;
   music?: ReactNode;
+  extra?: ReactNode;
 }) {
   useImmersive(open);
   const [showNudge, setShowNudge] = useState(() => localStorage.getItem("roamly-dnd-nudge-seen") !== "1");
@@ -123,6 +124,7 @@ export function FocusMode({
 
         {controls && <div className="flex items-center justify-center gap-3">{controls}</div>}
         {music && <div className="w-full max-w-md rounded-2xl border border-border bg-card/70 p-3">{music}</div>}
+        {extra && <div className="w-full max-w-md">{extra}</div>}
       </div>
     </div>
   );

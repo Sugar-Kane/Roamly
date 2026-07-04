@@ -612,12 +612,35 @@ export function stopFocusSound(fadeSeconds = 0.6) {
   window.setTimeout(() => {
     td?.();
     g.disconnect();
-    // Pause the iOS keeper after the fade (kept alive through it so the
-    // end-of-phase chime still plays in the unlocked session).
-    if (!masterGain) keeper?.pause();
+    // The iOS keeper is intentionally NOT paused here — it stays looping for
+    // the whole session so WebAudio (the end-of-phase chime especially) remains
+    // audible with the hardware silent switch on, even during breaks when no
+    // music is playing.
   }, fadeSeconds * 1000 + 100);
   masterGain = null;
   teardown = null;
+}
+
+// End-of-phase chime, played through the SAME unlocked AudioContext + keeper as
+// the focus sounds — so it survives the iOS silent switch (a separate context
+// with no keeper element gets muted). Two soft rising sine notes.
+export function playChime() {
+  const audio = audioCtx();
+  if (!audio) return;
+  keeper?.play().catch(() => { /* not unlocked yet; harmless */ });
+  const start = audio.currentTime + 0.02;
+  const notes: [number, number][] = [[528, start], [660, start + 0.18]];
+  for (const [freq, at] of notes) {
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = "sine";
+    o.frequency.value = freq;
+    o.connect(g); g.connect(audio.destination);
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.2, at + 0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.9);
+    o.start(at); o.stop(at + 0.95);
+  }
 }
 
 export function setFocusVolume(volume: number) {

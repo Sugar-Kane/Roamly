@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Method } from "./data";
-import { playChime } from "./sound";
+import { playChime } from "./focusSounds";
 
 export type Phase = "focus" | "short" | "long";
 

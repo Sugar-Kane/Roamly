@@ -8,8 +8,7 @@ import {
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
-import { playChime } from "./sound";
-import { startFocusSound, stopFocusSound, unlockAudio, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
+import { startFocusSound, stopFocusSound, unlockAudio, playChime, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 import { FocusMode } from "./FocusMode";
 import { VoiceDock } from "./RoomVoice";
 import { ROOMS } from "./data";
@@ -481,6 +480,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   };
 
   const [roomImmersive, setRoomImmersive] = useState(false); // room focus-mode takeover
+  const [focusChatOpen, setFocusChatOpen] = useState(false); // chat panel inside focus mode
   const musicName = FOCUS_SOUNDS.find((s) => s.id === music)?.name ?? "Lofi beats";
 
   // Join the room's presence channel: everyone in it sees everyone else live,
@@ -651,6 +651,12 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         cycles={room.cycles} completed={info.focusIndex - 1}
         ring={phaseColor(info.phase)}
         onExit={() => setRoomImmersive(false)}
+        controls={
+          <button onClick={() => setFocusChatOpen((v) => !v)}
+            className={`flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-medium transition ${focusChatOpen ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+            <MessageCircle size={15} /> Chat
+          </button>
+        }
         music={
           <div>
             <div className="flex items-center justify-between gap-2">
@@ -662,7 +668,8 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
             </div>
             <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · always on" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
           </div>
-        } />
+        }
+        extra={focusChatOpen ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} /> : undefined} />
     </div>
   );
 }
