@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
 import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, type FocusSoundId } from "./focusSounds";
+import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
@@ -828,6 +828,7 @@ function FocusSoundsPanel({ sounds }: any) {
           aria-label="Sound volume"
           className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-border accent-[hsl(var(--primary))]" />
       </div>
+      {musicCredit() && <p className="mt-2 px-1 text-[10px] text-muted-foreground">{musicCredit()}</p>}
     </div>
   );
 }

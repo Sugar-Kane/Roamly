@@ -1,11 +1,11 @@
-// Built-in ambient focus sounds, synthesized with WebAudio — no audio files,
-// no accounts, no licensing, works offline. Because the app owns this audio
-// (unlike the Spotify/Apple embeds), the timer can control it perfectly:
-// start on focus, fade out at the break.
+// Built-in focus sounds — no accounts, no ads. Because the app owns this
+// audio (unlike the Spotify/Apple embeds), the timer can control it
+// perfectly: start on focus, fade out at the break.
 //
-// Two families: noise textures (rain, stream, ocean, deep/white noise) and
-// meditation tones (singing bowl, calm drone, wind chimes) built from
-// oscillators with slow envelopes instead of static.
+// Three families: noise textures (rain, stream, ocean, deep/white noise) and
+// meditation tones (singing bowl, calm drone, wind chimes) synthesized with
+// WebAudio, plus "Café music" — real free-license recordings bundled under
+// /audio/lofi and played as a shuffled playlist through the same graph.
 
 export type FocusSoundId =
   | "melody" | "lofi"
@@ -14,7 +14,7 @@ export type FocusSoundId =
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
   { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
-  { id: "lofi", name: "Lofi beats", hint: "Mellow beat, jazzy chords" },
+  { id: "lofi", name: "Café music", hint: "Real tracks · mellow jazz" },
   { id: "bowl", name: "Singing bowl", hint: "Soft strikes, long resonance" },
   { id: "om", name: "Calm drone", hint: "Warm meditative hum" },
   { id: "chimes", name: "Wind chimes", hint: "Gentle drifting tones" },
@@ -30,6 +30,36 @@ let masterGain: GainNode | null = null;
 let teardown: (() => void) | null = null; // stops this sound's sources/timers
 let currentVolume = 0.5;
 let keeper: HTMLAudioElement | null = null;
+
+// ---- real recorded tracks (Café music) ----
+// Free-license instrumentals (Kevin MacLeod, CC0/CC-BY — see the manifest for
+// per-track licensing) bundled under /audio/lofi by the fetch-music workflow.
+// They play through one persistent <audio> element routed into the WebAudio
+// graph, so volume, fades, and the iOS handling all work like the synth sounds.
+export type MusicTrack = { file: string; title: string; artist: string; license: string };
+let playlist: MusicTrack[] | null = null; // null = manifest not loaded yet
+let musicEl: HTMLAudioElement | null = null;
+let musicSrcNode: MediaElementAudioSourceNode | null = null;
+
+const playlistReady = fetch("/audio/lofi/manifest.json")
+  .then((r) => (r.ok ? r.json() : []))
+  .then((rows: MusicTrack[]) => { playlist = Array.isArray(rows) ? rows : []; })
+  .catch(() => { playlist = []; });
+
+// CC BY 4.0 requires visible attribution — the sounds panel shows this line.
+export function musicCredit(): string | null {
+  if (!playlist || playlist.length === 0) return null;
+  return `Café music: ${playlist[0].artist} (incompetech.com) · CC BY 4.0`;
+}
+
+function musicElement(): HTMLAudioElement {
+  if (!musicEl) {
+    musicEl = new Audio();
+    musicEl.preload = "auto";
+    musicEl.setAttribute("playsinline", "");
+  }
+  return musicEl;
+}
 
 // ~50ms of silence as a WAV data URI, built deterministically at runtime.
 function silentWavURI(): string {
@@ -61,6 +91,14 @@ export function unlockAudio() {
     keeper.setAttribute("playsinline", "");
   }
   keeper.play().catch(() => { /* browsers that don't need the trick may refuse; fine */ });
+  // Bless the music element inside the same gesture: an element that has
+  // played once by user activation may later have its src swapped and be
+  // replayed programmatically (how the Café playlist advances on iOS).
+  const el = musicElement();
+  if (!el.src) {
+    el.src = silentWavURI();
+    el.play().catch(() => { /* same as keeper */ });
+  }
 }
 
 function audioCtx(): AudioContext | null {
@@ -492,6 +530,41 @@ function buildLofi(audio: AudioContext, out: GainNode): () => void {
   };
 }
 
+// Real-track playlist: shuffled order, advances on track end, reshuffles when
+// exhausted. The element routes through `out`, so fades/volume are shared.
+function buildMusic(audio: AudioContext, out: GainNode): () => void {
+  const el = musicElement();
+  if (!musicSrcNode) musicSrcNode = audio.createMediaElementSource(el);
+  musicSrcNode.connect(out);
+  el.loop = false;
+  el.volume = 1;
+
+  let stopped = false;
+  let order: MusicTrack[] = [];
+  const nextTrack = () => {
+    if (stopped || !playlist || playlist.length === 0) return;
+    if (order.length === 0) {
+      order = [...playlist];
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+    }
+    el.src = order.pop()!.file;
+    void el.play().catch(() => { /* resumes on the next user gesture */ });
+  };
+  el.onended = nextTrack;
+  void playlistReady.then(() => { if (!stopped) nextTrack(); });
+
+  return () => {
+    stopped = true;
+    el.onended = null;
+    el.pause();
+    el.removeAttribute("src");
+    musicSrcNode?.disconnect();
+  };
+}
+
 // ---- public controls ----
 
 export function stopFocusSound(fadeSeconds = 0.6) {
@@ -536,7 +609,9 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
 
   let stop: () => void;
   if (id === "melody") stop = buildMelody(audio, gain);
-  else if (id === "lofi") stop = buildLofi(audio, gain);
+  // Café music plays real bundled tracks; the synth beat remains only as the
+  // fallback while the manifest is missing (e.g. before the music workflow ran).
+  else if (id === "lofi") stop = playlist === null || playlist.length > 0 ? buildMusic(audio, gain) : buildLofi(audio, gain);
   else if (id === "om") stop = buildOm(audio, gain);
   else if (id === "bowl") stop = buildBowl(audio, gain);
   else if (id === "chimes") stop = buildChimes(audio, gain);
