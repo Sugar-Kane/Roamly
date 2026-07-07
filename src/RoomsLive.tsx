@@ -9,7 +9,7 @@ import {
 } from "./rooms";
 import { fmt } from "./useTimer";
 import { startFocusSound, stopFocusSound, unlockAudio, playChime, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
-import { FocusMode } from "./FocusMode";
+import { FocusMode, TimeDisplay } from "./FocusMode";
 import { VoiceDock } from "./RoomVoice";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
@@ -329,7 +329,7 @@ function RoomCard({ room, now, count, onJoin }: { room: LiveRoom; now: number; c
           </p>
         </div>
         <span className="mt-1 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] font-medium text-white" style={{ background: phaseColor(info.phase) }}>
-          {PHASE_LABEL[info.phase]} · {fmt(info.secondsLeft)}
+          {PHASE_LABEL[info.phase]} · <TimeDisplay value={fmt(info.secondsLeft)} />
         </span>
       </div>
       <div className="mt-4 flex items-center justify-between">
@@ -565,9 +565,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: phaseColor(info.phase) }}>
             {PHASE_LABEL[info.phase]} · block {info.focusIndex}/{room.cycles}
           </span>
-          <span className="font-display text-7xl font-medium tracking-tight" style={{ fontVariantNumeric: "tabular-nums" }}>
-            {fmt(info.secondsLeft)}
-          </span>
+          <TimeDisplay value={fmt(info.secondsLeft)} className="font-display text-7xl font-medium tracking-tight" />
           <div className="mt-3 h-2.5 w-full max-w-md overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
             <div className="h-full rounded-full" style={{ width: `${(1 - info.secondsLeft / info.phaseTotal) * 100}%`, background: phaseColor(info.phase), transition: "width 1s linear" }} />
           </div>
@@ -639,7 +637,10 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0}
         isPremium={isPremium} gateThen={gateThen} />
 
-      <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} />
+      {/* Only ONE RoomChat may be mounted at a time: mounting a second one
+          (e.g. the copy inside the focus overlay) double-subscribes the same
+          realtime topic, which throws and unmounts the whole screen. */}
+      {!roomImmersive && <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} />}
 
       {showInvite && <InviteModal roomId={room.id} myId={userId} onClose={() => setShowInvite(false)} />}
 
@@ -680,17 +681,23 @@ function RoomChat({ room, userId, phase, secondsToBreak }: { room: LiveRoom; use
   const listRef = useRef<HTMLDivElement>(null);
   const chatOpen = phase !== "focus";
 
-  // History + live inserts.
+  // History + live inserts. subscribe() throws if this topic is somehow
+  // already subscribed (e.g. two RoomChat instances) — guard so a duplicate
+  // can degrade to history-only instead of crashing the whole screen.
   useEffect(() => {
     fetchMessages(room.id).then(setMessages);
     if (!supabase) return;
     const client = supabase;
-    const channel = client
-      .channel(`room-chat:${room.id}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${room.id}` },
-        (payload) => setMessages((prev) => [...prev, payload.new as RoomMessage]))
-      .subscribe();
-    return () => { client.removeChannel(channel); };
+    try {
+      const channel = client
+        .channel(`room-chat:${room.id}`)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${room.id}` },
+          (payload) => setMessages((prev) => [...prev, payload.new as RoomMessage]))
+        .subscribe();
+      return () => { client.removeChannel(channel); };
+    } catch (e) {
+      console.warn("[Roamly] room chat subscribe failed", e);
+    }
   }, [room.id]);
 
   // Resolve sender names we haven't seen yet.

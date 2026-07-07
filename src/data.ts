@@ -40,7 +40,7 @@ export function sortTasks(list: Task[]): Task[] {
   return [...list].sort((a, b) => (a.sort_order ?? Infinity) - (b.sort_order ?? Infinity));
 }
 
-// Stable accent color per subject tag (aligned with SUBJECT_SPLIT below).
+// Stable accent color per subject tag.
 // Custom subjects hash into a fixed palette so each one keeps the same color
 // everywhere (pills, group headers) across sessions and devices.
 const TAG_COLORS: Record<string, string> = {
@@ -59,24 +59,6 @@ export function tagColor(tag: string): string {
   for (let i = 0; i < tag.length; i++) h = (h * 31 + tag.charCodeAt(i)) >>> 0;
   return TAG_PALETTE[h % TAG_PALETTE.length];
 }
-
-// Mock weekly focus minutes for the analytics dashboard.
-export const WEEK_DATA = [
-  { day: "Mon", min: 120, sessions: 4 },
-  { day: "Tue", min: 95, sessions: 3 },
-  { day: "Wed", min: 180, sessions: 6 },
-  { day: "Thu", min: 60, sessions: 2 },
-  { day: "Fri", min: 140, sessions: 5 },
-  { day: "Sat", min: 210, sessions: 7 },
-  { day: "Sun", min: 75, sessions: 3 },
-];
-
-export const SUBJECT_SPLIT = [
-  { name: "Pharm", value: 32, color: "#7C5CFA" },
-  { name: "Cardio", value: 24, color: "#3B82F6" },
-  { name: "Clinical", value: 21, color: "#E8765A" },
-  { name: "PANCE", value: 23, color: "#16A34A" },
-];
 
 // Each theme recolors the whole app. Values are HSL triplets matching the CSS
 // variables in index.css (e.g. "250 84% 60%"). `grad` is the timer-card gradient.

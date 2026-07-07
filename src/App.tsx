@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2 } from "lucide-react";
-import { METHODS, SEED_TASKS, WEEK_DATA, SUBJECT_SPLIT, THEMES, sortTasks, tagColor, type Task } from "./data";
+import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2, Lock } from "lucide-react";
+import { METHODS, SEED_TASKS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
@@ -13,7 +13,7 @@ import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { RoomsLive } from "./RoomsLive";
-import { FocusMode, CompactSounds } from "./FocusMode";
+import { FocusMode, CompactSounds, TimeDisplay } from "./FocusMode";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import type { Session } from "@supabase/supabase-js";
@@ -129,11 +129,14 @@ export default function App() {
   const timer = useTimer(method, handlePhaseComplete);
 
   // --- Built-in focus sounds (free for everyone) ---
-  // Rain is preselected so sound plays the moment anyone hits Start, with no
-  // setup; the "Play with timer" toggle is the off switch.
-  const [focusSound, setFocusSound] = useState<FocusSoundId | null>(
-    () => (localStorage.getItem("roamly-focus-sound") as FocusSoundId) || "rain"
-  );
+  // Melody is preselected so music plays the moment anyone hits Start, with no
+  // setup; the "Play with timer" toggle is the off switch. A saved pick (or a
+  // saved "off" from a streaming-embed takeover) always wins over the default.
+  const [focusSound, setFocusSound] = useState<FocusSoundId | null>(() => {
+    const saved = localStorage.getItem("roamly-focus-sound");
+    if (saved === "off") return null;
+    return (saved as FocusSoundId) || "melody";
+  });
   const [soundAuto, setSoundAuto] = useState(() => localStorage.getItem("roamly-sound-auto") !== "off");
   const [soundVolume, setSoundVolume] = useState(() => {
     const v = parseFloat(localStorage.getItem("roamly-sound-vol") ?? "0.5");
@@ -168,6 +171,15 @@ export default function App() {
       setSoundVolume(v);
       localStorage.setItem("roamly-sound-vol", String(v));
       setFocusVolume(v);
+    },
+    // Called when the user starts a Spotify/Apple embed: stop and DESELECT the
+    // built-in sound so the timer won't layer it over their streaming music.
+    // Picking any sound chip re-selects as usual.
+    embedTakeover: () => {
+      stopFocusSound();
+      setSoundPlaying(false);
+      setFocusSound(null);
+      localStorage.setItem("roamly-focus-sound", "off");
     },
   };
 
@@ -385,7 +397,7 @@ export default function App() {
           {view === "analytics" && (
             <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
               streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
-              session={session} onSignIn={onSignIn} />
+              session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks} />
           )}
           {view === "rooms" && (
             <RoomsLive session={session} profile={profile} isPremium={isPremium} gateThen={gateThen} onSignIn={onSignIn}
@@ -469,20 +481,6 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
           isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} />
       </div>
     </header>
-  );
-}
-
-function TimeDisplay({ value, className }: { value: string; className?: string }) {
-  // Render each character in a fixed-width slot so the total width never changes
-  // as digits change (Fraunces digits aren't equal-width and tabular-nums is unreliable).
-  return (
-    <span className={`inline-flex leading-none ${className ?? ""}`} style={{ fontVariantNumeric: "tabular-nums" }} aria-label={value}>
-      {value.split("").map((ch, i) => (
-        <span key={i} className="inline-flex justify-center" style={{ width: ch === ":" ? "0.42em" : "0.62em" }}>
-          {ch}
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -589,6 +587,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
   const timerRef = useRef<HTMLElement>(null);
   const scrollToTimer = () => timerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const [showMethods, setShowMethods] = useState(false);
 
   return (
     <div className="space-y-8">
@@ -603,7 +602,10 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           <div className="flex shrink-0 flex-col items-center lg:items-start">
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
             <TimeDisplay value={fmt(timer.secondsLeft)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
-            <span className="mt-1 text-sm text-muted-foreground">{method.name}</span>
+            <button onClick={() => setShowMethods(true)}
+              className="mt-1.5 flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+              {method.name} <ChevronDown size={13} />
+            </button>
           </div>
 
           <div className="flex flex-1 flex-col gap-5">
@@ -657,19 +659,27 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel isPremium={isPremium} gateThen={gateThen} />
+      <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <div className="min-w-0 space-y-6">
-          <div>
-            <h2 className="mb-3 font-display text-lg font-semibold">Method</h2>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      {showMethods && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={() => setShowMethods(false)}>
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-lg font-semibold">Timer method</h3>
+              <button onClick={() => setShowMethods(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close"><X size={18} /></button>
+            </div>
+            <div className="mt-3 space-y-2">
               {METHODS.map((m) => {
                 const locked = m.premium && !isPremium;
                 const active = m.id === methodId;
                 return (
-                  <button key={m.id} onClick={() => (locked ? gateThen(() => setMethodId(m.id)) : setMethodId(m.id))}
-                    className={`relative rounded-2xl border p-3 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                  <button key={m.id}
+                    onClick={() => {
+                      if (locked) { gateThen(() => setMethodId(m.id)); return; }
+                      setMethodId(m.id);
+                      if (m.id !== "custom") setShowMethods(false);
+                    }}
+                    className={`relative w-full rounded-2xl border p-3 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold">{m.name}</span>
                       {locked && <Crown size={13} className="text-primary" />}
@@ -679,9 +689,12 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 );
               })}
             </div>
-            {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} onSave={scrollToTimer} />}
+            {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} onSave={() => { setShowMethods(false); scrollToTimer(); }} />}
           </div>
         </div>
+      )}
+
+      <div>
         <div className="min-w-0">
           <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
           <div className="space-y-2">
@@ -862,7 +875,7 @@ function FocusSoundsPanel({ sounds }: any) {
   );
 }
 
-function MusicPanel({ isPremium, gateThen }: any) {
+function MusicPanel({ isPremium, gateThen, onEmbedPlay }: any) {
   const [service, setService] = useState<"spotify" | "apple">("spotify");
 
   const [spotifySelectedId, setSpotifySelectedId] = useState<string | null>(null);
@@ -886,6 +899,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
     setSpotifyCustomTarget(null);
     setSpotifyCustomUrl("");
     setSpotifyCustomError(false);
+    onEmbedPlay?.(); // streaming takes over — silence the built-in focus sound
   };
 
   const applySpotifyUrl = (value: string) => {
@@ -896,6 +910,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
       setSpotifySelectedId(null);
       setSpotifyCustomTarget(parsed);
       setSpotifyCustomError(false);
+      onEmbedPlay?.();
     } else {
       setSpotifyCustomError(true);
     }
@@ -906,6 +921,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
     setAppleCustomTarget(null);
     setAppleCustomUrl("");
     setAppleCustomError(false);
+    onEmbedPlay?.();
   };
 
   const applyAppleUrl = (value: string) => {
@@ -916,6 +932,7 @@ function MusicPanel({ isPremium, gateThen }: any) {
       setAppleSelectedId(null);
       setAppleCustomTarget(parsed);
       setAppleCustomError(false);
+      onEmbedPlay?.();
     } else {
       setAppleCustomError(true);
     }
@@ -1119,7 +1136,7 @@ function UploadTasksPanel({ profile, session, onImported, onUpgrade }: any) {
           <Sparkles size={16} className="text-primary" /> Upload notes or slides — auto-generate tasks
         </span>
         <span className="shrink-0 text-xs text-muted-foreground">
-          {isPremium ? "Unlimited uploads" : `${remaining} of ${FREE_MONTHLY_UPLOAD_QUOTA} free left this month`}
+          {isPremium ? "60 uploads a month" : `${remaining} of ${FREE_MONTHLY_UPLOAD_QUOTA} free left this month`}
         </span>
       </button>
     );
@@ -1495,35 +1512,75 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
   );
 }
 
-function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn }: any) {
-  const totalMin = WEEK_DATA.reduce((a, b) => a + b.min, 0);
-  const totalSessions = WEEK_DATA.reduce((a, b) => a + b.sessions, 0);
-  const best = WEEK_DATA.reduce((a, b) => (b.min > a.min ? b : a));
+function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks }: any) {
+  // All numbers below come from the user's real focus_sessions rows (last 60
+  // days, one row per day) and their real tasks — nothing is mocked.
+  const byDate = new Map<string, number>((sessions as FocusSession[]).map((s) => [s.date, s.minutes]));
+  const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const week = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    const key = dateKey(d);
+    return { day: i === 6 ? "Today" : DAY[d.getDay()], min: byDate.get(key) ?? 0 };
+  });
+  const weekMin = week.reduce((a, b) => a + b.min, 0);
+  const bestWeek = week.reduce((a, b) => (b.min > a.min ? b : a));
+  const totalMin60 = (sessions as FocusSession[]).reduce((a, s) => a + s.minutes, 0);
+  const activeDays = (sessions as FocusSession[]).filter((s) => s.minutes > 0).length;
+  const bestDayEver = (sessions as FocusSession[]).reduce((m, s) => Math.max(m, s.minutes), 0);
+  const doneTasks = (tasks as Task[]).filter((t) => t.done).length;
+
+  // Subject split from real completed pomodoros per subject.
+  const pomsByTag = new Map<string, number>();
+  for (const t of tasks as Task[]) if (t.poms > 0) pomsByTag.set(t.tag, (pomsByTag.get(t.tag) ?? 0) + t.poms);
+  const pomsTotal = [...pomsByTag.values()].reduce((a, b) => a + b, 0);
+  const subjectSplit = [...pomsByTag.entries()]
+    .map(([name, poms]) => ({ name, value: Math.round((poms / Math.max(1, pomsTotal)) * 100), color: tagColor(name) }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+
+  // Achievements are computed live from the same data — they unlock themselves
+  // as the user actually studies.
+  const hrs = Math.floor(totalMin60 / 60);
+  const achievements = [
+    { name: "First focus", hint: "Finish one focus session", done: totalMin60 > 0 },
+    { name: "3-day streak", hint: `Study 3 days in a row (${Math.min(streak, 3)}/3)`, done: streak >= 3 },
+    { name: "7-day streak", hint: `Study 7 days in a row (${Math.min(streak, 7)}/7)`, done: streak >= 7 },
+    { name: "Century day", hint: `100 focus minutes in a day (best ${bestDayEver}m)`, done: bestDayEver >= 100 },
+    { name: "Deep day", hint: `3 hours in one day (best ${Math.floor(bestDayEver / 60)}h)`, done: bestDayEver >= 180 },
+    { name: "10 hours in", hint: `${Math.min(hrs, 10)}/10 hours of total focus`, done: hrs >= 10 },
+    { name: "25 hours in", hint: `${Math.min(hrs, 25)}/25 hours of total focus`, done: hrs >= 25 },
+    { name: "Task finisher", hint: `Complete 10 tasks (${Math.min(doneTasks, 10)}/10)`, done: doneTasks >= 10 },
+  ];
+  const earned = achievements.filter((a) => a.done).length;
 
   return (
     <div className="mx-auto max-w-4xl">
       <h1 className="font-display text-3xl font-semibold">Analytics</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Your last 7 days of focus.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Live from your timer — every session you finish counts here.</p>
 
       <div className="mt-6">
         {session ? (
           <DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
         ) : (
-          <SignInPrompt onSignIn={onSignIn} message="Sign in to track your streak and daily goal." />
+          <SignInPrompt onSignIn={onSignIn} message="Sign in to track your streak, goals, and achievements." />
         )}
       </div>
 
       <div className="mt-6 grid grid-cols-3 gap-3">
-        <Stat label="Focus time" value={`${Math.floor(totalMin / 60)}h ${totalMin % 60}m`} />
-        <Stat label="Sessions" value={String(totalSessions)} />
-        <Stat label="Best day" value={best.day} sub={`${best.min}m`} />
+        <Stat label="This week" value={`${Math.floor(weekMin / 60)}h ${weekMin % 60}m`} />
+        <Stat label="Streak" value={`${streak} day${streak === 1 ? "" : "s"}`} />
+        <Stat label="Best day (7d)" value={bestWeek.min > 0 ? bestWeek.day : "—"} sub={bestWeek.min > 0 ? `${bestWeek.min}m` : "No focus yet"} />
       </div>
+
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <h2 className="mb-1 text-sm font-semibold">Focus minutes by day</h2>
-        <p className="mb-4 text-xs text-muted-foreground">Demo data — a sample week for illustration.</p>
+        <p className="mb-4 text-xs text-muted-foreground">
+          {weekMin > 0 ? "Your last 7 days." : "Finish a focus session and it shows up here."}
+        </p>
         <div className="h-52">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={WEEK_DATA}>
+            <BarChart data={week}>
               <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
               <Tooltip cursor={{ fill: "hsl(var(--primary) / 0.08)" }} contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, color: "hsl(var(--card-foreground))" }} />
               <Bar dataKey="min" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
@@ -1531,34 +1588,65 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
           </ResponsiveContainer>
         </div>
       </div>
+
+      <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold">Achievements</h2>
+          <span className="text-xs text-muted-foreground">{earned}/{achievements.length} earned</span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {achievements.map((a) => (
+            <div key={a.name} className={`rounded-xl border p-3 ${a.done ? "border-primary/50 bg-primary/5" : "border-border bg-card/60 opacity-70"}`}>
+              <div className="flex items-center gap-1.5">
+                {a.done ? <Check size={13} className="shrink-0 text-roamly-green" /> : <Lock size={12} className="shrink-0 text-muted-foreground" />}
+                <span className="truncate text-xs font-semibold">{a.name}</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{a.hint}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {subjectSplit.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+          <h2 className="text-sm font-semibold">Subject breakdown</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">Share of your completed pomodoros by subject.</p>
+          <div className="mt-2 flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
+            <div className="h-40 w-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={subjectSplit} dataKey="value" innerRadius={45} outerRadius={70} paddingAngle={2}>
+                    {subjectSplit.map((s) => <Cell key={s.name} fill={s.color} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="space-y-2">
+              {subjectSplit.map((s) => (
+                <div key={s.name} className="flex items-center gap-2 text-sm">
+                  <span className="h-3 w-3 rounded-sm" style={{ background: s.color }} />
+                  <span className="w-24 truncate">{s.name}</span>
+                  <span className="font-mono text-muted-foreground">{s.value}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="relative mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Subject breakdown</h2>
+          <h2 className="text-sm font-semibold">60-day history</h2>
           {!isPremium && <span className="flex items-center gap-1 text-xs text-primary"><Crown size={12} /> Premium</span>}
         </div>
-        <div className={`mt-2 flex flex-col items-center gap-4 sm:flex-row sm:gap-6 ${!isPremium ? "blur-sm" : ""}`}>
-          <div className="h-40 w-40">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={SUBJECT_SPLIT} dataKey="value" innerRadius={45} outerRadius={70} paddingAngle={2}>
-                  {SUBJECT_SPLIT.map((s) => <Cell key={s.name} fill={s.color} />)}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="space-y-2">
-            {SUBJECT_SPLIT.map((s) => (
-              <div key={s.name} className="flex items-center gap-2 text-sm">
-                <span className="h-3 w-3 rounded-sm" style={{ background: s.color }} />
-                <span className="w-20">{s.name}</span>
-                <span className="font-mono text-muted-foreground">{s.value}%</span>
-              </div>
-            ))}
-          </div>
+        <div className={`mt-2 grid grid-cols-3 gap-3 ${!isPremium ? "blur-sm" : ""}`}>
+          <Stat label="Total focus" value={`${hrs}h ${totalMin60 % 60}m`} />
+          <Stat label="Active days" value={String(activeDays)} />
+          <Stat label="Best day ever" value={`${bestDayEver}m`} />
         </div>
         {!isPremium && (
           <button onClick={onUpsell} className="absolute inset-0 grid place-items-center">
-            <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock full analytics</span>
+            <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock full history</span>
           </button>
         )}
       </div>
@@ -1577,11 +1665,47 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 function PremiumView({ isPremium, session, onSubscribe, checkoutLoading, checkoutError }: any) {
-  const perks = ["Ambient study themes", "Unlimited analytics history", "Unlimited hosted sessions", "Unlimited room joins", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
+  const perks = ["60 AI note uploads a month (~2 a day)", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+
+  // Stripe Billing Portal: update card, view invoices, or cancel. Cancelling
+  // flows through the webhook, which reverts the account to free automatically.
+  const openPortal = async () => {
+    setPortalLoading(true);
+    setPortalError(null);
+    try {
+      const token = await getAccessToken();
+      if (!token) { setPortalLoading(false); return; }
+      const res = await fetch("/api/create-portal-session", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        setPortalError(data.error ?? "Couldn't open the billing portal — try again.");
+        setPortalLoading(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setPortalError("Couldn't reach the billing portal. Try again soon.");
+      setPortalLoading(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-3xl font-semibold">{isPremium ? "Your Premium" : "Go Premium"}</h1>
       <p className="mt-1 text-sm text-muted-foreground">Built for the long road to the PANCE.</p>
+      {isPremium && (
+        <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
+          <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active — thanks for supporting Roamly.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Manage billing below: update your card, see invoices, or cancel. If you cancel (or a payment stops), your account automatically returns to the free tier at the end of the paid period.</p>
+          <button onClick={openPortal} disabled={portalLoading}
+            className="mt-4 rounded-full border border-border bg-card px-5 py-2 text-sm font-medium transition hover:border-primary/40 disabled:opacity-60">
+            {portalLoading ? "Opening…" : "Manage subscription"}
+          </button>
+          {portalError && <p className="mt-2 text-xs text-destructive">{portalError}</p>}
+        </div>
+      )}
       {!isPremium && (
         <div className="mt-6 overflow-hidden rounded-3xl gradient-accent p-px shadow-glow">
           <div className="rounded-3xl bg-card/95 p-7 backdrop-blur">
@@ -1617,6 +1741,7 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
   const [error, setError] = useState<string | null>(null);
 
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -1624,7 +1749,7 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
     if (!inviteEmail.trim() || inviting) return;
     setInviting(true);
     setInviteMsg(null);
-    const res = await sendInvite(inviteEmail.trim());
+    const res = await sendInvite(inviteEmail.trim(), inviteName);
     setInviting(false);
     if (res.error) { setInviteMsg({ ok: false, text: res.error }); return; }
     setInviteMsg({
@@ -1636,6 +1761,7 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
           : `Invite emailed to ${inviteEmail.trim()}.`,
     });
     setInviteEmail("");
+    setInviteName("");
   };
 
   const search = async () => {
@@ -1671,12 +1797,15 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
       <div className="mt-6 rounded-2xl border border-border bg-card/70 p-4">
         <h2 className="text-sm font-semibold">Invite by email</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">Emails them an invite to join Roamly (or sends a friend request if they're already a user).</p>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex flex-wrap gap-2">
+          <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={60}
+            placeholder="Their name"
+            className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
           <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && invite()}
             type="email" placeholder="name@example.com"
-            className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            className="min-w-0 flex-[1.4] rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
           <button onClick={invite} disabled={inviting || !inviteEmail.trim()}
-            className="shrink-0 rounded-xl gradient-primary px-4 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
+            className="shrink-0 rounded-xl gradient-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
             {inviting ? "Sending…" : "Invite"}
           </button>
         </div>
@@ -1724,7 +1853,7 @@ function Upsell({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => 
       <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary shadow-glow"><Crown className="text-white" /></div>
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
-        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, and unlimited study rooms.</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 60 AI note uploads a month, and hosting your own study rooms.</p>
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Try Premium free</button>
         <button onClick={onClose} className="mt-2 w-full rounded-full py-2 text-sm text-muted-foreground">Maybe later</button>
       </div>

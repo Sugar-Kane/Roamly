@@ -34,9 +34,12 @@ export async function POST(request: Request): Promise<Response> {
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
   const inviter = userData.user;
 
-  let body: { email?: string };
+  let body: { email?: string; name?: string };
   try { body = await request.json(); } catch { return json({ error: "Invalid request body" }, 400); }
   const email = (body.email ?? "").trim().toLowerCase();
+  // Optional invitee name — stored on the pre-created profile so friend lists
+  // and notifications show a real name instead of "someone".
+  const inviteeName = (body.name ?? "").trim().slice(0, 60);
   if (!EMAIL_RE.test(email)) return json({ error: "Enter a valid email address." }, 400);
   if (email === (inviter.email ?? "").toLowerCase()) return json({ error: "That's your own email." }, 400);
 
@@ -98,7 +101,7 @@ export async function POST(request: Request): Promise<Response> {
   // New person: email them a Supabase Auth invite (creates the auth user).
   const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(
     email,
-    appUrl ? { redirectTo: appUrl } : undefined
+    { ...(appUrl ? { redirectTo: appUrl } : {}), ...(inviteeName ? { data: { display_name: inviteeName } } : {}) }
   );
   if (inviteErr || !invited?.user) {
     console.warn("[Roamly] inviteUserByEmail failed", inviteErr?.message);
@@ -107,6 +110,12 @@ export async function POST(request: Request): Promise<Response> {
       return json({ error: "That person already has an account — search their email to add them." }, 409);
     }
     return json({ error: "Couldn't send the invite email — try again shortly." }, 502);
+  }
+
+  // Put the invitee's name on the pre-created profile (the signup trigger only
+  // fills id/email) so they don't appear as "someone" before they join.
+  if (inviteeName) {
+    await admin.from("profiles").update({ display_name: inviteeName }).eq("id", invited.user.id);
   }
 
   // Pre-create the pending friend request so they're connected on signup, plus

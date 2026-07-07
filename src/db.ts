@@ -52,14 +52,14 @@ export async function adminSetPremium(userId: string, premium: boolean): Promise
 // { error } with a user-facing message.
 export type InviteResult = { status?: "invited" | "friend_request"; error?: string; note?: string };
 
-export async function sendInvite(email: string): Promise<InviteResult> {
+export async function sendInvite(email: string, name?: string): Promise<InviteResult> {
   const token = await getAccessToken();
   if (!token) return { error: "Sign in to invite people." };
   try {
     const res = await fetch("/api/invite", {
       method: "POST",
       headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, name: name?.trim() || undefined }),
     });
     const data = (await res.json().catch(() => ({}))) as InviteResult;
     if (!res.ok) return { error: data.error ?? "Couldn't send that invite — try again." };

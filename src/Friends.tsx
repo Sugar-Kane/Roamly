@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { X, UserPlus, Check, Search, Users, Mail } from "lucide-react";
+import { X, UserPlus, Check, Search, Users, Mail, ChevronDown, ChevronRight } from "lucide-react";
 import {
   fetchFriendships, searchUsers, findUserByEmail, sendFriendRequest, respondFriendRequest, removeFriendship,
   setUsername, getPublicProfiles, type Friendship, type PublicProfile,
@@ -62,10 +62,12 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
   const [inviteMsg, setInviteMsg] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteName, setInviteName] = useState("");
+  const [showSentInvites, setShowSentInvites] = useState(false);
 
-  const invite = async (addr: string) => {
+  const invite = async (addr: string, name?: string) => {
     setInviting(true); setInviteError(null); setInviteMsg(null);
-    const res = await sendInvite(addr);
+    const res = await sendInvite(addr, name);
     setInviting(false);
     if (res.error) { setInviteError(res.error); return; }
     setInvitedEmail(addr.toLowerCase());
@@ -113,6 +115,11 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const incoming = friendships.filter((f) => f.status === "pending" && f.addressee === myId);
   const outgoing = friendships.filter((f) => f.status === "pending" && f.requester === myId);
   const accepted = friendships.filter((f) => f.status === "accepted");
+  // Outgoing splits in two: requests to real members (they have a username)
+  // stay visible; email invites to people who haven't joined yet are tucked
+  // into a collapsed "Invites sent" section so they don't clutter the list.
+  const outgoingRequests = outgoing.filter((f) => people.get(f.addressee)?.username);
+  const outgoingInvites = outgoing.filter((f) => !people.get(f.addressee)?.username);
 
   const add = async (target: PublicProfile) => {
     setError(null);
@@ -159,7 +166,10 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
                 ) : (
                   <>
                     <p className="text-xs text-muted-foreground">No Roamly account uses that email yet.</p>
-                    <button onClick={() => invite(query.trim())} disabled={inviting}
+                    <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={60}
+                      placeholder="Their name — shown on the invite"
+                      className="mt-2 w-full rounded-xl border border-border bg-card px-3 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                    <button onClick={() => invite(query.trim(), inviteName)} disabled={inviting}
                       className="mt-2 flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
                       <Mail size={12} /> {inviting ? "Sending…" : `Invite ${query.trim()} to Roamly`}
                     </button>
@@ -238,7 +248,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
                     </button>
                   </div>
                 ))}
-                {outgoing.map((f) => (
+                {outgoingRequests.map((f) => (
                   <div key={f.id} className="flex items-center justify-between rounded-xl border border-dashed border-border bg-card/50 px-3 py-2">
                     <PersonLabel person={people.get(f.addressee)} />
                     <span className="text-xs text-muted-foreground">Request sent</span>
@@ -246,6 +256,29 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
                 ))}
               </div>
             </section>
+
+            {outgoingInvites.length > 0 && (
+              <section className="mt-4">
+                <button onClick={() => setShowSentInvites((v) => !v)}
+                  className="flex w-full items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground transition hover:text-foreground">
+                  {showSentInvites ? <ChevronDown size={12} /> : <ChevronRight size={12} />} Invites sent ({outgoingInvites.length})
+                </button>
+                {showSentInvites && (
+                  <div className="mt-2 space-y-1.5">
+                    {outgoingInvites.map((f) => (
+                      <div key={f.id} className="flex items-center justify-between rounded-xl border border-dashed border-border bg-card/50 px-3 py-2">
+                        <PersonLabel person={people.get(f.addressee)} />
+                        <span className="flex shrink-0 items-center gap-2">
+                          <span className="text-[11px] text-muted-foreground">Awaiting signup</span>
+                          <button onClick={() => remove(f.id)} className="text-[11px] text-muted-foreground underline hover:text-destructive">Cancel</button>
+                        </span>
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-muted-foreground">To resend one, search their email above.</p>
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
       </div>

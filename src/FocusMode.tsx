@@ -4,6 +4,21 @@ import { FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 
 type Phase = "focus" | "short" | "long";
 
+// Renders each character in a fixed-width slot so the total width never
+// changes as digits tick (Fraunces digits aren't equal-width and
+// tabular-nums is unreliable there). Shared by every timer surface.
+export function TimeDisplay({ value, className }: { value: string; className?: string }) {
+  return (
+    <span className={`inline-flex leading-none ${className ?? ""}`} style={{ fontVariantNumeric: "tabular-nums" }} aria-label={value}>
+      {value.split("").map((ch, i) => (
+        <span key={i} className="inline-flex justify-center" style={{ width: ch === ":" ? "0.42em" : "0.62em" }}>
+          {ch}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 // Keeps the screen awake and (where supported) takes over the whole display
 // while focus mode is open. Native Fullscreen works on desktop/laptop/most
 // tablets; iOS Safari refuses it for regular elements, so the in-app overlay is
@@ -100,8 +115,7 @@ export function FocusMode({
 
         <div className="flex flex-col items-center">
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
-          <span className="font-display text-[22vw] font-medium leading-none tracking-tight sm:text-[16vw] lg:text-[12rem]"
-            style={{ fontVariantNumeric: "tabular-nums" }}>{timeText}</span>
+          <TimeDisplay value={timeText} className="font-display text-[20vw] font-medium tracking-tight sm:text-[15vw] lg:text-[11rem]" />
           {title && <span className="mt-2 max-w-[80vw] truncate text-base text-foreground">{title}</span>}
           {subtitle && <span className="mt-0.5 text-sm text-muted-foreground">{subtitle}</span>}
         </div>
