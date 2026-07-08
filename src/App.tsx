@@ -236,9 +236,14 @@ export default function App() {
     if (timer.running) track("timer_start");
   }, [timer.running]);
 
-  // Dim the music over the last ~5s of a focus block so it flows into the break.
+  // Dim the music over the last ~5s of a focus block so it flows into the
+  // break. The timer re-renders several times a second, so a ref guards the
+  // duck to fire once per focus phase (reset when we leave the focus phase).
+  const duckedRef = useRef(false);
   useEffect(() => {
-    if (timer.running && timer.phase === "focus" && timer.secondsLeft === 6 && focusSoundActive()) {
+    if (timer.phase !== "focus" || !timer.running) { duckedRef.current = false; return; }
+    if (timer.secondsLeft <= 6 && timer.secondsLeft > 0 && !duckedRef.current && focusSoundActive()) {
+      duckedRef.current = true;
       duckFocusSound(5);
     }
   }, [timer.secondsLeft, timer.running, timer.phase]);

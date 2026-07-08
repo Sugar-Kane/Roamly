@@ -4,12 +4,23 @@ import { playChime } from "./focusSounds";
 
 export type Phase = "focus" | "short" | "long";
 
+// Wall-clock timer: the remaining time is derived from a deadline timestamp,
+// not accumulated from setInterval ticks. Background tabs and locked phones
+// throttle/suspend intervals, so a tick-counting timer silently loses real
+// time — a 25-min block could take far longer. Here the interval only drives
+// re-renders; the actual countdown is always (deadline − now), so it stays
+// correct across backgrounding (and simply reads 0 when the phase elapsed
+// while the tab was hidden). Mirrors how rooms already derive phase from
+// wall-clock time. Public API is unchanged.
 export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase) => void) {
   const [phase, setPhase] = useState<Phase>("focus");
-  const [secondsLeft, setSecondsLeft] = useState(method.focus * 60);
   const [running, setRunning] = useState(false);
   const [completedFocus, setCompletedFocus] = useState(0);
-  const tick = useRef<number | null>(null);
+  // Seconds left while paused; when running, the live value comes from
+  // deadlineRef instead and this holds the last frozen value.
+  const [remaining, setRemaining] = useState(method.focus * 60);
+  const deadlineRef = useRef<number | null>(null); // ms epoch the phase ends
+  const [, forceRender] = useState(0);
   const onPhaseCompleteRef = useRef(onPhaseComplete);
 
   useEffect(() => { onPhaseCompleteRef.current = onPhaseComplete; }, [onPhaseComplete]);
@@ -22,53 +33,67 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
   // Reset whenever the method changes.
   useEffect(() => {
     setPhase("focus");
-    setSecondsLeft(method.focus * 60);
+    setRemaining(method.focus * 60);
     setRunning(false);
+    deadlineRef.current = null;
     setCompletedFocus(0);
   }, [method.id, method.focus]);
 
   const advance = useCallback(() => {
+    deadlineRef.current = null;
     if (phase === "focus") {
       const nextCount = completedFocus + 1;
       setCompletedFocus(nextCount);
-      const goLong = nextCount % method.cycles === 0;
-      const next: Phase = goLong ? "long" : "short";
+      const next: Phase = nextCount % method.cycles === 0 ? "long" : "short";
       setPhase(next);
-      setSecondsLeft(phaseLength(next));
+      setRemaining(phaseLength(next));
     } else {
       setPhase("focus");
-      setSecondsLeft(phaseLength("focus"));
+      setRemaining(phaseLength("focus"));
     }
   }, [phase, completedFocus, method.cycles, phaseLength]);
 
-  useEffect(() => {
-    if (!running) return;
-    tick.current = window.setInterval(() => {
-      setSecondsLeft((s) => {
-        if (s <= 1) {
-          playChime(); // end-of-phase cue (session end + break over)
-          return 0;
-        }
-        return s - 1;
-      });
-    }, 1000);
-    return () => { if (tick.current) clearInterval(tick.current); };
-  }, [running]);
+  // Live remaining seconds: computed from the deadline while running so it's
+  // immune to interval throttling; the frozen value while paused.
+  const secondsLeft = running && deadlineRef.current != null
+    ? Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000))
+    : remaining;
 
+  // Re-render ~4x/sec while running (so the display ticks), and detect the
+  // phase boundary from real elapsed time. The chime lives here — a real
+  // effect — not inside a state updater.
   useEffect(() => {
-    if (secondsLeft === 0 && running) {
-      setRunning(false);
-      onPhaseCompleteRef.current?.(phase);
-      advance();
-    }
-  }, [secondsLeft, running, advance, phase]);
+    if (!running || deadlineRef.current == null) return;
+    const iv = window.setInterval(() => {
+      const left = Math.max(0, Math.ceil((deadlineRef.current! - Date.now()) / 1000));
+      if (left <= 0) {
+        window.clearInterval(iv);
+        playChime(); // end-of-phase cue (session end + break over)
+        setRunning(false);
+        onPhaseCompleteRef.current?.(phase);
+        advance();
+      } else {
+        forceRender((n) => n + 1);
+      }
+    }, 250);
+    return () => window.clearInterval(iv);
+  }, [running, phase, advance]);
 
   const total = phaseLength(phase);
-  const progress = 1 - secondsLeft / total;
+  const progress = total > 0 ? 1 - secondsLeft / total : 0;
 
-  const start = () => setRunning(true);
-  const pause = () => setRunning(false);
-  const reset = () => { setRunning(false); setSecondsLeft(phaseLength(phase)); };
+  const start = () => {
+    deadlineRef.current = Date.now() + remaining * 1000;
+    setRunning(true);
+  };
+  const pause = () => {
+    if (deadlineRef.current != null) {
+      setRemaining(Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000)));
+    }
+    deadlineRef.current = null;
+    setRunning(false);
+  };
+  const reset = () => { setRunning(false); deadlineRef.current = null; setRemaining(phaseLength(phase)); };
   const skip = () => { setRunning(false); advance(); };
 
   return { phase, secondsLeft, running, progress, completedFocus, start, pause, reset, skip };

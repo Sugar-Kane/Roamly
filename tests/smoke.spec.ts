@@ -104,6 +104,17 @@ test("no horizontal overflow on any tab", async ({ page }) => {
   }
 });
 
+test("starting the timer counts down", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  const clock = overlay.locator('span[aria-label*=":"]').first();
+  await expect(clock).toHaveAttribute("aria-label", "25:00");
+  await page.waitForTimeout(2200);
+  await expect(clock).not.toHaveAttribute("aria-label", "25:00"); // wall-clock ticked
+});
+
 test("auth modal is a labelled dialog and closes on Escape", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Sign in" }).first().click();
