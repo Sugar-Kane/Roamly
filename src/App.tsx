@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronUp, ChevronDown, Volume2, Lock, GripVertical, HelpCircle } from "lucide-react";
 import { METHODS, SEED_TASKS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
-import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
+const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
+const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, type Profile, type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity, type FeedbackRow } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
@@ -18,6 +19,7 @@ import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { RoomsLive } from "./RoomsLive";
 import { FocusMode, CompactSounds, TimeDisplay, InfoTip } from "./FocusMode";
 import { Tutorial } from "./Tutorial";
+import { Modal } from "./Modal";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel } from "./UploadTasks";
@@ -31,6 +33,7 @@ export default function App() {
   const [methodId, setMethodId] = useState("classic");
   const [themeId, setThemeId] = useState("coffee");
   const [tasks, setTasks] = useState<Task[]>(SEED_TASKS);
+  const [tasksLoaded, setTasksLoaded] = useState(false);
   const [activeTask, setActiveTask] = useState<string | null>("t1");
   const [showUpsell, setShowUpsell] = useState(false);
   // User-editable values for the Custom method (minutes).
@@ -98,13 +101,17 @@ export default function App() {
       setSessions([]);
       setTasks(SEED_TASKS);
       setActiveTask(SEED_TASKS[0]?.id ?? null);
+      setTasksLoaded(true); // demo tasks are immediately "ready"
       return;
     }
+    // Don't flash the demo SEED_TASKS at a signed-in user while theirs load.
+    setTasksLoaded(false);
     fetchProfile(userId).then(setProfile);
     fetchRecentSessions(userId).then(setSessions);
     fetchTasks(userId).then((rows) => {
       setTasks(rows);
       setActiveTask(rows[0]?.id ?? null);
+      setTasksLoaded(true);
     });
     checkIsAdmin().then(setIsAdmin);
   }, [session?.user.id]);
@@ -427,7 +434,7 @@ export default function App() {
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               addTask={addTask} toggleTask={toggleTask} removeTask={removeTask} updateTaskEst={updateTaskEst}
               moveTask={moveTask} reorderTask={reorderTask} onFocusTask={focusTask}
-              session={session} onSignIn={onSignIn}
+              session={session} onSignIn={onSignIn} tasksLoaded={tasksLoaded}
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout} />
           )}
           {view === "analytics" && (
@@ -719,8 +726,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
 
       {showMethods && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={() => setShowMethods(false)}>
-          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <Modal label="Timer method" onClose={() => setShowMethods(false)}
+          cardClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-5 shadow-xl">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-1.5 font-display text-lg font-semibold">Timer method
                 <InfoTip text="A method sets your rhythm: how long each focus block runs, how long breaks last, and how many blocks make a cycle. Pick short Sprints or go Deep — the timer handles the switching." />
@@ -749,8 +756,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               })}
             </div>
             {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} onSave={() => { setShowMethods(false); scrollToTimer(); }} />}
-          </div>
-        </div>
+        </Modal>
       )}
 
       <div>
@@ -1159,7 +1165,7 @@ function TagPill({ tag }: { tag: string }) {
 
 type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, reorderTask, onFocusTask, session, onSignIn, profile, addImportedTasks, onSubscribe }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
@@ -1344,13 +1350,19 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
         <button onClick={add} aria-label="Add task" className="grid w-12 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95"><Plus size={20} /></button>
       </div>
 
-      {open.length === 0 && tasks.length > 0 && (
+      {session && !tasksLoaded && (
+        <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">
+          Loading your tasks…
+        </p>
+      )}
+
+      {tasksLoaded && open.length === 0 && tasks.length > 0 && (
         <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">
           Everything's done — add your next study task above.
         </p>
       )}
 
-      {groupNames.map((g) => {
+      {(!session || tasksLoaded) && groupNames.map((g) => {
         const groupTasks = open.filter((t: Task) => t.tag === g);
         const groupIds = groupTasks.map((t: Task) => t.id);
         const c = tagColor(g);
@@ -1561,13 +1573,9 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
           {weekMin > 0 ? "Your last 7 days." : "Finish a focus session and it shows up here."}
         </p>
         <div className="h-52">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={week}>
-              <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-              <Tooltip cursor={{ fill: "hsl(var(--primary) / 0.08)" }} contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, color: "hsl(var(--card-foreground))" }} />
-              <Bar dataKey="min" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
-            </BarChart>
-          </ResponsiveContainer>
+          <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-border/40" />}>
+            <WeekChart week={week} />
+          </Suspense>
         </div>
       </div>
 
@@ -1595,13 +1603,9 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
           <p className="mt-0.5 text-xs text-muted-foreground">Share of your completed pomodoros by subject.</p>
           <div className="mt-2 flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
             <div className="h-40 w-40">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={subjectSplit} dataKey="value" innerRadius={45} outerRadius={70} paddingAngle={2}>
-                    {subjectSplit.map((s) => <Cell key={s.name} fill={s.color} />)}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<div className="h-full w-full animate-pulse rounded-full bg-border/40" />}>
+                <SubjectDonut subjectSplit={subjectSplit} />
+              </Suspense>
             </div>
             <div className="space-y-2">
               {subjectSplit.map((s) => (
@@ -1921,6 +1925,7 @@ function AdminUsage() {
         </div>
       </div>
 
+      {!loaded && <p className="mt-3 text-sm text-muted-foreground">Loading usage…</p>}
       {loaded && stats.length === 0 && (
         <p className="mt-3 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
           No usage recorded yet. Data starts flowing once the metrics update is applied in Supabase and signed-in users start clicking around.
@@ -1976,6 +1981,7 @@ function AdminFeedback() {
 
   return (
     <div className="mt-5 space-y-2">
+      {!loaded && <p className="text-sm text-muted-foreground">Loading feedback…</p>}
       {loaded && rows.length === 0 && (
         <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
           No feedback yet. Users can send it from their profile menu → Send feedback.
@@ -2063,15 +2069,15 @@ function Upsell({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => 
   return (
     // z-[130] so the upsell is visible even when triggered from inside the
     // focus-mode overlay (which sits at z-[120]).
-    <div className="fixed inset-0 z-[130] grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Premium feature" onClose={onClose}
+      overlayClassName="fixed inset-0 z-[130] grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm"
+      cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
         <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary shadow-glow"><Crown className="text-white" /></div>
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
         <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 30 AI note uploads a month, and hosting your own study rooms.</p>
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Try Premium free</button>
         <button onClick={onClose} className="mt-2 w-full rounded-full py-2 text-sm text-muted-foreground">Maybe later</button>
-      </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -104,6 +104,16 @@ test("no horizontal overflow on any tab", async ({ page }) => {
   }
 });
 
+test("auth modal is a labelled dialog and closes on Escape", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Sign in" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+});
+
 test("visible buttons have accessible names", async ({ page }) => {
   await goHome(page);
   const buttons = page.locator("button:visible");

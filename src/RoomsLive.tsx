@@ -10,6 +10,7 @@ import {
 import { fmt } from "./useTimer";
 import { startFocusSound, stopFocusSound, unlockAudio, playChime, duckFocusSound, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 import { FocusMode, TimeDisplay, InfoTip } from "./FocusMode";
+import { Modal } from "./Modal";
 import { VoiceDock, VoiceControls, useRoomVoice } from "./RoomVoice";
 import { UploadTasksPanel } from "./UploadTasks";
 import { ROOMS } from "./data";
@@ -422,11 +423,11 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Host a room" onClose={onClose}
+      cardClassName="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-xl">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 font-display text-xl font-semibold"><DoorOpen size={18} className="text-primary" /> Host a room</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">The timer starts the moment you create it, and your friends get notified.</p>
         <div className="mt-4 space-y-3">
@@ -462,8 +463,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
           className="mt-4 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
           {saving ? "Creating…" : "Create and start"}
         </button>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -872,11 +872,11 @@ function InviteModal({ roomId, myId, onClose }: { roomId: string; myId: string; 
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Invite friends" onClose={onClose}
+      cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-xl font-semibold">Invite friends</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
         </div>
         {loaded && friends.length === 0 && (
           <p className="mt-3 text-sm text-muted-foreground">No friends yet — add classmates from the Friends panel first.</p>
@@ -900,7 +900,6 @@ function InviteModal({ roomId, myId, onClose }: { roomId: string; myId: string; 
           })}
         </div>
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
-      </div>
-    </div>
+    </Modal>
   );
 }

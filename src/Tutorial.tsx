@@ -10,6 +10,7 @@ import { Timer, ListChecks, Smartphone, Users, BarChart3, type LucideIcon } from
 import type { View } from "./App";
 import { track } from "./track";
 import { savePref } from "./storage";
+import { Modal } from "./Modal";
 
 export const TUTORIAL_SEEN_KEY = "roamly-tutorial-seen";
 
@@ -56,8 +57,9 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
     // Bottom sheet on phones (thumb-reachable, and the highlighted tab stays
     // visible above), centered from sm up. No backdrop-tap close — leaving the
     // tour is an explicit Skip/Get started so a stray tap can't eat it.
-    <div data-testid="tutorial" className="fixed inset-0 z-[140] grid items-end justify-items-center bg-foreground/25 p-5 backdrop-blur-[2px] sm:items-center">
-      <div className="mb-[calc(4.25rem+env(safe-area-inset-bottom))] w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl sm:mb-0">
+    <Modal label="App tour" onClose={finish} backdropClose={false} testId="tutorial"
+      overlayClassName="fixed inset-0 z-[140] grid items-end justify-items-center bg-foreground/25 p-5 backdrop-blur-[2px] sm:items-center"
+      cardClassName="mb-[calc(4.25rem+env(safe-area-inset-bottom))] w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl sm:mb-0">
         <div className="flex items-start justify-between gap-3">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl gradient-primary shadow-glow">
             <Icon size={22} className="text-white" />
@@ -87,7 +89,6 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

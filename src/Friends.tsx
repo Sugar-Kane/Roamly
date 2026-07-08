@@ -5,6 +5,7 @@ import {
   setUsername, getPublicProfiles, type Friendship, type PublicProfile,
 } from "./rooms";
 import { sendInvite, type Profile } from "./db";
+import { Modal } from "./Modal";
 import type { Session } from "@supabase/supabase-js";
 
 export function displayNameOf(p: PublicProfile | undefined | null): string {
@@ -140,11 +141,11 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Friends" onClose={onClose}
+      cardClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-xl">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 font-display text-xl font-semibold"><Users size={18} className="text-primary" /> Friends</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
+          <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
         </div>
 
         {!profile?.username ? (
@@ -281,8 +282,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
             )}
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
 

@@ -7,6 +7,7 @@ import { useState } from "react";
 import { X, MessageSquare, Check } from "lucide-react";
 import { submitFeedback } from "./db";
 import { deviceType, platformInfo, track } from "./track";
+import { Modal } from "./Modal";
 
 const CATEGORIES = [
   { id: "bug", label: "Something's broken" },
@@ -55,8 +56,9 @@ export function FeedbackModal({ userId, page, onClose }: { userId: string; page:
   };
 
   return (
-    <div className="fixed inset-0 z-[130] grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={onClose}>
-      <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+    <Modal label="Send feedback" onClose={onClose}
+      overlayClassName="fixed inset-0 z-[130] grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm"
+      cardClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-xl">
         <div className="flex items-start justify-between gap-3">
           <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl gradient-primary shadow-glow">
             <MessageSquare size={20} className="text-white" />
@@ -115,7 +117,6 @@ export function FeedbackModal({ userId, page, onClose }: { userId: string; page:
             </p>
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   );
 }
