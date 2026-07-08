@@ -650,6 +650,21 @@ export function setFocusVolume(volume: number) {
   }
 }
 
+// Gently dims whatever is playing (synth or real tracks — both route through
+// masterGain) over the last few seconds of a focus block, so the music flows
+// into the break instead of cutting off. The phase-boundary stop/start that
+// follows resets the gain naturally.
+export function duckFocusSound(seconds = 5) {
+  if (!ctx || !masterGain) return;
+  const g = masterGain;
+  const t = ctx.currentTime;
+  try {
+    g.gain.cancelScheduledValues(t);
+    g.gain.setValueAtTime(g.gain.value, t);
+    g.gain.linearRampToValueAtTime(Math.max(0.0001, currentVolume * 0.08), t + seconds);
+  } catch { /* context torn down */ }
+}
+
 export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   const audio = audioCtx();
   if (!audio) return;

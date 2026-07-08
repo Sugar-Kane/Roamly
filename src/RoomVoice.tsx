@@ -6,6 +6,11 @@
 // Break-only, like text chat: connections stay alive through the whole
 // session, but every mic is hard-disabled (track.enabled = false) during
 // focus phases, so there's nothing to reconnect when a break starts.
+//
+// All state lives in the useRoomVoice hook, called ONCE by RoomView — so the
+// call survives entering/leaving focus mode. VoiceDock (full panel) and
+// VoiceControls (compact row inside the focus overlay) are two views over the
+// same hook value.
 
 import { useEffect, useRef, useState } from "react";
 import { Headphones, Mic, MicOff, PhoneOff, Lock } from "lucide-react";
@@ -30,15 +35,19 @@ type Peer = {
   hasRemote: boolean;
 };
 
-export function VoiceDock({ roomId, userId, username, phase, secondsToBreak, isPremium, gateThen }: {
-  roomId: string;
-  userId: string;
-  username: string;
-  phase: "focus" | "short" | "long";
-  secondsToBreak: number;
-  isPremium: boolean;
-  gateThen: (fn: () => void) => void;
-}) {
+export type RoomVoice = {
+  joined: boolean;
+  micOn: boolean;
+  micLive: boolean;
+  members: VoiceMember[];
+  error: string | null;
+  voiceFull: boolean;
+  join: () => Promise<void>;
+  leave: () => void;
+  toggleMic: () => void;
+};
+
+export function useRoomVoice(roomId: string, userId: string, username: string, phase: "focus" | "short" | "long"): RoomVoice {
   const [joined, setJoined] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [members, setMembers] = useState<VoiceMember[]>([]);
@@ -210,10 +219,53 @@ export function VoiceDock({ roomId, userId, username, phase, secondsToBreak, isP
     peersRef.current.clear();
   };
 
-  useEffect(() => () => { if (joinedRef.current) leave(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const leaveRef = useRef(leave);
+  leaveRef.current = leave;
+  useEffect(() => () => { if (joinedRef.current) leaveRef.current(); }, []);
 
-  const othersInVoice = members.filter((m) => m.id !== userId);
-  const voiceFull = !joined && members.length >= VOICE_CAP;
+  return {
+    joined, micOn, micLive, members, error,
+    voiceFull: !joined && members.length >= VOICE_CAP,
+    join, leave,
+    toggleMic: () => setMicOn((m) => !m),
+  };
+}
+
+// Shared join/mic/leave button row — identical rules in both surfaces.
+function VoiceButtons({ voice, phase, isPremium, gateThen }: {
+  voice: RoomVoice; phase: "focus" | "short" | "long"; isPremium: boolean; gateThen: (fn: () => void) => void;
+}) {
+  return voice.joined ? (
+    <div className="flex shrink-0 items-center gap-2">
+      <button onClick={voice.toggleMic} disabled={phase === "focus"}
+        aria-label={voice.micOn ? "Mute microphone" : "Unmute microphone"}
+        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${phase === "focus" ? "cursor-not-allowed border-border text-muted-foreground opacity-60" : voice.micLive ? "border-roamly-green/50 bg-roamly-green/10 text-roamly-green" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}>
+        {voice.micLive ? <Mic size={13} /> : <MicOff size={13} />} {voice.micLive ? "Mic on" : "Muted"}
+      </button>
+      <button onClick={voice.leave} aria-label="Leave voice"
+        className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:text-destructive">
+        <PhoneOff size={13} /> Leave
+      </button>
+    </div>
+  ) : (
+    <button
+      onClick={() => (isPremium ? voice.join() : gateThen(() => {}))}
+      disabled={voice.voiceFull}
+      className="flex shrink-0 items-center gap-1.5 rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
+      <Mic size={13} /> {voice.voiceFull ? "Voice full" : "Join voice"}
+    </button>
+  );
+}
+
+export function VoiceDock({ voice, userId, phase, secondsToBreak, isPremium, gateThen }: {
+  voice: RoomVoice;
+  userId: string;
+  phase: "focus" | "short" | "long";
+  secondsToBreak: number;
+  isPremium: boolean;
+  gateThen: (fn: () => void) => void;
+}) {
+  const othersInVoice = voice.members.filter((m) => m.id !== userId);
 
   return (
     <section className="mt-5 rounded-3xl border border-border bg-card/80 p-5 shadow-sm">
@@ -223,45 +275,25 @@ export function VoiceDock({ roomId, userId, username, phase, secondsToBreak, isP
           <h2 className="font-display text-lg font-semibold">Voice</h2>
           {!isPremium && <span className="text-xs text-primary">Premium</span>}
           <span className="text-xs text-muted-foreground">
-            {members.length === 0 ? "· quiet right now" : `· ${members.length} in voice`}
+            {voice.members.length === 0 ? "· quiet right now" : `· ${voice.members.length} in voice`}
           </span>
         </div>
-
-        {joined ? (
-          <div className="flex shrink-0 items-center gap-2">
-            <button onClick={() => setMicOn((m) => !m)} disabled={phase === "focus"}
-              aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${phase === "focus" ? "cursor-not-allowed border-border text-muted-foreground opacity-60" : micLive ? "border-roamly-green/50 bg-roamly-green/10 text-roamly-green" : "border-border bg-card text-muted-foreground hover:text-foreground"}`}>
-              {micLive ? <Mic size={13} /> : <MicOff size={13} />} {micLive ? "Mic on" : "Muted"}
-            </button>
-            <button onClick={leave} aria-label="Leave voice"
-              className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:text-destructive">
-              <PhoneOff size={13} /> Leave
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => (isPremium ? join() : gateThen(() => {}))}
-            disabled={voiceFull}
-            className="flex shrink-0 items-center gap-1.5 rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
-            <Mic size={13} /> {voiceFull ? "Voice full" : "Join voice"}
-          </button>
-        )}
+        <VoiceButtons voice={voice} phase={phase} isPremium={isPremium} gateThen={gateThen} />
       </div>
 
-      {joined && phase === "focus" && (
+      {voice.joined && phase === "focus" && (
         <p className="mt-3 flex items-center gap-1.5 rounded-xl border border-dashed border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground">
           <Lock size={12} /> Mics open at the break · {fmt(secondsToBreak)}
         </p>
       )}
 
-      {joined && othersInVoice.length === 0 && phase !== "focus" && (
+      {voice.joined && othersInVoice.length === 0 && phase !== "focus" && (
         <p className="mt-3 text-xs text-muted-foreground">You're the only one in voice — others can hop in from this panel.</p>
       )}
 
-      {members.length > 0 && (
+      {voice.members.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {members.map((m) => (
+          {voice.members.map((m) => (
             <span key={m.id} className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${m.id === userId ? "bg-primary/10 text-primary" : "bg-secondary text-secondary-foreground"}`}>
               <Headphones size={11} />
               {m.username}{m.id === userId && " (you)"}
@@ -270,10 +302,34 @@ export function VoiceDock({ roomId, userId, username, phase, secondsToBreak, isP
         </div>
       )}
 
-      {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+      {voice.error && <p className="mt-3 text-xs text-destructive">{voice.error}</p>}
       <p className="mt-3 text-[11px] text-muted-foreground">
         Voice works like chat: talk during breaks, mics lock automatically while everyone focuses.
       </p>
     </section>
+  );
+}
+
+// Compact voice row for the focus-mode overlay: same state, same rules.
+export function VoiceControls({ voice, phase, isPremium, gateThen }: {
+  voice: RoomVoice;
+  phase: "focus" | "short" | "long";
+  isPremium: boolean;
+  gateThen: (fn: () => void) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-border bg-card/70 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+          <Headphones size={13} className="text-primary" /> Voice
+          <span className="normal-case tracking-normal">{voice.members.length > 0 ? `· ${voice.members.length} in` : ""}</span>
+        </span>
+        <VoiceButtons voice={voice} phase={phase} isPremium={isPremium} gateThen={gateThen} />
+      </div>
+      {voice.joined && phase === "focus" && (
+        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground"><Lock size={11} /> Mics open at the break.</p>
+      )}
+      {voice.error && <p className="mt-2 text-xs text-destructive">{voice.error}</p>}
+    </div>
   );
 }

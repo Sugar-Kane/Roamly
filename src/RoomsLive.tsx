@@ -8,9 +8,10 @@ import {
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
-import { startFocusSound, stopFocusSound, unlockAudio, playChime, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
+import { startFocusSound, stopFocusSound, unlockAudio, playChime, duckFocusSound, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 import { FocusMode, TimeDisplay } from "./FocusMode";
-import { VoiceDock } from "./RoomVoice";
+import { VoiceDock, VoiceControls, useRoomVoice } from "./RoomVoice";
+import { UploadTasksPanel } from "./UploadTasks";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
 import type { Profile } from "./db";
@@ -46,6 +47,10 @@ type RoomsLiveProps = {
   // room (so the personal-timer sound effect doesn't fight it).
   soundAuto: boolean;
   onInRoom: (inRoom: boolean) => void;
+  // For the AI task generator inside hosted rooms: tasks land in the user's
+  // own list, and the upgrade CTA goes to checkout.
+  onImportedTasks: (rows: unknown[]) => void;
+  onUpgrade: () => void;
 };
 
 export function RoomsLive(props: RoomsLiveProps) {
@@ -84,7 +89,7 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom }: RoomsLiveProps & { session: Session }) {
+function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [active, setActive] = useState<LiveRoom | null>(null);
   const [occupancy, setOccupancy] = useState<Map<string, number>>(new Map());
@@ -202,6 +207,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     return (
       <RoomView room={active} session={session} profile={profile} now={now}
         isPremium={isPremium} gateThen={gateThen} soundAuto={soundAuto} onInRoom={onInRoom}
+        onImportedTasks={onImportedTasks} onUpgrade={onUpgrade}
         onMusicChange={(music) => setActive((prev) => (prev ? { ...prev, music } : prev))}
         onLeave={() => { setActive(null); reload(); }}
         onEnded={() => { setActive(null); reload(); }} />
@@ -422,7 +428,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
 
 type Member = { id: string; username: string };
 
-function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, onInRoom, onMusicChange, onLeave, onEnded }: {
+function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, onInRoom, onImportedTasks, onUpgrade, onMusicChange, onLeave, onEnded }: {
   room: LiveRoom;
   session: Session;
   profile: Profile | null;
@@ -431,6 +437,8 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   gateThen: (fn: () => void) => void;
   soundAuto: boolean;
   onInRoom: (inRoom: boolean) => void;
+  onImportedTasks: (rows: unknown[]) => void;
+  onUpgrade: () => void;
   onMusicChange: (music: FocusSoundId) => void;
   onLeave: () => void;
   onEnded: () => void;
@@ -443,6 +451,10 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   const isHost = room.host_id === userId;
   const music = ((room.music || "lofi") as FocusSoundId);
   const canPickMusic = isHost && !room.is_system;
+  // One voice instance for the whole room screen: the dock (normal view) and
+  // the compact controls (focus overlay) are two surfaces over this hook, so
+  // a live call survives entering/leaving focus mode.
+  const voice = useRoomVoice(room.id, userId, username, info.phase);
   // Local, per-listener music mute — silences the background music just for you,
   // completely separate from the voice controls (muting a mic / people talking).
   const [musicMuted, setMusicMuted] = useState(() => localStorage.getItem("roamly-room-music-muted") === "on");
@@ -463,6 +475,17 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     else stopFocusSound();
   }, [info.phase, soundAuto, music, musicMuted]);
   useEffect(() => () => { stopFocusSound(); }, []);
+
+  // Dim the room music over the last ~5s of a focus block (once per block).
+  const duckedRef = useRef(false);
+  useEffect(() => {
+    if (info.phase === "focus" && info.secondsLeft <= 6 && !duckedRef.current) {
+      duckedRef.current = true;
+      duckFocusSound(5);
+    } else if (info.phase !== "focus" || info.secondsLeft > 6) {
+      duckedRef.current = false;
+    }
+  }, [info.secondsLeft, info.phase]);
 
   const toggleMusicMuted = () => {
     unlockAudio(); // iOS-safe resume when unmuting mid-focus
@@ -633,7 +656,13 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         )}
       </section>
 
-      <VoiceDock roomId={room.id} userId={userId} username={username}
+      {!room.is_system && (
+        <div className="mt-4">
+          <UploadTasksPanel profile={profile} session={session} onImported={onImportedTasks} onUpgrade={onUpgrade} />
+        </div>
+      )}
+
+      <VoiceDock voice={voice} userId={userId}
         phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0}
         isPremium={isPremium} gateThen={gateThen} />
 
@@ -663,11 +692,16 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
             <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · always on" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
           </div>
         }
-        extra={info.phase !== "focus"
-          ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={0} />
-          : <p className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 text-center text-xs text-muted-foreground">
-              <MessageCircle size={13} /> Chat opens when the focus block reaches a break.
-            </p>} />
+        extra={
+          <div className="space-y-3">
+            <VoiceControls voice={voice} phase={info.phase} isPremium={isPremium} gateThen={gateThen} />
+            {info.phase !== "focus"
+              ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={0} />
+              : <p className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 text-center text-xs text-muted-foreground">
+                  <MessageCircle size={13} /> Chat opens when the focus block reaches a break.
+                </p>}
+          </div>
+        } />
     </div>
   );
 }

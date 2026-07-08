@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Sparkles, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2, Lock } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2, Lock } from "lucide-react";
 import { METHODS, SEED_TASKS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, type FocusSoundId } from "./focusSounds";
+import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, uploadStudyMaterial, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, type Profile, type AdminUser } from "./db";
+import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, type Profile, type AdminUser } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
@@ -16,6 +16,7 @@ import { RoomsLive } from "./RoomsLive";
 import { FocusMode, CompactSounds, TimeDisplay } from "./FocusMode";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
+import { UploadTasksPanel } from "./UploadTasks";
 import type { Session } from "@supabase/supabase-js";
 
 type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
@@ -210,6 +211,13 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer.running, timer.phase, soundAuto, focusSound]);
 
+  // Dim the music over the last ~5s of a focus block so it flows into the break.
+  useEffect(() => {
+    if (timer.running && timer.phase === "focus" && timer.secondsLeft === 6 && focusSoundActive()) {
+      duckFocusSound(5);
+    }
+  }, [timer.secondsLeft, timer.running, timer.phase]);
+
   // Premium isn't a bottom-nav tab: it's reached from the profile-menu plan
   // card and the upsell popups, so it doesn't need a permanent slot here.
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
@@ -403,7 +411,8 @@ export default function App() {
             <RoomsLive session={session} profile={profile} isPremium={isPremium} gateThen={gateThen} onSignIn={onSignIn}
               onNeedUsername={openFriends} onOpenFriends={openFriends}
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
-              soundAuto={soundAuto} onInRoom={handleInRoom} />
+              soundAuto={soundAuto} onInRoom={handleInRoom}
+              onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           )}
           {view === "premium" && (
             <PremiumView isPremium={isPremium} session={session} onSubscribe={startCheckout}
@@ -432,7 +441,13 @@ export default function App() {
             </button>
           </>
         }
-        music={<CompactSounds sounds={sounds} />} />
+        music={<CompactSounds sounds={sounds} />}
+        extra={
+          <div className="space-y-4">
+            <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} />
+            <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
+          </div>
+        } />
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
       {needsPassword && session && (
@@ -598,14 +613,16 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       )}
 
       <section ref={timerRef} className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
+        <button onClick={() => setShowMethods(true)}
+          className="mb-5 flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-2.5 text-sm transition hover:border-primary/40">
+          <span className="flex items-center gap-2 font-medium"><Timer size={15} className="text-primary" /> Select timer</span>
+          <span className="flex items-center gap-1 text-muted-foreground">{method.name} <ChevronDown size={14} /></span>
+        </button>
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
           <div className="flex shrink-0 flex-col items-center lg:items-start">
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
             <TimeDisplay value={fmt(timer.secondsLeft)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
-            <button onClick={() => setShowMethods(true)}
-              className="mt-1.5 flex items-center gap-1 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-              {method.name} <ChevronDown size={13} />
-            </button>
+            <span className="mt-1 text-sm text-muted-foreground">{method.name}</span>
           </div>
 
           <div className="flex flex-1 flex-col gap-5">
@@ -1060,112 +1077,6 @@ function MusicPanel({ isPremium, gateThen, onEmbedPlay }: any) {
           <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock {service === "spotify" ? "Spotify" : "Apple Music"}</span>
         </button>
       )}
-    </div>
-  );
-}
-
-const FREE_MONTHLY_UPLOAD_QUOTA = 3;
-const ALLOWED_UPLOAD_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"];
-const MAX_UPLOAD_BYTES = 22 * 1024 * 1024;
-
-function currentUploadPeriod() {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function UploadTasksPanel({ profile, session, onImported, onUpgrade }: any) {
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [quotaExceeded, setQuotaExceeded] = useState(false);
-
-  const isPremium = profile?.is_premium ?? false;
-  const usedThisPeriod = profile?.ai_uploads_period === currentUploadPeriod() ? (profile?.ai_uploads_count ?? 0) : 0;
-  const remaining = Math.max(0, FREE_MONTHLY_UPLOAD_QUOTA - usedThisPeriod);
-
-  const handleFile = async (file: File | null) => {
-    if (!file) return;
-    setError(null);
-    setQuotaExceeded(false);
-    if (!ALLOWED_UPLOAD_TYPES.includes(file.type)) {
-      setError("Unsupported file type — upload a PDF or photo (JPEG/PNG/WebP/GIF).");
-      return;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setError("That file is too large — try something under 22MB.");
-      return;
-    }
-    const userId = session?.user.id;
-    if (!userId) { setError("Sign in to upload study material."); return; }
-    setLoading(true);
-    try {
-      // Upload straight to Storage first — the file never passes through our
-      // serverless function, which is capped at a 4.5MB request body by Vercel.
-      const storagePath = await uploadStudyMaterial(userId, file);
-      if (!storagePath) { setError("Couldn't upload that file — try again."); return; }
-      const token = await getAccessToken();
-      if (!token) { setError("Sign in to upload study material."); return; }
-      const res = await fetch("/api/generate-tasks", {
-        method: "POST",
-        headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ storagePath, mediaType: file.type }),
-      });
-      const result = await res.json();
-      if (res.status === 403 && result.error === "quota_exceeded") {
-        setQuotaExceeded(true);
-        return;
-      }
-      if (!res.ok) {
-        setError(result.error ?? "Something went wrong — try again.");
-        return;
-      }
-      onImported(result.tasks);
-      setOpen(false);
-    } catch {
-      setError("Couldn't reach the server. Try again soon.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-left transition hover:border-primary/40">
-        <span className="flex items-center gap-2 text-sm font-medium">
-          <Sparkles size={16} className="text-primary" /> Upload notes or slides — auto-generate tasks
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {isPremium ? "60 uploads a month" : `${remaining} of ${FREE_MONTHLY_UPLOAD_QUOTA} free left this month`}
-        </span>
-      </button>
-    );
-  }
-
-  if (quotaExceeded) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
-        <p className="text-sm text-muted-foreground">You've used your {FREE_MONTHLY_UPLOAD_QUOTA} free uploads this month.</p>
-        <div className="mt-3 flex items-center gap-3">
-          <button onClick={onUpgrade} className="rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow">Go Premium</button>
-          <button onClick={() => setOpen(false)} className="text-xs text-muted-foreground underline">Close</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">Upload a PDF or photo</span>
-        <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
-      </div>
-      <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp,image/gif"
-        disabled={loading}
-        onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-        className="mt-3 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-full file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary" />
-      {loading && <p className="mt-2 text-xs text-muted-foreground">Reading your file and generating tasks…</p>}
-      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
     </div>
   );
 }
@@ -1665,7 +1576,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 function PremiumView({ isPremium, session, onSubscribe, checkoutLoading, checkoutError }: any) {
-  const perks = ["60 AI note uploads a month (~2 a day)", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
+  const perks = ["30 AI note uploads a month (~1 a day)", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
 
@@ -1847,13 +1758,41 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
+function FocusTasksCard({ tasks, activeTask, setActiveTask }: any) {
+  const open = sortTasks(tasks).filter((t: Task) => !t.done)
+    .sort((a: Task, b: Task) => Number(b.id === activeTask) - Number(a.id === activeTask))
+    .slice(0, 4);
+  if (open.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-border bg-card/70 p-3">
+      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Studying</span>
+      <div className="mt-2 space-y-1.5">
+        {open.map((t: Task) => (
+          <button key={t.id} onClick={() => setActiveTask(t.id)}
+            className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/60 hover:border-primary/40"}`}>
+            <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
+            {activeTask === t.id && (
+              <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                <Timer size={10} /> Focusing
+              </span>
+            )}
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Upsell({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={onClose}>
+    // z-[130] so the upsell is visible even when triggered from inside the
+    // focus-mode overlay (which sits at z-[120]).
+    <div className="fixed inset-0 z-[130] grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={onClose}>
       <div className="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary shadow-glow"><Crown className="text-white" /></div>
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
-        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 60 AI note uploads a month, and hosting your own study rooms.</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 30 AI note uploads a month, and hosting your own study rooms.</p>
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Try Premium free</button>
         <button onClick={onClose} className="mt-2 w-full rounded-full py-2 text-sm text-muted-foreground">Maybe later</button>
       </div>

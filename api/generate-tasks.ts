@@ -1,13 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
+import mammoth from "mammoth";
+import JSZip from "jszip";
 
-const ALLOWED_MEDIA_TYPES = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const ALLOWED_MEDIA_TYPES = [
+  "application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif",
+  "text/plain", "text/markdown", "text/csv", DOCX, PPTX,
+] as const;
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
+const MAX_TEXT_CHARS = 60_000; // keep worst-case Claude input (and cost) bounded
 
 const FREE_MONTHLY_QUOTA = 3;
 // Premium is capped too — "unlimited" uploads would be an open tab on the
 // Anthropic bill. Generous for real studying, hostile to abuse.
-const PREMIUM_MONTHLY_QUOTA = 60;
+const PREMIUM_MONTHLY_QUOTA = 30;
 const STORAGE_BUCKET = "study-uploads";
 const SIGNED_URL_TTL_SECONDS = 300;
 
@@ -80,7 +88,7 @@ export async function POST(request: Request): Promise<Response> {
     return jsonResponse({ error: "Invalid file reference" }, 403);
   }
   if (!mediaType || !(ALLOWED_MEDIA_TYPES as readonly string[]).includes(mediaType)) {
-    return jsonResponse({ error: "Unsupported file type — upload a PDF or photo (JPEG/PNG/WebP/GIF)." }, 400);
+    return jsonResponse({ error: "Unsupported file type — upload a PDF, photo, Word/PowerPoint file, or plain text." }, 400);
   }
   const validatedMediaType = mediaType as MediaType;
 
@@ -136,14 +144,48 @@ export async function POST(request: Request): Promise<Response> {
 
   const anthropic = new Anthropic({ apiKey: anthropicKey });
 
-  const fileBlock =
-    validatedMediaType === "application/pdf"
-      ? { type: "document" as const, source: { type: "url" as const, url: signed.signedUrl } }
-      : { type: "image" as const, source: { type: "url" as const, url: signed.signedUrl } };
-
   let tasks: { title: string; tag: string; est: number }[] = [];
   let claudeError: Response | null = null;
   try {
+    // PDFs and images go to Claude by URL; Office/text files are extracted to
+    // plain text here first (Claude's document block only accepts PDFs).
+    let fileBlock:
+      | { type: "document"; source: { type: "url"; url: string } }
+      | { type: "image"; source: { type: "url"; url: string } }
+      | { type: "text"; text: string };
+    if (validatedMediaType === "application/pdf") {
+      fileBlock = { type: "document", source: { type: "url", url: signed.signedUrl } };
+    } else if (validatedMediaType.startsWith("image/")) {
+      fileBlock = { type: "image", source: { type: "url", url: signed.signedUrl } };
+    } else {
+      const resp = await fetch(signed.signedUrl);
+      if (!resp.ok) throw new Error(`file fetch failed (${resp.status})`);
+      let text: string;
+      if (validatedMediaType === DOCX) {
+        const { value } = await mammoth.extractRawText({ buffer: Buffer.from(await resp.arrayBuffer()) });
+        text = value;
+      } else if (validatedMediaType === PPTX) {
+        // A .pptx is a zip; slide text lives in <a:t> runs inside each slide's XML.
+        const zip = await JSZip.loadAsync(await resp.arrayBuffer());
+        const slideNames = Object.keys(zip.files)
+          .filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
+          .sort((a, b) => Number(a.match(/\d+/)![0]) - Number(b.match(/\d+/)![0]));
+        const slides: string[] = [];
+        for (const name of slideNames) {
+          const xml = await zip.files[name].async("string");
+          const runs = [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]);
+          if (runs.length > 0) slides.push(runs.join(" "));
+        }
+        text = slides.map((s, i) => `Slide ${i + 1}: ${s}`).join("\n");
+      } else {
+        text = await resp.text();
+      }
+      text = text.trim().slice(0, MAX_TEXT_CHARS);
+      if (text.length < 20) {
+        throw new Error("no extractable text");
+      }
+      fileBlock = { type: "text", text: `Study material (extracted from the student's uploaded file):\n\n${text}` };
+    }
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 4096,
@@ -177,8 +219,8 @@ export async function POST(request: Request): Promise<Response> {
         est: Math.max(1, Math.min(6, Math.round(t.est) || 2)),
       }));
   } catch (err) {
-    console.warn("[Roamly] generate-tasks: Claude call failed", err);
-    claudeError = jsonResponse({ error: "Couldn't read that file — try a clearer PDF or photo." }, 502);
+    console.warn("[Roamly] generate-tasks: read/Claude step failed", err);
+    claudeError = jsonResponse({ error: "Couldn't read that file — try a clearer copy or a different format." }, 502);
   }
 
   // Best-effort cleanup now that Claude has (or hasn't) read the file — we don't
