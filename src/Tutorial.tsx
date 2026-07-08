@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { Timer, ListChecks, Smartphone, Users, BarChart3, type LucideIcon } from "lucide-react";
 import type { View } from "./App";
 import { track } from "./track";
+import { savePref } from "./storage";
 
 export const TUTORIAL_SEEN_KEY = "roamly-tutorial-seen";
 
@@ -46,7 +47,7 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
 
   const finish = () => {
     track("tutorial_done");
-    localStorage.setItem(TUTORIAL_SEEN_KEY, "1");
+    savePref(TUTORIAL_SEEN_KEY, "1");
     setView("focus");
     onClose();
   };

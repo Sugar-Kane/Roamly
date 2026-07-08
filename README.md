@@ -1,89 +1,64 @@
 # Roamly Focus
 
-A premium Pomodoro study platform for Physician Assistant students. Built with React + TypeScript + Tailwind CSS + Vite.
+A Pomodoro study platform for Physician Assistant students — solo focus timer, live shared-timer study rooms with voice and break-only chat, AI task generation from lecture notes, streaks and analytics, and a Stripe-powered Premium tier.
 
-This is the **frontend** (Phase 1). It runs fully on its own with mock data so you can click through the entire product. Backend services (auth, database, payments, real-time rooms) get wired in later — see "Roadmap" below.
+Live at the Vercel production URL configured for this repo (`main` auto-deploys).
 
-## What's included
+## Architecture
 
-- **Focus timer** — 10 Pomodoro methods (Classic 25/5, Deep Work, Clinical 90/20, PANCE Drill, Marathon, Custom, and more), with focus/break cycling, cycle dots, and a gentle audio cue at the end of each phase.
-- **Tasks** — add, tag (Pharm / Cardio / Clinical / PANCE / Anatomy), complete, and pick an active task to focus on.
-- **Analytics** — weekly focus chart and stats, with a premium-gated subject breakdown.
-- **Study rooms** — browse and join/leave live sessions (UI + mock data; real-time comes with the backend).
-- **Premium** — subscription screen, ambient study themes, Spotify music embed, and feature gating throughout.
+```
+Browser (React 19 + Vite SPA, src/)
+  ├── Supabase JS (anon key) → Postgres + RLS, Auth, Realtime, Storage
+  └── fetch /api/* (Bearer JWT) → Vercel serverless functions (api/)
+        ├── Stripe   (checkout, billing portal, webhook)
+        └── Anthropic (generate-tasks: notes → task list)
+```
 
-> Note: data resets on refresh — there's no backend yet, and the app keeps state in memory only. Persistence arrives in Phase 2.
+- **Authorization lives in Postgres Row-Level Security** (`supabase/schema.sql`). The browser talks to the database directly with the public anon key; RLS is the entire permission layer. Server functions use the service-role key (bypasses RLS) and re-check ownership themselves.
+- **Room timers are wall-clock math** — a room's phase is derived from time since `started_at` (`room_phase()` in SQL, `roomPhaseAt` in `src/rooms.ts`), so no server ticks and every participant computes the identical countdown. Four always-on community rooms; Premium users can host up to 3 rooms (RLS-enforced), auto-reaped ~1 min after emptying (pg_cron sweep + heartbeats).
+- **Premium** is a Stripe subscription. `profiles.is_premium` is flipped **only** by the webhook; column-level grants stop clients from self-upgrading.
+- **AI uploads** (PDF/images/Word/PowerPoint/text) go to Supabase Storage (`study-uploads`, per-user folders), then `api/generate-tasks` has Claude extract a task list. Quotas: free 3/month, premium 30/month, plus a global monthly circuit-breaker bounding total spend.
 
-## Run locally
+## Repo layout
 
-Requires Node.js 18+.
+```
+src/            React app (App.tsx is the shell + most views)
+  db.ts         Supabase data layer      rooms.ts   rooms/friends/notifications
+  focusSounds.ts WebAudio music engine   track.ts   usage telemetry
+api/            Vercel functions: create-checkout-session, create-portal-session,
+                stripe-webhook, invite, generate-tasks, health
+supabase/       schema.sql (CANONICAL — full schema incl. RLS + RPCs)
+                dated *.sql migration files (already folded into schema.sql)
+                rooms_schema.sql (historical; superseded by schema.sql)
+public/         static assets, bundled music (fetched by .github/workflows/fetch-music.yml)
+```
+
+## Environment variables
+
+Copy `.env.example`. `VITE_*` values are public (client bundle); everything else is server-only — set them in Vercel without the `VITE_` prefix. `GET /api/health` reports which are present (booleans only).
+
+## Local development
+
+Node 18+.
 
 ```bash
 npm install
-npm run dev      # start dev server at http://localhost:5173
-npm run build    # production build into /dist
-npm run preview  # preview the production build
+npm run dev       # http://localhost:5173
+npm run build     # tsc + vite build → dist/
+npm run lint      # oxlint
+npx playwright test   # smoke tests (requires a build; see playwright.config.ts)
 ```
 
-## Deploy to Vercel
+Without Supabase env vars the app runs in local demo mode (no accounts/sync).
 
-You'll do these steps yourself (they involve your own accounts and credentials):
+## Supabase setup
 
-1. Push this folder to a new GitHub repository.
-2. Go to vercel.com, sign in, and click **Add New → Project**.
-3. Import your GitHub repo.
-4. Vercel auto-detects Vite. Confirm these settings if asked:
-   - **Framework Preset:** Vite
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-5. Click **Deploy**. That's it — you'll get a live URL.
+Run `supabase/schema.sql` in the SQL editor of a fresh project — it is idempotent and contains tables, RLS policies, RPCs, triggers, pg_cron room sweep, and realtime publication. Also required (dashboard): a **private** Storage bucket `study-uploads` with per-user-folder RLS, the pg_cron extension, and Auth providers (email + Google).
 
-No environment variables are needed for this frontend-only phase.
+## Stripe setup
 
-## Roadmap (Phase 2 — backend)
+Create a subscription price (`STRIPE_PRICE_ID`), point a webhook at `/api/stripe-webhook` with events `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`, `invoice.payment_failed` (`STRIPE_WEBHOOK_SECRET`), and activate the Customer Portal (Settings → Billing) for self-serve cancel.
 
-The PRD's full stack (Node/Express, PostgreSQL, Redis, Socket.IO, Stripe, JWT/OAuth) gets added incrementally. Each needs an account and secrets that you create and hold:
+## Anthropic setup
 
-- **Database:** Neon or Supabase (PostgreSQL)
-- **Cache / real-time presence:** Upstash (Redis)
-- **Payments:** Stripe (the Premium screen is already structured for it)
-- **Auth:** Google OAuth, or email + JWT
-- **Real-time rooms:** Socket.IO server
-
-When you're ready, set those up and I'll write the integration code and tell you exactly which environment variables go where.
-
-## Live study rooms (Supabase)
-
-Rooms are real-time when Supabase is connected (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`):
-
-- **Shared timers with zero server ticking** — a room's phase is derived from wall-clock
-  time since its `started_at`, so every participant computes the identical countdown.
-- **Four always-on community rooms** that cycle continuously, staggered so their breaks
-  don't all land at once.
-- **Friends & notifications** — pick a username, add classmates, get notified when a
-  friend creates/joins a room or invites you to one.
-- **Break-only chat** — the chat input unlocks during short/long breaks, and the database
-  trigger `room_messages_break_only` enforces it server-side too.
-
-Setup: run `supabase/schema.sql` first, then `supabase/rooms_schema.sql`, in
-Supabase Dashboard → SQL Editor. The second file also seeds the 4 always-on rooms and
-adds `rooms`, `room_messages`, and `notifications` to the realtime publication.
-
-## Project structure
-
-```
-src/
-  App.tsx           # views: Focus, Tasks, Analytics, Premium + app shell
-  RoomsLive.tsx     # live rooms: lobby, synced room timer, presence, break-only chat
-  Friends.tsx       # username setup, friend search/requests
-  Notifications.tsx # header bell (friend requests, room invites/activity)
-  rooms.ts          # room/friend/notification data layer + shared phase math
-  useTimer.ts       # personal timer logic (phases, cycles, audio cue)
-  data.ts           # methods, seed tasks, mock analytics, themes, demo rooms
-  spotify.ts        # Spotify presets + link parsing for the Music panel
-  index.css         # fonts + base styles
-supabase/
-  schema.sql        # profiles, focus_sessions, tasks (run first)
-  rooms_schema.sql  # rooms, friendships, notifications, break-only chat (run second)
-tailwind.config.js  # custom palette (ink / lamp / sage / clay) and fonts
-```
+Set `ANTHROPIC_API_KEY` and add a monthly spend limit in the Anthropic console (Settings → Limits) as the hard cost backstop behind the in-app quotas.

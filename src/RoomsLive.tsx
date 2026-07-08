@@ -15,6 +15,7 @@ import { UploadTasksPanel } from "./UploadTasks";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
 import { track } from "./track";
+import { loadPref, savePref } from "./storage";
 import type { Profile } from "./db";
 import type { Session } from "@supabase/supabase-js";
 
@@ -64,8 +65,8 @@ export function RoomsLive(props: RoomsLiveProps) {
 // feedback: the concept wasn't obvious). Collapses to a small reopen link
 // once dismissed.
 function HowRoomsWork() {
-  const [open, setOpen] = useState(() => localStorage.getItem("roamly-rooms-explainer-seen") !== "1");
-  const dismiss = () => { localStorage.setItem("roamly-rooms-explainer-seen", "1"); setOpen(false); };
+  const [open, setOpen] = useState(() => loadPref("roamly-rooms-explainer-seen") !== "1");
+  const dismiss = () => { savePref("roamly-rooms-explainer-seen", "1"); setOpen(false); };
   if (!open) {
     return (
       <button onClick={() => setOpen(true)}
@@ -497,7 +498,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   const voice = useRoomVoice(room.id, userId, username, info.phase);
   // Local, per-listener music mute — silences the background music just for you,
   // completely separate from the voice controls (muting a mic / people talking).
-  const [musicMuted, setMusicMuted] = useState(() => localStorage.getItem("roamly-room-music-muted") === "on");
+  const [musicMuted, setMusicMuted] = useState(() => loadPref("roamly-room-music-muted") === "on");
 
   // The room owns the audio engine while you're in it: tell App to stand down
   // its personal-timer sound sync, and hand control back on leave.
@@ -531,7 +532,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     unlockAudio(); // iOS-safe resume when unmuting mid-focus
     setMusicMuted((m) => {
       const next = !m;
-      localStorage.setItem("roamly-room-music-muted", next ? "on" : "off");
+      savePref("roamly-room-music-muted", next ? "on" : "off");
       return next;
     });
   };

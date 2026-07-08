@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, MessageSquare } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
+import { loadPref } from "./storage";
 import type { Profile } from "./db";
 
 export type A11ySettings = {
@@ -25,7 +26,7 @@ export const DEFAULT_A11Y: A11ySettings = {
 
 export function loadA11y(): A11ySettings {
   try {
-    return { ...DEFAULT_A11Y, ...JSON.parse(localStorage.getItem("roamly-a11y") ?? "{}") };
+    return { ...DEFAULT_A11Y, ...JSON.parse(loadPref("roamly-a11y") ?? "{}") };
   } catch {
     return DEFAULT_A11Y;
   }

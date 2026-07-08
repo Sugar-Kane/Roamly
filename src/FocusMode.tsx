@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X, Play, Pause, Volume2, VolumeX, Moon, Info } from "lucide-react";
 import { FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
+import { loadPref, savePref } from "./storage";
 
 type Phase = "focus" | "short" | "long";
 
@@ -125,7 +126,7 @@ export function FocusMode({
   extra?: ReactNode;
 }) {
   useImmersive(open);
-  const [showNudge, setShowNudge] = useState(() => localStorage.getItem("roamly-dnd-nudge-seen") !== "1");
+  const [showNudge, setShowNudge] = useState(() => loadPref("roamly-dnd-nudge-seen") !== "1");
 
   useEffect(() => {
     if (!open) return;
@@ -136,7 +137,7 @@ export function FocusMode({
 
   if (!open) return null;
   const focusing = phase === "focus";
-  const dismissNudge = () => { localStorage.setItem("roamly-dnd-nudge-seen", "1"); setShowNudge(false); };
+  const dismissNudge = () => { savePref("roamly-dnd-nudge-seen", "1"); setShowNudge(false); };
 
   return (
     <div data-testid="focus-overlay" className="fixed inset-0 z-[120] flex flex-col bg-background text-foreground"

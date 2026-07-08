@@ -10,6 +10,7 @@ import { supabase, arrivedViaEmailLink } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, type Profile, type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity, type FeedbackRow } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
+import { loadPref, savePref } from "./storage";
 import { FeedbackModal } from "./Feedback";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
@@ -37,7 +38,7 @@ export default function App() {
 
   // First-run tour: shows once on a fresh device; the header "?" and the
   // profile menu's "App tour" row reopen it on demand.
-  const [showTutorial, setShowTutorial] = useState(() => localStorage.getItem("roamly-tutorial-seen") !== "1");
+  const [showTutorial, setShowTutorial] = useState(() => loadPref("roamly-tutorial-seen") !== "1");
   const [showFeedback, setShowFeedback] = useState(false);
 
   const [session, setSession] = useState<Session | null>(null);
@@ -68,7 +69,7 @@ export default function App() {
   const [a11y, setA11yState] = useState<A11ySettings>(loadA11y);
   const setA11y = (next: A11ySettings) => {
     setA11yState(next);
-    localStorage.setItem("roamly-a11y", JSON.stringify(next));
+    savePref("roamly-a11y", JSON.stringify(next));
   };
 
   // Color-blind mode swaps the functional colors (focus vs break/success) to
@@ -144,13 +145,13 @@ export default function App() {
   // setup; the "Play with timer" toggle is the off switch. A saved pick (or a
   // saved "off" from a streaming-embed takeover) always wins over the default.
   const [focusSound, setFocusSound] = useState<FocusSoundId | null>(() => {
-    const saved = localStorage.getItem("roamly-focus-sound");
+    const saved = loadPref("roamly-focus-sound");
     if (saved === "off") return null;
     return (saved as FocusSoundId) || "melody";
   });
-  const [soundAuto, setSoundAuto] = useState(() => localStorage.getItem("roamly-sound-auto") !== "off");
+  const [soundAuto, setSoundAuto] = useState(() => loadPref("roamly-sound-auto") !== "off");
   const [soundVolume, setSoundVolume] = useState(() => {
-    const v = parseFloat(localStorage.getItem("roamly-sound-vol") ?? "0.5");
+    const v = parseFloat(loadPref("roamly-sound-vol") ?? "0.5");
     return Number.isNaN(v) ? 0.5 : v;
   });
   const [soundPlaying, setSoundPlaying] = useState(false);
@@ -163,7 +164,7 @@ export default function App() {
     choose: (id: FocusSoundId) => {
       unlockAudio(); // synchronous, inside the tap — required by iOS
       track("music_play", id);
-      localStorage.setItem("roamly-focus-sound", id);
+      savePref("roamly-focus-sound", id);
       if (focusSound === id && soundPlaying) { stopFocusSound(); setSoundPlaying(false); return; }
       setFocusSound(id);
       startFocusSound(id, soundVolume);
@@ -177,11 +178,11 @@ export default function App() {
     },
     setAuto: (next: boolean) => {
       setSoundAuto(next);
-      localStorage.setItem("roamly-sound-auto", next ? "on" : "off");
+      savePref("roamly-sound-auto", next ? "on" : "off");
     },
     setVolume: (v: number) => {
       setSoundVolume(v);
-      localStorage.setItem("roamly-sound-vol", String(v));
+      savePref("roamly-sound-vol", String(v));
       setFocusVolume(v);
     },
     // Called when the user starts a Spotify/Apple embed: stop and DESELECT the
@@ -192,7 +193,7 @@ export default function App() {
       stopFocusSound();
       setSoundPlaying(false);
       setFocusSound(null);
-      localStorage.setItem("roamly-focus-sound", "off");
+      savePref("roamly-focus-sound", "off");
     },
   };
 
