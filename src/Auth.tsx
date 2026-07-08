@@ -23,6 +23,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
   const client = supabase; // narrowed to non-null for the closures below
 
   const submit = async () => {
+    if (!email.trim() || !password) { setError("Enter your email and password."); return; }
     setError(null);
     setLoading(true);
     const { error: authError } = mode === "signup"

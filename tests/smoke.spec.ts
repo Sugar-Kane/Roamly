@@ -1,0 +1,118 @@
+import { test, expect, type Page } from "@playwright/test";
+
+// Signed-out smoke suite. Every test suppresses the first-run tutorial except
+// the one that asserts it. These run against a build with placeholder
+// Supabase env vars, so the real UI renders but no network backend exists.
+
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => localStorage.setItem("roamly-tutorial-seen", "1"));
+});
+
+async function goHome(page: Page) {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+}
+
+test("homepage loads with the timer", async ({ page }) => {
+  await goHome(page);
+  await expect(page).toHaveTitle(/Roamly/);
+  await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+});
+
+test("first-run tutorial shows on a fresh device", async ({ browser }) => {
+  const ctx = await browser.newContext(); // no seen-flag
+  const page = await ctx.newPage();
+  await page.goto("/");
+  await expect(page.getByTestId("tutorial")).toBeVisible();
+  await expect(page.getByText("Welcome to Roamly")).toBeVisible();
+  await ctx.close();
+});
+
+test("navigation tabs switch views", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Rooms" }).click();
+  await expect(page.getByRole("heading", { name: "Study rooms" })).toBeVisible();
+  await page.getByRole("button", { name: "Analytics" }).click();
+  await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
+});
+
+test("auth modal opens from the header", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Sign in" }).first().click();
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+});
+
+test("sign-in form rejects empty fields", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Sign in" }).first().click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).last().click();
+  await expect(page.getByText(/enter your email and password/i)).toBeVisible();
+});
+
+test("sign-up form rejects empty fields", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Sign in" }).first().click();
+  await page.getByText("New here? Create an account").click();
+  await page.getByRole("button", { name: "Sign up", exact: true }).click();
+  await expect(page.getByText(/enter your email and password/i)).toBeVisible();
+});
+
+test("a task can be added locally", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByPlaceholder("Add a study task…").fill("Smoke test task");
+  await page.getByRole("button", { name: "Add task", exact: true }).click();
+  await expect(page.getByText("Smoke test task")).toBeVisible();
+});
+
+test("a task can be completed locally", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Tasks" }).click();
+  const before = await page.getByText(/of \d+ done/).textContent();
+  await page.getByRole("button", { name: /Mark Pharm flashcards.*done/ }).click();
+  await expect(page.getByText(/of \d+ done/)).not.toHaveText(before ?? "");
+  await expect(page.getByText(/Completed · \d+/)).toBeVisible();
+});
+
+test("premium feature prompts sign-in when logged out", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Select timer" }).click();
+  // Pick a premium method → upsell → Try Premium → auth modal (signed out).
+  await page.getByRole("button", { name: /PANCE Drill/ }).click();
+  await expect(page.getByText("This is a Premium feature")).toBeVisible();
+  await page.getByRole("button", { name: "Try Premium free" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+});
+
+test("AI upload requires sign-in when logged out", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByText("Sign in to save your tasks across devices.")).toBeVisible();
+  // The upload panel (with its file-type allowlist) only renders for sessions.
+  await expect(page.getByText(/Upload notes or slides/)).toHaveCount(0);
+});
+
+test("no horizontal overflow on any tab", async ({ page }) => {
+  await goHome(page);
+  for (const tab of ["Focus", "Tasks", "Rooms", "Analytics"]) {
+    await page.getByRole("button", { name: tab, exact: true }).click();
+    await page.waitForTimeout(250);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `${tab} tab overflows horizontally`).toBeLessThanOrEqual(1);
+  }
+});
+
+test("visible buttons have accessible names", async ({ page }) => {
+  await goHome(page);
+  const buttons = page.locator("button:visible");
+  const count = await buttons.count();
+  expect(count).toBeGreaterThan(5);
+  for (let i = 0; i < count; i++) {
+    const b = buttons.nth(i);
+    if ((await b.getAttribute("aria-hidden")) === "true") continue;
+    const name = ((await b.getAttribute("aria-label")) ?? (await b.innerText())).trim();
+    expect(name, `button #${i} lacks an accessible name`).not.toBe("");
+  }
+});
