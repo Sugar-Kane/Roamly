@@ -1258,10 +1258,12 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
           <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} />
         </div>
       )}
-      <div className="mt-6 flex gap-2">
+      {/* On phones the task input takes the full row and the subject + add
+          button drop to a second line; side-by-side from sm up. */}
+      <div className="mt-6 flex flex-wrap gap-2">
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
           placeholder="Add a study task…"
-          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          className="w-full min-w-0 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 sm:w-auto sm:flex-1" />
         {showCustom ? (
           <span className="flex items-center gap-1">
             <input value={customTag ?? ""} onChange={(e) => setCustomTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
@@ -1313,10 +1315,14 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
                     onPointerCancel={onRowPointerCancel}
                     style={dragStyleFor(g, t.id, i)}
                     className={`rounded-xl border p-3 transition ${beingDragged ? "border-primary bg-card" : active ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
-                    <div className="flex items-start gap-3">
+                    {/* Phones: checkbox + title on the first line, the control
+                        cluster on its own right-aligned line below (titles were
+                        wrapping 3 lines against 6 inline controls). Inline
+                        again from sm up. */}
+                    <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
                       <button data-nodrag onClick={() => toggleTask(t.id)} aria-label={`Mark ${t.title} done`}
                         className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-muted-foreground/40 transition hover:border-primary" />
-                      <button onClick={() => { if (!justDragged.current) setActiveTask(t.id); }} className="min-w-0 flex-1 text-left">
+                      <button onClick={() => { if (!justDragged.current) setActiveTask(t.id); }} className="min-w-0 flex-1 basis-52 text-left">
                         <span className="block min-w-0 break-words text-sm leading-snug">{t.title}</span>
                         <span className="mt-1 flex items-center gap-2">
                           <TagPill tag={t.tag} />
@@ -1327,7 +1333,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
                           )}
                         </span>
                       </button>
-                      <div data-nodrag className="flex shrink-0 items-center gap-0.5">
+                      <div data-nodrag className="ml-auto flex shrink-0 items-center gap-0.5">
                         {!active && (
                           <button onClick={() => onFocusTask(t.id)} aria-label={`Focus on ${t.title}`}
                             className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
