@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { apiLog } from "./_log";
 
 const GENERAL_DAILY_LIMIT = 5;
 const ADMIN_DAILY_LIMIT = 50;
@@ -125,5 +126,6 @@ export async function POST(request: Request): Promise<Response> {
   await admin.from("notifications").insert({ user_id: invited.user.id, actor_id: inviter.id, kind: "friend_request" });
   await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: invited.user.id });
 
+  apiLog("invite", resend ? "resent" : "invited", { inviter: inviter.id });
   return json(resend ? { status: "invited", note: "resent" } : { status: "invited" }, 200);
 }

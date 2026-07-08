@@ -103,3 +103,35 @@ create table if not exists public.stripe_events (
   created_at timestamptz not null default now()
 );
 alter table public.stripe_events enable row level security;
+
+-- ============ 5) admin audit trail ============
+-- Every premium grant/revoke records who did it, to whom, and when.
+-- Service-role / SECURITY DEFINER writes only (no policies).
+create table if not exists public.admin_audit (
+  id uuid primary key default gen_random_uuid(),
+  admin_id uuid not null references auth.users (id) on delete cascade,
+  action text not null,
+  target uuid,
+  detail text,
+  created_at timestamptz not null default now()
+);
+alter table public.admin_audit enable row level security;
+
+create or replace function public.admin_set_premium(p_user uuid, p_premium boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'not_admin';
+  end if;
+  update public.profiles
+     set is_premium = p_premium,
+         updated_at = now()
+   where id = p_user;
+  insert into public.admin_audit (admin_id, action, target, detail)
+  values (auth.uid(), 'set_premium', p_user, case when p_premium then 'granted' else 'revoked' end);
+end;
+$$;

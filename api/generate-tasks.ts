@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import JSZip from "jszip";
+import { apiLog } from "./_log";
 
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -256,7 +257,7 @@ export async function POST(request: Request): Promise<Response> {
         est: Math.max(1, Math.min(6, Math.round(t.est) || 2)),
       }));
   } catch (err) {
-    console.warn("[Roamly] generate-tasks: read/Claude step failed", err);
+    apiLog("generate-tasks", "claude_failed", { user: user.id, mediaType: validatedMediaType, error: String(err).slice(0, 200) });
     claudeError = jsonResponse({ error: "Couldn't read that file — try a clearer copy or a different format." }, 502);
   }
 
@@ -300,8 +301,10 @@ export async function POST(request: Request): Promise<Response> {
   }
   const { data: inserted, error: insertError } = ins;
   if (insertError || !inserted) {
+    apiLog("generate-tasks", "insert_failed", { user: user.id, error: insertError?.message?.slice(0, 200) });
     return jsonResponse({ error: "Generated tasks but couldn't save them — try again." }, 500);
   }
 
+  apiLog("generate-tasks", "ok", { user: user.id, mediaType: validatedMediaType, tasks: inserted.length, atomicReserve });
   return jsonResponse({ tasks: inserted }, 200);
 }

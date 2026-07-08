@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { apiLog } from "./_log";
 
 // Uses the Web Standard Request/Response export style (not the legacy
 // VercelRequest/VercelResponse shape) specifically so `await request.text()`
@@ -80,9 +81,10 @@ export async function POST(request: Request): Promise<Response> {
     // the subscription moves to past_due/unpaid, which arrives above as
     // customer.subscription.updated and flips is_premium off. Log for audit.
     const invoice = event.data.object as Stripe.Invoice;
-    console.warn("[Roamly] stripe invoice.payment_failed", { customer: invoice.customer, invoice: invoice.id });
+    apiLog("stripe-webhook", "invoice_payment_failed", { customer: String(invoice.customer), invoice: invoice.id });
   }
 
+  apiLog("stripe-webhook", "processed", { type: event.type, id: event.id });
   return new Response(JSON.stringify({ received: true }), {
     status: 200,
     headers: { "content-type": "application/json" },
