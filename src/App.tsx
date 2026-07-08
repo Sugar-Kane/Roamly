@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, Info, ChevronUp, ChevronDown, Volume2, Lock } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronUp, ChevronDown, Volume2, Lock, GripVertical, HelpCircle } from "lucide-react";
 import { METHODS, SEED_TASKS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
@@ -13,13 +13,14 @@ import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { RoomsLive } from "./RoomsLive";
-import { FocusMode, CompactSounds, TimeDisplay } from "./FocusMode";
+import { FocusMode, CompactSounds, TimeDisplay, InfoTip } from "./FocusMode";
+import { Tutorial } from "./Tutorial";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel } from "./UploadTasks";
 import type { Session } from "@supabase/supabase-js";
 
-type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
+export type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
 
 export default function App() {
   const [view, setView] = useState<View>("focus");
@@ -31,6 +32,10 @@ export default function App() {
   const [showUpsell, setShowUpsell] = useState(false);
   // User-editable values for the Custom method (minutes).
   const [custom, setCustom] = useState({ focus: 30, short: 7, long: 20, cycles: 4 });
+
+  // First-run tour: shows once on a fresh device; the header "?" and the
+  // profile menu's "App tour" row reopen it on demand.
+  const [showTutorial, setShowTutorial] = useState(() => localStorage.getItem("roamly-tutorial-seen") !== "1");
 
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -383,7 +388,8 @@ export default function App() {
           onSignIn={onSignIn} onSignOut={onSignOut}
           onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends}
           a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
-          isAdmin={isAdmin} onOpenAdmin={() => setView("admin")} />
+          isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
+          onOpenTutorial={() => setShowTutorial(true)} />
         <ThemePicker themeId={themeId} setThemeId={setThemeId} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
@@ -444,7 +450,7 @@ export default function App() {
         music={<CompactSounds sounds={sounds} />}
         extra={
           <div className="space-y-4">
-            <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} />
+            <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
             <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
           </div>
         } />
@@ -459,6 +465,8 @@ export default function App() {
       {showFriends && session && (
         <FriendsModal session={session} profile={profile} onClose={() => setShowFriends(false)} onUsernameSet={handleUsernameSet} />
       )}
+      {/* Deferred while a password prompt from an email link is up. */}
+      {showTutorial && !needsPassword && <Tutorial setView={setView} onClose={() => setShowTutorial(false)} />}
     </div>
   );
 }
@@ -472,7 +480,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -484,6 +492,10 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <span className="hidden sm:block"><StreakBadge streak={streak} /></span>
+        <button onClick={onOpenTutorial} aria-label="Replay the app tour"
+          className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+          <HelpCircle size={15} />
+        </button>
         {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} />}
         {!session && (
           <button onClick={onSignIn} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
@@ -493,7 +505,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
         <ProfileMenu session={session} profile={profile} isPremium={isPremium}
           a11y={a11y} setA11y={setA11y}
           onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
-          isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} />
+          isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onReplayTutorial={onOpenTutorial} />
       </div>
     </header>
   );
@@ -534,6 +546,7 @@ function ExamCountdownBar({ examDate, setExamDate }: any) {
         <div className="flex items-center gap-2">
           <CalendarClock size={16} className="text-primary" />
           <span className="text-sm font-medium">Set your PANCE exam date</span>
+          <InfoTip text="Roamly keeps a live day countdown to your exam at the top of the Focus tab — a little pressure, applied kindly." />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <input type="date" value={draft} min={todayStr} onChange={(e) => setDraft(e.target.value)}
@@ -668,6 +681,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
                 <Timer size={13} /> Focus mode
               </button>
+              <InfoTip text="Focus mode fills your whole screen with the timer, your music, and your task list — Start opens it automatically, and this button gets you back in." />
               <NotificationToggle alerts={alerts} />
             </div>
           </div>
@@ -682,7 +696,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         <div className="fixed inset-0 z-50 grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm" onClick={() => setShowMethods(false)}>
           <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="font-display text-lg font-semibold">Timer method</h3>
+              <h3 className="flex items-center gap-1.5 font-display text-lg font-semibold">Timer method
+                <InfoTip text="A method sets your rhythm: how long each focus block runs, how long breaks last, and how many blocks make a cycle. Pick short Sprints or go Deep — the timer handles the switching." />
+              </h3>
               <button onClick={() => setShowMethods(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close"><X size={18} /></button>
             </div>
             <div className="mt-3 space-y-2">
@@ -1081,23 +1097,6 @@ function MusicPanel({ isPremium, gateThen, onEmbedPlay }: any) {
   );
 }
 
-function InfoTip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative inline-flex">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="What does this mean?"
-        className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground transition hover:text-foreground">
-        <Info size={14} />
-      </button>
-      {open && (
-        <span className="absolute left-0 top-full z-10 mt-1.5 w-56 rounded-lg border border-border bg-card p-2.5 text-left text-xs font-normal leading-snug text-muted-foreground shadow-lg">
-          {text}
-        </span>
-      )}
-    </span>
-  );
-}
-
 function TagPill({ tag }: { tag: string }) {
   const c = tagColor(tag);
   return (
@@ -1115,15 +1114,16 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
   const [showDone, setShowDone] = useState(false);
 
-  // --- Press-and-hold drag reordering (works with touch and mouse) ---
-  // Hold a row ~0.4s to lift it, drag to a new spot in its subject group,
-  // release to drop. A quick tap or an immediate move (scrolling) never
-  // triggers it, and the arrow buttons remain as the accessible alternative.
+  // --- Drag reordering (grip handle, or press-and-hold anywhere on the row) ---
+  // Grab the ⋮⋮ handle (instant with a mouse, ~0.1s on touch) or hold the row
+  // ~0.3s to lift it, drag to a new spot in its subject group, release to
+  // drop. A quick tap or an immediate move (scrolling) never triggers the
+  // row-body path, and the arrow buttons remain as the accessible alternative.
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef<DragState | null>(null);
   useEffect(() => { dragRef.current = drag; }, [drag]);
-  const press = useRef<{ id: string; group: string; groupIds: string[]; index: number; y: number; el: HTMLDivElement; pointerId: number; timer: number } | null>(null);
+  const press = useRef<{ id: string; group: string; groupIds: string[]; index: number; y: number; el: HTMLDivElement; pointerId: number; timer: number; fromHandle: boolean } | null>(null);
   const rects = useRef<{ id: string; mid: number }[]>([]);
   const justDragged = useRef(false);
 
@@ -1132,6 +1132,11 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
     if (press.current) return;
     const el = e.currentTarget;
     const pointerId = e.pointerId;
+    // The grip handle can't scroll the page (touch-action: none), so it lifts
+    // near-instantly — and immediately for a mouse, where press-and-hold is an
+    // alien gesture. The row body keeps a hold delay so touch scrolling wins.
+    const fromHandle = !!(e.target as HTMLElement).closest("[data-drag-handle]");
+    const holdMs = fromHandle ? (e.pointerType === "mouse" ? 0 : 120) : 300;
     const timer = window.setTimeout(() => {
       const p = press.current;
       if (!p) return;
@@ -1142,8 +1147,8 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       try { p.el.setPointerCapture(p.pointerId); } catch { /* pointer already gone */ }
       (navigator as any).vibrate?.(10);
       setDrag({ id: p.id, group: p.group, from: p.index, over: p.index, dy: 0, height: p.el.getBoundingClientRect().height });
-    }, 400);
-    press.current = { id, group, groupIds, index, y: e.clientY, el, pointerId, timer };
+    }, holdMs);
+    press.current = { id, group, groupIds, index, y: e.clientY, el, pointerId, timer, fromHandle };
   };
 
   const onRowPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1151,8 +1156,9 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
     if (!p) return;
     const d = dragRef.current;
     if (!d) {
-      // Moved before the hold completed → it's a scroll, not a drag.
-      if (Math.abs(e.clientY - p.y) > 12) { clearTimeout(p.timer); press.current = null; }
+      // Moved before the hold completed → it's a scroll, not a drag. Presses
+      // that started on the grip handle can't be scrolls, so they never cancel.
+      if (!p.fromHandle && Math.abs(e.clientY - p.y) > 12) { clearTimeout(p.timer); press.current = null; }
       return;
     }
     const dy = e.clientY - p.y;
@@ -1235,7 +1241,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Use the −/+ buttons to adjust an estimate. To reorder within a subject, use the arrows — or press and hold a task, then drag it." />
+        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Use the −/+ buttons to adjust an estimate. To reorder within a subject, drag the ⋮⋮ handle (or press and hold a task), or use the arrows." />
       </p>
       {tasks.length > 0 && (
         <div className="mt-4">
@@ -1313,13 +1319,19 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
                     onPointerMove={onRowPointerMove}
                     onPointerUp={onRowPointerUp}
                     onPointerCancel={onRowPointerCancel}
-                    style={dragStyleFor(g, t.id, i)}
-                    className={`rounded-xl border p-3 transition ${beingDragged ? "border-primary bg-card" : active ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
+                    onContextMenu={(e) => { if (press.current || dragRef.current) e.preventDefault(); }}
+                    style={{ WebkitTouchCallout: "none", touchAction: "pan-y", ...dragStyleFor(g, t.id, i) }}
+                    className={`select-none rounded-xl border p-3 transition ${beingDragged ? "border-primary bg-card" : active ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
                     {/* Phones: checkbox + title on the first line, the control
                         cluster on its own right-aligned line below (titles were
                         wrapping 3 lines against 6 inline controls). Inline
                         again from sm up. */}
                     <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
+                      <button data-drag-handle aria-hidden tabIndex={-1} onContextMenu={(e) => e.preventDefault()}
+                        className="-ml-1 -mr-2 mt-0.5 grid h-6 w-5 shrink-0 cursor-grab place-items-center text-muted-foreground/50 active:cursor-grabbing"
+                        style={{ touchAction: "none" }}>
+                        <GripVertical size={14} />
+                      </button>
                       <button data-nodrag onClick={() => toggleTask(t.id)} aria-label={`Mark ${t.title} done`}
                         className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-muted-foreground/40 transition hover:border-primary" />
                       <button onClick={() => { if (!justDragged.current) setActiveTask(t.id); }} className="min-w-0 flex-1 basis-52 text-left">
@@ -1409,7 +1421,9 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
   return (
     <div className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Your progress</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">Your progress
+          <InfoTip text="Minutes count when a focus block finishes. Hit your daily goal to fill the bar, and focus at least once a day to keep your streak flame alive." />
+        </h2>
         {streak > 0 && (
           <span className="flex items-center gap-1 text-xs text-primary"><Flame size={13} /> {streak}-day streak</span>
         )}
@@ -1764,28 +1778,57 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function FocusTasksCard({ tasks, activeTask, setActiveTask }: any) {
-  const open = sortTasks(tasks).filter((t: Task) => !t.done)
+function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask }: any) {
+  // A just-completed task lingers briefly in its "done" state before dropping
+  // out, so checking it off gives visible feedback instead of a vanishing row.
+  const [justDone, setJustDone] = useState<string | null>(null);
+  const open = sortTasks(tasks).filter((t: Task) => !t.done || t.id === justDone)
     .sort((a: Task, b: Task) => Number(b.id === activeTask) - Number(a.id === activeTask))
     .slice(0, 4);
-  if (open.length === 0) return null;
+
+  const complete = (t: Task) => {
+    if (t.done) return; // the lingering row — ignore re-taps
+    if (t.id === activeTask) {
+      // Completing the task being focused hands the rest of the block to the
+      // next open task, so the ongoing Pomodoro still credits somewhere real.
+      const next = sortTasks(tasks).find((o: Task) => !o.done && o.id !== t.id);
+      setActiveTask(next?.id ?? null);
+    }
+    setJustDone(t.id);
+    toggleTask(t.id);
+    window.setTimeout(() => setJustDone(null), 900);
+  };
+
+  if (tasks.length === 0) return null;
   return (
     <div className="rounded-2xl border border-border bg-card/70 p-3">
       <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Studying</span>
-      <div className="mt-2 space-y-1.5">
-        {open.map((t: Task) => (
-          <button key={t.id} onClick={() => setActiveTask(t.id)}
-            className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/60 hover:border-primary/40"}`}>
-            <span className="min-w-0 flex-1 truncate text-sm">{t.title}</span>
-            {activeTask === t.id && (
-              <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                <Timer size={10} /> Focusing
-              </span>
-            )}
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
-          </button>
-        ))}
-      </div>
+      {open.length === 0 ? (
+        <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <Check size={15} className="shrink-0 text-roamly-green" /> All tasks done — ride out the timer or enjoy your break.
+        </p>
+      ) : (
+        <div className="mt-2 space-y-1.5">
+          {open.map((t: Task) => (
+            <div key={t.id}
+              className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 transition ${t.done ? "border-roamly-green/40 bg-card/60" : activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/60 hover:border-primary/40"}`}>
+              <button onClick={() => complete(t)} aria-label={`Mark ${t.title} done`}
+                className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${t.done ? "border-roamly-green bg-roamly-green" : "border-muted-foreground/40 hover:border-primary"}`}>
+                {t.done && <Check size={14} className="text-white" />}
+              </button>
+              <button onClick={() => { if (!t.done) setActiveTask(t.id); }} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                <span className={`min-w-0 flex-1 truncate text-sm ${t.done ? "text-muted-foreground line-through" : ""}`}>{t.title}</span>
+                {!t.done && activeTask === t.id && (
+                  <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                    <Timer size={10} /> Focusing
+                  </span>
+                )}
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

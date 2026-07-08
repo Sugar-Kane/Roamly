@@ -1,8 +1,27 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { X, Play, Pause, Volume2, VolumeX, Moon } from "lucide-react";
+import { X, Play, Pause, Volume2, VolumeX, Moon, Info } from "lucide-react";
 import { FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 
 type Phase = "focus" | "short" | "long";
+
+// Tap-to-open "?" bubble explaining a control. Lives here (not App.tsx) so
+// any component can use it without importing the App module graph.
+export function InfoTip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex">
+      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="What does this mean?"
+        className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground transition hover:text-foreground">
+        <Info size={14} />
+      </button>
+      {open && (
+        <span className="absolute left-0 top-full z-10 mt-1.5 w-56 rounded-lg border border-border bg-card p-2.5 text-left text-xs font-normal leading-snug text-muted-foreground shadow-lg">
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
 
 // Renders each character in a fixed-width slot so the total width never
 // changes as digits tick (Fraunces digits aren't equal-width and

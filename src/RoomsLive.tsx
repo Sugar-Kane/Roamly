@@ -9,7 +9,7 @@ import {
 } from "./rooms";
 import { fmt } from "./useTimer";
 import { startFocusSound, stopFocusSound, unlockAudio, playChime, duckFocusSound, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
-import { FocusMode, TimeDisplay } from "./FocusMode";
+import { FocusMode, TimeDisplay, InfoTip } from "./FocusMode";
 import { VoiceDock, VoiceControls, useRoomVoice } from "./RoomVoice";
 import { UploadTasksPanel } from "./UploadTasks";
 import { ROOMS } from "./data";
@@ -236,7 +236,9 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     <div className="mx-auto max-w-3xl">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-3xl font-semibold">Study rooms</h1>
+          <h1 className="flex items-center gap-2 font-display text-3xl font-semibold">Study rooms
+            <InfoTip text="Every room runs one shared timer — everyone inside focuses and breaks together. The always-on rooms never stop; jump in whenever. Chat and voice unlock during breaks so focus stays quiet." />
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">Live sessions with a shared timer. Chat and voice open during breaks.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

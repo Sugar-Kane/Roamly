@@ -1,0 +1,13 @@
+{
+  "name": "Roamly Focus",
+  "short_name": "Roamly",
+  "description": "Pomodoro study timer for PA students — focus solo or in live rooms.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#16181D",
+  "theme_color": "#16181D",
+  "icons": [
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
