@@ -50,22 +50,32 @@ export async function POST(request: Request): Promise<Response> {
 
   let customerId = profileRow?.stripe_customer_id as string | null;
   if (!customerId) {
-    const customer = await stripe.customers.create({
-      email: user.email ?? undefined,
-      metadata: { supabase_user_id: user.id },
-    });
+    // Idempotency key on the user id: a double-click that races past the
+    // profile check above still yields ONE Stripe customer, not duplicates.
+    const customer = await stripe.customers.create(
+      {
+        email: user.email ?? undefined,
+        metadata: { supabase_user_id: user.id },
+      },
+      { idempotencyKey: `roamly-customer-${user.id}` }
+    );
     customerId = customer.id;
     await admin.from("profiles").update({ stripe_customer_id: customerId }).eq("id", user.id);
   }
 
-  const checkoutSession = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer: customerId,
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${appUrl}/?checkout=success`,
-    cancel_url: `${appUrl}/?checkout=cancelled`,
-    metadata: { supabase_user_id: user.id },
-  });
+  // Minute-bucketed idempotency: rapid double-clicks reuse one checkout
+  // session; a deliberate retry minutes later gets a fresh one.
+  const checkoutSession = await stripe.checkout.sessions.create(
+    {
+      mode: "subscription",
+      customer: customerId,
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${appUrl}/?checkout=success`,
+      cancel_url: `${appUrl}/?checkout=cancelled`,
+      metadata: { supabase_user_id: user.id },
+    },
+    { idempotencyKey: `roamly-checkout-${user.id}-${Math.floor(Date.now() / 60_000)}` }
+  );
 
   return new Response(JSON.stringify({ url: checkoutSession.url }), {
     status: 200,

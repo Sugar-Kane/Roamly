@@ -33,6 +33,26 @@ export async function POST(request: Request): Promise<Response> {
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
+  // Exactly-once processing: Stripe retries deliveries, so record each event
+  // id and skip ones we've already handled. If the table doesn't exist yet
+  // (migration not applied) we proceed without dedupe — handlers below set
+  // absolute state, so a replay is still harmless.
+  {
+    const { error: dedupeError } = await admin.from("stripe_events").insert({ id: event.id, type: event.type });
+    if (dedupeError?.code === "23505") {
+      return new Response(JSON.stringify({ received: true, duplicate: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+  }
+
+  // Resolve a Stripe customer id to our profile row.
+  const profileForCustomer = async (customerId: string) => {
+    const { data } = await admin.from("profiles").select("id").eq("stripe_customer_id", customerId).single();
+    return data;
+  };
+
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     const userId = session.metadata?.supabase_user_id;
@@ -43,14 +63,24 @@ export async function POST(request: Request): Promise<Response> {
   } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
     const subscription = event.data.object as Stripe.Subscription;
     const active = subscription.status === "active" || subscription.status === "trialing";
-    const { data: matched } = await admin
-      .from("profiles")
-      .select("id")
-      .eq("stripe_customer_id", subscription.customer as string)
-      .single();
+    const matched = await profileForCustomer(subscription.customer as string);
     if (matched) {
       await admin.from("profiles").update({ is_premium: active, stripe_subscription_id: subscription.id }).eq("id", matched.id);
     }
+  } else if (event.type === "invoice.paid") {
+    // Renewal (or recovery after a failed payment) — re-affirm premium. This
+    // also self-heals a profile that missed an earlier subscription event.
+    const invoice = event.data.object as Stripe.Invoice;
+    if (typeof invoice.customer === "string") {
+      const matched = await profileForCustomer(invoice.customer);
+      if (matched) await admin.from("profiles").update({ is_premium: true }).eq("id", matched.id);
+    }
+  } else if (event.type === "invoice.payment_failed") {
+    // No state change: Stripe retries the charge, and if it ultimately fails
+    // the subscription moves to past_due/unpaid, which arrives above as
+    // customer.subscription.updated and flips is_premium off. Log for audit.
+    const invoice = event.data.object as Stripe.Invoice;
+    console.warn("[Roamly] stripe invoice.payment_failed", { customer: invoice.customer, invoice: invoice.id });
   }
 
   return new Response(JSON.stringify({ received: true }), {

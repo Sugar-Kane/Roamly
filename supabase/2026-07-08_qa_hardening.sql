@@ -93,3 +93,13 @@ create policy "room_messages_select_participants"
          and h.user_id = auth.uid()
     )
   );
+
+-- ============ 4) Stripe webhook dedupe / audit ============
+-- Stripe retries webhooks; recording each event id makes processing exactly-
+-- once and leaves an audit trail. Service-role only (no policies).
+create table if not exists public.stripe_events (
+  id text primary key,
+  type text not null,
+  created_at timestamptz not null default now()
+);
+alter table public.stripe_events enable row level security;
