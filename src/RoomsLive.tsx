@@ -521,11 +521,13 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     return () => { client.removeChannel(ch); };
   }, [room.id, userId, username]);
 
-  // Heartbeat: tells the server this room is occupied, which blocks reap_room
-  // from deleting it. Upsert on join + every minute; clear on leave.
+  // Heartbeat: tells the server this room is occupied, which blocks the reap
+  // functions from deleting it. Upsert on join + every 20s (the sweep treats
+  // a room as empty after 60s without a beat, so this survives two dropped
+  // beats); clear on leave.
   useEffect(() => {
     heartbeatRoom(room.id, userId);
-    const iv = window.setInterval(() => heartbeatRoom(room.id, userId), 60_000);
+    const iv = window.setInterval(() => heartbeatRoom(room.id, userId), 20_000);
     return () => {
       window.clearInterval(iv);
       clearRoomHeartbeat(room.id, userId);

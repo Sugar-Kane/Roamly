@@ -349,8 +349,8 @@ create policy "heartbeats_delete_own"
 -- Auto-cleanup for hosted rooms left empty. The room delete policy above is
 -- host-only, but any lobby viewer can observe that a room has sat empty and
 -- should be reaped — so this SECURITY DEFINER function lets them delete it,
--- guarded three ways: non-system rooms only, older than 2 minutes, and no
--- participant heartbeat in the last 2 minutes (so an active room can never be
+-- guarded three ways: non-system rooms only, older than 90 seconds, and no
+-- participant heartbeat in the last 60 seconds (so an active room can never be
 -- deleted out from under its members).
 create or replace function public.reap_room(p_room uuid)
 returns void
@@ -363,17 +363,60 @@ begin
   delete from public.rooms r
    where r.id = p_room
      and r.is_system = false
-     and r.created_at < now() - interval '2 minutes'
+     and r.created_at < now() - interval '90 seconds'
      and not exists (
        select 1 from public.room_heartbeats h
         where h.room_id = p_room
-          and h.seen_at > now() - interval '2 minutes'
+          and h.seen_at > now() - interval '60 seconds'
      );
 end;
 $$;
 
 revoke execute on function public.reap_room(uuid) from public, anon;
 grant execute on function public.reap_room(uuid) to authenticated;
+
+-- Global sweep, independent of any browser: hosted rooms empty for ~1 minute
+-- are deleted, and NO hosted room outlives 12 hours (the hard cap that stops
+-- a scripted client keeping a room alive forever). Runs via pg_cron every
+-- minute when the extension is enabled, plus best-effort from the client on
+-- every lobby load as a fallback.
+create or replace function public.reap_stale_rooms()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.rooms r
+   where r.is_system = false
+     and r.created_at < now() - interval '90 seconds'
+     and not exists (
+       select 1 from public.room_heartbeats h
+        where h.room_id = r.id
+          and h.seen_at > now() - interval '60 seconds'
+     );
+
+  delete from public.rooms r
+   where r.is_system = false
+     and r.created_at < now() - interval '12 hours';
+
+  delete from public.room_heartbeats h
+   where h.seen_at < now() - interval '1 hour';
+end;
+$$;
+
+revoke execute on function public.reap_stale_rooms() from public, anon;
+grant execute on function public.reap_stale_rooms() to authenticated;
+
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('reap-stale-rooms', '* * * * *', 'select public.reap_stale_rooms()');
+  else
+    raise notice 'pg_cron not enabled — enable it under Database -> Extensions for scheduled room cleanup.';
+  end if;
+end;
+$$;
 
 -- Pure function: which phase ('focus' | 'short' | 'long') a room is in at a
 -- given instant, derived from its start time and cycle settings.

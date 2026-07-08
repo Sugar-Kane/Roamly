@@ -81,6 +81,13 @@ const HOSTED_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function fetchRooms(): Promise<LiveRoom[]> {
   if (!supabase) return [];
+  // Best-effort global sweep before listing — the fallback path when pg_cron
+  // isn't running the sweep server-side. No-ops if the migration isn't applied.
+  await supabase.rpc("reap_stale_rooms").then(({ error }) => {
+    if (error && !error.message.includes("find the function") && !error.message.includes("does not exist")) {
+      console.warn("[Roamly] reap_stale_rooms failed", error.message);
+    }
+  });
   const { data, error } = await supabase
     .from("rooms")
     .select("*")
