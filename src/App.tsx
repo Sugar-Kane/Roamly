@@ -363,6 +363,10 @@ export default function App() {
     }
   }, [session]);
 
+  // Each tab opens at the top — carrying the previous tab's scroll position
+  // over is disorienting, especially on phones.
+  useEffect(() => { window.scrollTo(0, 0); }, [view]);
+
   // Apply the active theme's palette to the document root so every CSS variable
   // (background, card, primary, etc.) updates live across the whole app.
   // Accessibility overrides layer on top: they must run here (not as CSS

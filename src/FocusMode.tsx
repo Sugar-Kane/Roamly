@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X, Play, Pause, Volume2, VolumeX, Moon, Info } from "lucide-react";
 import { FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 
@@ -8,14 +8,29 @@ type Phase = "focus" | "short" | "long";
 // any component can use it without importing the App module graph.
 export function InfoTip({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; width: number }>({ left: 0, width: 224 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const toggle = () => {
+    // Clamp the bubble inside the viewport: it prefers hanging right of the
+    // button, but shifts left (or narrows on tiny screens) as needed so it
+    // never clips off either edge.
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) {
+      const width = Math.min(224, window.innerWidth - 24);
+      const viewportLeft = Math.min(Math.max(12, r.left), window.innerWidth - 12 - width);
+      setPos({ left: viewportLeft - r.left, width });
+    }
+    setOpen((o) => !o);
+  };
   return (
     <span className="relative inline-flex">
-      <button type="button" onClick={() => setOpen((o) => !o)} aria-label="What does this mean?"
+      <button ref={btnRef} type="button" onClick={toggle} aria-label="What does this mean?"
         className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground transition hover:text-foreground">
         <Info size={14} />
       </button>
       {open && (
-        <span className="absolute left-0 top-full z-10 mt-1.5 w-56 rounded-lg border border-border bg-card p-2.5 text-left text-xs font-normal leading-snug text-muted-foreground shadow-lg">
+        <span style={{ left: pos.left, width: pos.width }}
+          className="absolute top-full z-10 mt-1.5 rounded-lg border border-border bg-card p-2.5 text-left text-xs font-normal leading-snug text-muted-foreground shadow-lg">
           {text}
         </span>
       )}
@@ -121,7 +136,11 @@ export function FocusMode({
         </button>
       </div>
 
-      <div className="relative flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-5 pb-6">
+      {/* m-auto (not justify-center) so short content centers but overflowing
+          content top-aligns — with justify-center the top half (the timer!)
+          gets pushed above the scrollport on phones. */}
+      <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-6">
+        <div className="m-auto flex w-full flex-col items-center gap-6">
         {focusing && showNudge && (
           <div className="flex max-w-md items-start gap-2 rounded-2xl border border-border bg-card/70 px-4 py-3 text-left">
             <Moon size={16} className="mt-0.5 shrink-0 text-primary" />
@@ -158,6 +177,7 @@ export function FocusMode({
         {controls && <div className="flex items-center justify-center gap-3">{controls}</div>}
         {music && <div className="w-full max-w-md rounded-2xl border border-border bg-card/70 p-3">{music}</div>}
         {extra && <div className="w-full max-w-md">{extra}</div>}
+        </div>
       </div>
     </div>
   );

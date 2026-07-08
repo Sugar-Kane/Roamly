@@ -6,7 +6,7 @@
 // way back in anytime.
 
 import { useEffect, useState } from "react";
-import { Timer, ListChecks, Play, Users, BarChart3, type LucideIcon } from "lucide-react";
+import { Timer, ListChecks, Smartphone, Users, BarChart3, type LucideIcon } from "lucide-react";
 import type { View } from "./App";
 
 export const TUTORIAL_SEEN_KEY = "roamly-tutorial-seen";
@@ -21,8 +21,8 @@ const STEPS: { view: View; icon: LucideIcon; title: string; body: string }[] = [
     body: "Add tasks by subject and tick them off as you finish. Drag the ⋮⋮ handle to change priority. Premium members can even upload lecture notes and let AI write the task list.",
   },
   {
-    view: "focus", icon: Play, title: "Real focus mode",
-    body: "Starting the timer takes over your whole screen — just the countdown, your focus music, and your tasks. You can check tasks off right there, and breaks ease the screen off.",
+    view: "focus", icon: Smartphone, title: "Put Roamly on your Home Screen",
+    body: "On iPhone: tap Safari's Share button (the square with the arrow), then “Add to Home Screen” — Roamly opens full-screen like a real app, with its own icon. On Android or desktop, use the browser menu → “Install app”.",
   },
   {
     view: "rooms", icon: Users, title: "Study together",
