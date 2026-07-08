@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { Timer, ListChecks, Smartphone, Users, BarChart3, type LucideIcon } from "lucide-react";
 import type { View } from "./App";
+import { track } from "./track";
 
 export const TUTORIAL_SEEN_KEY = "roamly-tutorial-seen";
 
@@ -26,7 +27,7 @@ const STEPS: { view: View; icon: LucideIcon; title: string; body: string }[] = [
   },
   {
     view: "rooms", icon: Users, title: "Study together",
-    body: "Rooms run one shared timer for everyone inside — focus together, then chat or talk during breaks. Join an always-on room, or host your own with Premium.",
+    body: "Every room's timer is already running — just hit Join to drop in. You focus in silence alongside everyone inside, then chat and voice open at each break. Premium members can host private rooms for friends.",
   },
   {
     view: "analytics", icon: BarChart3, title: "Watch it add up",
@@ -44,6 +45,7 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
   useEffect(() => { setView(STEPS[step].view); }, [step, setView]);
 
   const finish = () => {
+    track("tutorial_done");
     localStorage.setItem(TUTORIAL_SEEN_KEY, "1");
     setView("focus");
     onClose();

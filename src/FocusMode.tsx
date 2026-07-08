@@ -1,38 +1,56 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { X, Play, Pause, Volume2, VolumeX, Moon, Info } from "lucide-react";
 import { FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 
 type Phase = "focus" | "short" | "long";
 
 // Tap-to-open "?" bubble explaining a control. Lives here (not App.tsx) so
-// any component can use it without importing the App module graph.
+// any component can use it without importing the App module graph. The bubble
+// renders through a portal as a fixed element clamped to the viewport —
+// otherwise ancestors with overflow-hidden (like the timer card) clip it.
 export function InfoTip({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ left: number; width: number }>({ left: 0, width: 224 });
+  const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const open = pos !== null;
+
   const toggle = () => {
-    // Clamp the bubble inside the viewport: it prefers hanging right of the
-    // button, but shifts left (or narrows on tiny screens) as needed so it
-    // never clips off either edge.
+    if (open) { setPos(null); return; }
     const r = btnRef.current?.getBoundingClientRect();
-    if (r) {
-      const width = Math.min(224, window.innerWidth - 24);
-      const viewportLeft = Math.min(Math.max(12, r.left), window.innerWidth - 12 - width);
-      setPos({ left: viewportLeft - r.left, width });
-    }
-    setOpen((o) => !o);
+    if (!r) return;
+    const width = Math.min(224, window.innerWidth - 24);
+    const left = Math.min(Math.max(12, r.left), window.innerWidth - 12 - width);
+    setPos({ left, top: r.bottom + 6, width });
   };
+
+  // A fixed bubble must not hang around once the page moves or the user taps
+  // elsewhere — close on scroll and on any outside pointer press.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setPos(null);
+    const onDown = (e: PointerEvent) => {
+      if (btnRef.current && !btnRef.current.contains(e.target as Node)) close();
+    };
+    window.addEventListener("scroll", close, { passive: true, capture: true });
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      window.removeEventListener("scroll", close, { capture: true } as EventListenerOptions);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [open]);
+
   return (
     <span className="relative inline-flex">
       <button ref={btnRef} type="button" onClick={toggle} aria-label="What does this mean?"
         className="grid h-4 w-4 place-items-center rounded-full text-muted-foreground transition hover:text-foreground">
         <Info size={14} />
       </button>
-      {open && (
-        <span style={{ left: pos.left, width: pos.width }}
-          className="absolute top-full z-10 mt-1.5 rounded-lg border border-border bg-card p-2.5 text-left text-xs font-normal leading-snug text-muted-foreground shadow-lg">
+      {open && createPortal(
+        <span style={{ position: "fixed", left: pos.left, top: pos.top, width: pos.width, zIndex: 150 }}
+          className="rounded-lg border border-border bg-card p-2.5 text-left text-xs font-normal leading-snug text-muted-foreground shadow-lg">
           {text}
-        </span>
+        </span>,
+        document.body
       )}
     </span>
   );

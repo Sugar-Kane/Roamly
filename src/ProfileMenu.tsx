@@ -5,7 +5,7 @@
 // settings work signed-out too — they're stored locally on the device.
 
 import { useEffect, useRef, useState } from "react";
-import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle } from "lucide-react";
+import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, MessageSquare } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import type { Profile } from "./db";
 
@@ -47,7 +47,7 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSignIn, onSignOut, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial }: {
+export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSignIn, onSignOut, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
   session: Session | null;
   profile: Profile | null;
   isPremium: boolean;
@@ -60,6 +60,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSign
   isAdmin: boolean;
   onOpenAdmin: () => void;
   onReplayTutorial: () => void;
+  onSendFeedback: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -158,6 +159,19 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSign
               <span className="min-w-0">
                 <span className="block text-sm font-medium">App tour</span>
                 <span className="block truncate text-[11px] text-muted-foreground">Replay the quick walkthrough of every feature</span>
+              </span>
+            </span>
+            <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
+          </button>
+
+          {/* Send feedback — sign-in is prompted upstream if needed */}
+          <button onClick={() => { setOpen(false); onSendFeedback(); }}
+            className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2.5 text-left transition hover:border-primary/40">
+            <span className="flex min-w-0 items-center gap-2">
+              <MessageSquare size={15} className="shrink-0 text-primary" />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">Send feedback</span>
+                <span className="block truncate text-[11px] text-muted-foreground">Found a bug or have an idea? Tell us</span>
               </span>
             </span>
             <ChevronRight size={15} className="shrink-0 text-muted-foreground" />

@@ -46,6 +46,59 @@ export async function adminSetPremium(userId: string, premium: boolean): Promise
   return "Couldn't update that account — try again.";
 }
 
+// ---- Admin analytics + feedback ----
+// Same pattern: SECURITY DEFINER RPCs that return nothing unless the caller
+// is in the admins table. All return empty fallbacks when the migration
+// hasn't been applied yet.
+export type AdminOverview = { total_users: number; premium_users: number; active_7d: number; feedback_total: number };
+export type AdminEventStat = { name: string; total: number; users: number; phone: number; pc: number };
+export type AdminDailyActivity = { day: string; events: number; active_users: number };
+export type FeedbackRow = {
+  id: string; email: string | null; username: string | null;
+  category: string; message: string; repro: string | null;
+  page: string | null; device: string | null; platform: string | null; created_at: string;
+};
+
+export async function adminOverview(): Promise<AdminOverview | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_overview");
+  if (error) { console.warn("[Roamly] adminOverview failed", error.message); return null; }
+  return ((data ?? [])[0] as AdminOverview) ?? null;
+}
+
+export async function adminEventStats(days: number): Promise<AdminEventStat[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_event_stats", { p_days: days });
+  if (error) { console.warn("[Roamly] adminEventStats failed", error.message); return []; }
+  return (data ?? []) as AdminEventStat[];
+}
+
+export async function adminDailyActivity(days: number): Promise<AdminDailyActivity[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_daily_activity", { p_days: days });
+  if (error) { console.warn("[Roamly] adminDailyActivity failed", error.message); return []; }
+  return (data ?? []) as AdminDailyActivity[];
+}
+
+export async function adminListFeedback(limit = 50): Promise<FeedbackRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_list_feedback", { p_limit: limit });
+  if (error) { console.warn("[Roamly] adminListFeedback failed", error.message); return []; }
+  return (data ?? []) as FeedbackRow[];
+}
+
+export async function submitFeedback(userId: string, fields: {
+  category: string; message: string; repro?: string | null;
+  page?: string; device?: string; platform?: string;
+}): Promise<string | null> {
+  if (!supabase) return "Feedback isn't available right now.";
+  const { error } = await supabase.from("feedback").insert({ user_id: userId, ...fields });
+  if (!error) return null;
+  if (error.message.includes("does not exist")) return "Feedback isn't set up yet — check back soon.";
+  console.warn("[Roamly] submitFeedback failed", error.message);
+  return "Couldn't send that — try again.";
+}
+
 // ---- Invites ----
 // Invite someone by email (api/invite). Returns { status } on success —
 // "invited" (email sent) or "friend_request" (they're already a user) — or

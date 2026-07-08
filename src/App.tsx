@@ -7,8 +7,10 @@ import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embe
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 import { BarChart, Bar, ResponsiveContainer, XAxis, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, type Profile, type AdminUser } from "./db";
+import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, adminSearchUsers, adminSetPremium, sendInvite, adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, type Profile, type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity, type FeedbackRow } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
+import { track, setTrackUser } from "./track";
+import { FeedbackModal } from "./Feedback";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
@@ -36,6 +38,7 @@ export default function App() {
   // First-run tour: shows once on a fresh device; the header "?" and the
   // profile menu's "App tour" row reopen it on demand.
   const [showTutorial, setShowTutorial] = useState(() => localStorage.getItem("roamly-tutorial-seen") !== "1");
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -88,6 +91,7 @@ export default function App() {
   // in/out. Signed-out users keep working with the local in-memory demo tasks.
   useEffect(() => {
     const userId = session?.user.id;
+    setTrackUser(userId ?? null);
     if (!userId) {
       setProfile(null);
       setSessions([]);
@@ -119,6 +123,7 @@ export default function App() {
   const handlePhaseComplete = useCallback((finishedPhase: Phase) => {
     alerts.notify(finishedPhase);
     if (finishedPhase !== "focus") return;
+    track("focus_block_done");
     // Credit the completed Pomodoro to whichever task was active when the phase finished.
     const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
     if (current) {
@@ -157,6 +162,7 @@ export default function App() {
     playing: soundPlaying,
     choose: (id: FocusSoundId) => {
       unlockAudio(); // synchronous, inside the tap — required by iOS
+      track("music_play", id);
       localStorage.setItem("roamly-focus-sound", id);
       if (focusSound === id && soundPlaying) { stopFocusSound(); setSoundPlaying(false); return; }
       setFocusSound(id);
@@ -182,6 +188,7 @@ export default function App() {
     // built-in sound so the timer won't layer it over their streaming music.
     // Picking any sound chip re-selects as usual.
     embedTakeover: () => {
+      track("embed_play");
       stopFocusSound();
       setSoundPlaying(false);
       setFocusSound(null);
@@ -216,6 +223,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer.running, timer.phase, soundAuto, focusSound]);
 
+  // Usage ping when a session actually starts running (throttled in track()).
+  useEffect(() => {
+    if (timer.running) track("timer_start");
+  }, [timer.running]);
+
   // Dim the music over the last ~5s of a focus block so it flows into the break.
   useEffect(() => {
     if (timer.running && timer.phase === "focus" && timer.secondsLeft === 6 && focusSoundActive()) {
@@ -235,6 +247,7 @@ export default function App() {
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
   const onSignIn = () => setShowAuth(true);
   const onSignOut = () => supabase?.auth.signOut();
+  const changeTheme = (id: string) => { setThemeId(id); track("theme_change", id); };
 
   // A notification ("X invited you to a room") lands the user in that room.
   const openRoomFromNotification = useCallback((roomId: string) => {
@@ -258,6 +271,7 @@ export default function App() {
   // Task CRUD: optimistic local update always; when signed in, also persist to
   // Supabase (tasks table) so they survive across devices/sessions.
   const addTask = useCallback((title: string, tag: string) => {
+    track("task_add");
     const userId = session?.user.id;
     const nextOrder = tasks.reduce((m, t) => Math.max(m, t.sort_order ?? 0), 0) + 1;
     if (userId) {
@@ -318,6 +332,7 @@ export default function App() {
     const current = tasks.find((t) => t.id === id);
     if (!current) return;
     const nextDone = !current.done;
+    if (nextDone) track("task_done");
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: nextDone } : t)));
     if (session?.user.id) updateTask(id, { done: nextDone });
   }, [tasks, session?.user.id]);
@@ -340,6 +355,7 @@ export default function App() {
   // Tasks generated server-side by /api/generate-tasks are already persisted —
   // just prepend them to local state, no additional Supabase call needed.
   const addImportedTasks = useCallback((rows: Task[]) => {
+    track("task_ai_upload");
     setTasks((prev) => [...prev, ...rows]);
   }, []);
 
@@ -365,7 +381,7 @@ export default function App() {
 
   // Each tab opens at the top — carrying the previous tab's scroll position
   // over is disorienting, especially on phones.
-  useEffect(() => { window.scrollTo(0, 0); }, [view]);
+  useEffect(() => { window.scrollTo(0, 0); track(`view_${view}`); }, [view]);
 
   // Apply the active theme's palette to the document root so every CSS variable
   // (background, card, primary, etc.) updates live across the whole app.
@@ -393,8 +409,9 @@ export default function App() {
           onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends}
           a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
-          onOpenTutorial={() => setShowTutorial(true)} />
-        <ThemePicker themeId={themeId} setThemeId={setThemeId} />
+          onOpenTutorial={() => setShowTutorial(true)}
+          themeId={themeId} setThemeId={changeTheme}
+          onOpenFeedback={() => (session ? setShowFeedback(true) : setShowAuth(true))} />
         <main className="mt-8 flex-1">
           {view === "focus" && (
             <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
@@ -403,7 +420,7 @@ export default function App() {
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} setExamDate={setExamDate} alerts={alerts}
               session={session} onSignIn={onSignIn} sounds={sounds}
-              enterFocus={() => setImmersive(true)} />
+              enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
@@ -471,6 +488,9 @@ export default function App() {
       )}
       {/* Deferred while a password prompt from an email link is up. */}
       {showTutorial && !needsPassword && <Tutorial setView={setView} onClose={() => setShowTutorial(false)} />}
+      {showFeedback && session && (
+        <FeedbackModal userId={session.user.id} page={view} onClose={() => setShowFeedback(false)} />
+      )}
     </div>
   );
 }
@@ -484,7 +504,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -500,6 +520,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
           className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
           <HelpCircle size={15} />
         </button>
+        <ThemeMenu themeId={themeId} setThemeId={setThemeId} />
         {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} />}
         {!session && (
           <button onClick={onSignIn} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
@@ -509,7 +530,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
         <ProfileMenu session={session} profile={profile} isPremium={isPremium}
           a11y={a11y} setA11y={setA11y}
           onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
-          isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onReplayTutorial={onOpenTutorial} />
+          isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onReplayTutorial={onOpenTutorial} onSendFeedback={onOpenFeedback} />
       </div>
     </header>
   );
@@ -829,29 +850,54 @@ function CustomEditor({ custom, setCustom, onSave }: any) {
   );
 }
 
-function ThemePicker({ themeId, setThemeId }: any) {
+// Round header button opening a dropdown of themes (moved out of the front
+// page). Same open/outside-click/Escape mechanics as ProfileMenu.
+function ThemeMenu({ themeId, setThemeId }: any) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-2">
-      <span className="flex items-center gap-1.5 pr-1 text-xs font-medium text-muted-foreground">
-        <Palette size={14} className="text-primary" /> Theme
-      </span>
-      {THEMES.map((t: any) => {
-        const active = themeId === t.id;
-        const nameColor = t.dark ? "#E8E6F0" : `hsl(${t.vars["--foreground"]})`;
-        return (
-          <button key={t.id} onClick={() => setThemeId(t.id)} aria-pressed={active}
-            className={`relative flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm transition ${active ? "ring-2 ring-primary ring-offset-1 ring-offset-card" : "hover:brightness-95"}`}
-            style={{
-              background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})`,
-              border: `1.5px solid ${active ? "hsl(var(--primary))" : `hsl(${t.vars["--foreground"]} / 0.3)`}`,
-              color: nameColor,
-            }}>
-            <span className="h-2.5 w-2.5 rounded-full border border-white/50" style={{ background: t.ring }} />
-            {t.name}
-            {active && <Check size={12} />}
-          </button>
-        );
-      })}
+    <div ref={rootRef} className="relative">
+      <button onClick={() => setOpen((o) => !o)} aria-label="Change theme" aria-expanded={open}
+        className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+        <Palette size={15} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-11 z-50 w-64 rounded-2xl border border-border bg-card p-2 shadow-xl">
+          <p className="px-3 pt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Theme</p>
+          <div className="mt-1 space-y-1">
+            {THEMES.map((t: any) => {
+              const active = themeId === t.id;
+              return (
+                <button key={t.id} onClick={() => { setThemeId(t.id); setOpen(false); }} aria-pressed={active}
+                  className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border shadow-sm"
+                    style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
+                    <span className="h-2.5 w-2.5 rounded-full border border-white/50" style={{ background: t.ring }} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">{t.name}</span>
+                    <span className="block text-[11px] text-muted-foreground">{t.hint}</span>
+                  </span>
+                  {active && <Check size={15} className="shrink-0 text-primary" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1715,6 +1761,8 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
     setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: !r.is_premium } : r)));
   };
 
+  const [tab, setTab] = useState<"usage" | "feedback" | "users">("usage");
+
   if (!isAdmin) {
     return (
       <div className="mx-auto max-w-2xl">
@@ -1727,8 +1775,21 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-display text-3xl font-semibold">Admin</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Invite people, and grant or remove Premium.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Usage, feedback, invites, and Premium.</p>
 
+      <div className="mt-4 flex gap-1.5">
+        {([["usage", "Usage"], ["feedback", "Feedback"], ["users", "Users"]] as const).map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} aria-pressed={tab === id}
+            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${tab === id ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "usage" && <AdminUsage />}
+      {tab === "feedback" && <AdminFeedback />}
+
+      {tab === "users" && <>
       <div className="mt-6 rounded-2xl border border-border bg-card/70 p-4">
         <h2 className="text-sm font-semibold">Invite by email</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">Emails them an invite to join Roamly (or sends a friend request if they're already a user).</p>
@@ -1778,6 +1839,166 @@ function AdminView({ isAdmin }: { isAdmin: boolean }) {
           </div>
         ))}
       </div>
+      </>}
+    </div>
+  );
+}
+
+// Friendly names for the tracked events so the dashboard reads like features,
+// not code. Anything unmapped falls back to its raw name.
+const EVENT_LABELS: Record<string, string> = {
+  view_focus: "Focus tab visits",
+  view_tasks: "Tasks tab visits",
+  view_rooms: "Rooms tab visits",
+  view_analytics: "Analytics tab visits",
+  view_premium: "Premium page visits",
+  view_admin: "Admin page visits",
+  timer_start: "Timer started",
+  focus_block_done: "Focus blocks finished",
+  focus_mode_enter: "Focus mode opened",
+  task_add: "Tasks added",
+  task_done: "Tasks completed",
+  task_ai_upload: "AI note uploads",
+  room_join: "Rooms joined",
+  room_host: "Rooms hosted",
+  room_focus_mode: "Room focus mode",
+  voice_join: "Voice chat joined",
+  music_play: "Built-in music played",
+  embed_play: "Spotify/Apple used",
+  theme_change: "Theme changed",
+  tutorial_done: "Tutorial completed",
+  feedback_sent: "Feedback sent",
+};
+
+function AdminUsage() {
+  const [days, setDays] = useState(14);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [stats, setStats] = useState<AdminEventStat[]>([]);
+  const [daily, setDaily] = useState<AdminDailyActivity[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => { adminOverview().then(setOverview); }, []);
+  useEffect(() => {
+    let alive = true;
+    setLoaded(false);
+    Promise.all([adminEventStats(days), adminDailyActivity(days)]).then(([s, d]) => {
+      if (!alive) return;
+      setStats(s);
+      setDaily(d);
+      setLoaded(true);
+    });
+    return () => { alive = false; };
+  }, [days]);
+
+  const tiles = [
+    { label: "Students", value: overview?.total_users },
+    { label: "Premium", value: overview?.premium_users },
+    { label: "Active this week", value: overview?.active_7d },
+    { label: "Feedback", value: overview?.feedback_total },
+  ];
+
+  return (
+    <div className="mt-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {tiles.map((t) => (
+          <div key={t.label} className="rounded-2xl border border-border bg-card/70 p-3.5">
+            <p className="font-display text-2xl font-semibold">{t.value ?? "—"}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Feature usage</h2>
+        <div className="flex gap-1">
+          {[7, 14, 30].map((d) => (
+            <button key={d} onClick={() => setDays(d)} aria-pressed={days === d}
+              className={`rounded-full border px-2.5 py-1 text-xs transition ${days === d ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loaded && stats.length === 0 && (
+        <p className="mt-3 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
+          No usage recorded yet. Data starts flowing once the metrics update is applied in Supabase and signed-in users start clicking around.
+        </p>
+      )}
+      {stats.length > 0 && (
+        <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card/70">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>Feature</span><span className="text-right">Uses</span><span className="text-right">Students</span><span className="text-right">📱</span><span className="text-right">💻</span>
+          </div>
+          {stats.map((s) => (
+            <div key={s.name} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
+              <span className="min-w-0 truncate">{EVENT_LABELS[s.name] ?? s.name}</span>
+              <span className="text-right font-mono text-xs">{s.total}</span>
+              <span className="text-right font-mono text-xs">{s.users}</span>
+              <span className="text-right font-mono text-xs text-muted-foreground">{s.phone}</span>
+              <span className="text-right font-mono text-xs text-muted-foreground">{s.pc}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {daily.length > 0 && (
+        <>
+          <h2 className="mt-6 text-sm font-semibold">Active students per day</h2>
+          <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card/70">
+            {daily.map((d) => (
+              <div key={d.day} className="flex items-center justify-between border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
+                <span className="text-muted-foreground">
+                  {new Date(`${d.day}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+                </span>
+                <span className="font-mono text-xs">{d.active_users} student{d.active_users === 1 ? "" : "s"} · {d.events} actions</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const FEEDBACK_STYLE: Record<string, { label: string; cls: string }> = {
+  bug: { label: "Bug", cls: "bg-destructive/10 text-destructive" },
+  confusing: { label: "Confusing", cls: "bg-primary/10 text-primary" },
+  idea: { label: "Idea", cls: "bg-roamly-green/10 text-roamly-green" },
+  other: { label: "Other", cls: "bg-secondary text-muted-foreground" },
+};
+
+function AdminFeedback() {
+  const [rows, setRows] = useState<FeedbackRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => { adminListFeedback(100).then((r) => { setRows(r); setLoaded(true); }); }, []);
+
+  return (
+    <div className="mt-5 space-y-2">
+      {loaded && rows.length === 0 && (
+        <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
+          No feedback yet. Users can send it from their profile menu → Send feedback.
+        </p>
+      )}
+      {rows.map((f) => {
+        const style = FEEDBACK_STYLE[f.category] ?? FEEDBACK_STYLE.other;
+        return (
+          <div key={f.id} className="rounded-2xl border border-border bg-card/70 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.cls}`}>{style.label}</span>
+              {f.repro && <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">{f.repro}</span>}
+              <span className="ml-auto text-[11px] text-muted-foreground">
+                {new Date(f.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              </span>
+            </div>
+            <p className="mt-2 whitespace-pre-wrap text-sm">{f.message}</p>
+            <p className="mt-2 truncate text-[11px] text-muted-foreground">
+              {f.email ?? "unknown"}{f.username ? ` · @${f.username}` : ""}{f.page ? ` · on ${f.page}` : ""}{f.device ? ` · ${f.device}` : ""}
+            </p>
+            {f.platform && <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">{f.platform}</p>}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1854,6 +2075,19 @@ function Upsell({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => 
 }
 
 function BottomNav({ nav, view, setView }: any) {
+  // iOS Safari drags position:fixed elements up with the on-screen keyboard
+  // (and can leave them stranded mid-page). Hide the nav while the keyboard
+  // is open — the visualViewport shrinking well below the layout viewport is
+  // the reliable signal. No-ops on desktop.
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => setKeyboardOpen(vv.height < window.innerHeight - 150);
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
+  if (keyboardOpen) return null;
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg">
       <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">

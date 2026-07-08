@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2 } from "lucide-react";
+import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2, HelpCircle } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
@@ -14,6 +14,7 @@ import { VoiceDock, VoiceControls, useRoomVoice } from "./RoomVoice";
 import { UploadTasksPanel } from "./UploadTasks";
 import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
+import { track } from "./track";
 import type { Profile } from "./db";
 import type { Session } from "@supabase/supabase-js";
 
@@ -59,11 +60,44 @@ export function RoomsLive(props: RoomsLiveProps) {
 }
 
 // Signed-out (or Supabase-less) fallback: the original demo grid.
+// First-visit explainer for how shared-timer rooms actually work (tester
+// feedback: the concept wasn't obvious). Collapses to a small reopen link
+// once dismissed.
+function HowRoomsWork() {
+  const [open, setOpen] = useState(() => localStorage.getItem("roamly-rooms-explainer-seen") !== "1");
+  const dismiss = () => { localStorage.setItem("roamly-rooms-explainer-seen", "1"); setOpen(false); };
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 transition hover:text-foreground hover:underline">
+        <HelpCircle size={13} /> How do rooms work?
+      </button>
+    );
+  }
+  return (
+    <div className="mt-4 rounded-2xl border border-dashed border-border bg-card/60 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold"><HelpCircle size={15} className="text-primary" /> How rooms work</h2>
+        <button onClick={dismiss} className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">Got it</button>
+      </div>
+      <ol className="mt-2.5 space-y-2 text-sm text-muted-foreground">
+        <li className="flex gap-2"><span className="font-semibold text-primary">1.</span> Pick a room and hit Join — the timer inside is already running, and everyone in the room shares it.</li>
+        <li className="flex gap-2"><span className="font-semibold text-primary">2.</span> Focus together in silence. Music plays if you want it; chat stays locked so nobody can distract you.</li>
+        <li className="flex gap-2"><span className="font-semibold text-primary">3.</span> When the break hits, chat and voice open — say hi, compare notes, then the next focus block starts automatically.</li>
+      </ol>
+      <p className="mt-2.5 text-xs text-muted-foreground">
+        Always-on rooms never stop, so there's always one to drop into. Premium members can host their own room with a custom rhythm and invite friends.
+      </p>
+    </div>
+  );
+}
+
 function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-3xl font-semibold">Study rooms</h1>
       <p className="mt-1 text-sm text-muted-foreground">Focus alongside other PA students in real time.</p>
+      <HowRoomsWork />
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-4">
         <span className="text-sm text-muted-foreground">Sign in to join live rooms, add friends, and chat during breaks.</span>
         <button onClick={onSignIn} className="shrink-0 rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow">Sign in</button>
@@ -177,6 +211,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   const join = (room: LiveRoom) => {
     if (!profile?.username) { onNeedUsername(); return; }
     unlockAudio(); // synchronous, inside the tap — lets room music play on iOS
+    track("room_join");
     setActive(room);
     notifyFriendsOfRoom(room.id, "room_joined");
   };
@@ -197,6 +232,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
 
   const created = (room: LiveRoom) => {
     unlockAudio(); // room music will start on iOS — this runs off the Create tap
+    track("room_host");
     setShowCreate(false);
     setRooms((prev) => [room, ...prev]);
     setActive(room);
@@ -251,6 +287,8 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
           </button>
         </div>
       </div>
+
+      <HowRoomsWork />
 
       {totalHosted > 0 && (
         <div className="relative mt-5">
@@ -609,7 +647,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           {members.length === 0 && <span className="text-xs text-muted-foreground">Connecting…</span>}
         </div>
 
-        <button onClick={() => { unlockAudio(); setRoomImmersive(true); }}
+        <button onClick={() => { unlockAudio(); track("room_focus_mode"); setRoomImmersive(true); }}
           className="mx-auto mt-5 flex items-center gap-2 rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
           <Maximize2 size={15} /> Focus mode
         </button>

@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { Headphones, Mic, MicOff, PhoneOff, Lock } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { fmt } from "./useTimer";
+import { track as trackEvent } from "./track";
 
 // A full mesh means n·(n−1)/2 connections; past ~8 people the upstream audio
 // load gets heavy for everyone, so voice caps below the room cap.
@@ -189,6 +190,7 @@ export function useRoomVoice(roomId: string, userId: string, username: string, p
 
   const join = async () => {
     setError(null);
+    trackEvent("voice_join");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
