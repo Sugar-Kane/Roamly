@@ -110,32 +110,46 @@ export async function POST(request: Request): Promise<Response> {
   const usedThisPeriod = profileRow.ai_uploads_period === period ? (profileRow.ai_uploads_count as number) : 0;
   const quota = isPremium ? PREMIUM_MONTHLY_QUOTA : FREE_MONTHLY_QUOTA;
 
-  if (usedThisPeriod >= quota) {
-    return jsonResponse({ error: "quota_exceeded" }, 403);
-  }
-
-  // Global circuit breaker: per-user caps bound each account, but with many
-  // premium users the app-wide total is what actually hits the Anthropic bill.
-  // Sum this month's per-user counters (they're already the source of truth —
-  // no extra table) and stop everyone once the app-wide ceiling is reached.
-  // At ~$0.05 avg per upload the cap bounds a month at roughly $100 typical.
+  // Reserve a quota slot BEFORE the Claude call (refunded on failure below).
+  // reserve_ai_upload checks-and-increments in one row-locked statement, so
+  // parallel requests can't race past the per-user cap or the app-wide spend
+  // ceiling the way a read-then-write here could.
+  let atomicReserve = true;
   {
-    const { data: totals } = await admin
-      .from("profiles")
-      .select("ai_uploads_count")
-      .eq("ai_uploads_period", period);
-    const globalUsed = (totals ?? []).reduce((sum, r) => sum + ((r.ai_uploads_count as number) ?? 0), 0);
-    if (globalUsed >= GLOBAL_MONTHLY_UPLOAD_CAP) {
+    const { data: outcome, error: reserveError } = await admin.rpc("reserve_ai_upload", {
+      p_user: user.id,
+      p_period: period,
+      p_quota: quota,
+      p_global_cap: GLOBAL_MONTHLY_UPLOAD_CAP,
+    });
+    if (reserveError) {
+      const missing = reserveError.message.includes("does not exist") || reserveError.message.includes("find the function");
+      if (!missing) {
+        return jsonResponse({ error: "Couldn't check your upload quota — try again." }, 500);
+      }
+      // Migration not applied yet — legacy (non-atomic) reservation path.
+      atomicReserve = false;
+      if (usedThisPeriod >= quota) {
+        return jsonResponse({ error: "quota_exceeded" }, 403);
+      }
+      const { data: totals } = await admin
+        .from("profiles")
+        .select("ai_uploads_count")
+        .eq("ai_uploads_period", period);
+      const globalUsed = (totals ?? []).reduce((sum, r) => sum + ((r.ai_uploads_count as number) ?? 0), 0);
+      if (globalUsed >= GLOBAL_MONTHLY_UPLOAD_CAP) {
+        return jsonResponse({ error: "ai_at_capacity" }, 503);
+      }
+      await admin
+        .from("profiles")
+        .update({ ai_uploads_count: usedThisPeriod + 1, ai_uploads_period: period })
+        .eq("id", user.id);
+    } else if (outcome === "quota_exceeded") {
+      return jsonResponse({ error: "quota_exceeded" }, 403);
+    } else if (outcome === "ai_at_capacity") {
       return jsonResponse({ error: "ai_at_capacity" }, 503);
     }
   }
-
-  // Reserve the quota slot BEFORE the Claude call (refunded on failure below).
-  // Incrementing after the call let parallel requests race past the cap.
-  await admin
-    .from("profiles")
-    .update({ ai_uploads_count: usedThisPeriod + 1, ai_uploads_period: period })
-    .eq("id", user.id);
 
   // Give Claude a short-lived signed URL rather than pulling the file through this
   // function ourselves — keeps us well clear of Vercel's 4.5MB request-body limit
@@ -162,7 +176,10 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
-  const anthropic = new Anthropic({ apiKey: anthropicKey });
+  // Bounded latency: one retry on transient errors, and a hard per-attempt
+  // timeout well inside Vercel's function limit — a hung upstream call must
+  // not hold the user's reserved quota slot until the platform kills us.
+  const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 40_000, maxRetries: 1 });
 
   let tasks: { title: string; tag: string; est: number }[] = [];
   let claudeError: Response | null = null;
@@ -178,7 +195,7 @@ export async function POST(request: Request): Promise<Response> {
     } else if (validatedMediaType.startsWith("image/")) {
       fileBlock = { type: "image", source: { type: "url", url: signed.signedUrl } };
     } else {
-      const resp = await fetch(signed.signedUrl);
+      const resp = await fetch(signed.signedUrl, { signal: AbortSignal.timeout(15_000) });
       if (!resp.ok) throw new Error(`file fetch failed (${resp.status})`);
       let text: string;
       if (validatedMediaType === DOCX) {
@@ -260,10 +277,14 @@ export async function POST(request: Request): Promise<Response> {
 
   if (claudeError) {
     // Refund the reserved quota slot — the user got nothing for it.
-    await admin
-      .from("profiles")
-      .update({ ai_uploads_count: usedThisPeriod, ai_uploads_period: period })
-      .eq("id", user.id);
+    if (atomicReserve) {
+      await admin.rpc("refund_ai_upload", { p_user: user.id, p_period: period });
+    } else {
+      await admin
+        .from("profiles")
+        .update({ ai_uploads_count: usedThisPeriod, ai_uploads_period: period })
+        .eq("id", user.id);
+    }
     return claudeError;
   }
 

@@ -4,8 +4,9 @@ const GENERAL_DAILY_LIMIT = 5;
 const ADMIN_DAILY_LIMIT = 50;
 // Global ceiling across ALL users per 24h. Signups are open, so without this,
 // N throwaway accounts × 5/day each could pump spam through the app's SMTP
-// sender (currently a personal Gmail with its own 500/day cap + reputation).
-const GLOBAL_DAILY_LIMIT = 50;
+// sender. Kept below Gmail's ~500/day cap but high enough that a launch-day
+// burst of legitimate invites can't lock every user out for the day.
+const GLOBAL_DAILY_LIMIT = 200;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function json(body: unknown, status: number): Response {
