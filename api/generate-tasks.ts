@@ -16,6 +16,10 @@ const FREE_MONTHLY_QUOTA = 3;
 // Premium is capped too — "unlimited" uploads would be an open tab on the
 // Anthropic bill. Generous for real studying, hostile to abuse.
 const PREMIUM_MONTHLY_QUOTA = 30;
+// App-wide monthly ceiling across ALL users — the circuit breaker that bounds
+// the total Anthropic bill no matter how many accounts exist. Raise as the
+// user base grows (2000 ≈ $100 typical / ~2-4x headroom for 100 premium users).
+const GLOBAL_MONTHLY_UPLOAD_CAP = 2000;
 const STORAGE_BUCKET = "study-uploads";
 const SIGNED_URL_TTL_SECONDS = 300;
 
@@ -108,6 +112,22 @@ export async function POST(request: Request): Promise<Response> {
 
   if (usedThisPeriod >= quota) {
     return jsonResponse({ error: "quota_exceeded" }, 403);
+  }
+
+  // Global circuit breaker: per-user caps bound each account, but with many
+  // premium users the app-wide total is what actually hits the Anthropic bill.
+  // Sum this month's per-user counters (they're already the source of truth —
+  // no extra table) and stop everyone once the app-wide ceiling is reached.
+  // At ~$0.05 avg per upload the cap bounds a month at roughly $100 typical.
+  {
+    const { data: totals } = await admin
+      .from("profiles")
+      .select("ai_uploads_count")
+      .eq("ai_uploads_period", period);
+    const globalUsed = (totals ?? []).reduce((sum, r) => sum + ((r.ai_uploads_count as number) ?? 0), 0);
+    if (globalUsed >= GLOBAL_MONTHLY_UPLOAD_CAP) {
+      return jsonResponse({ error: "ai_at_capacity" }, 503);
+    }
   }
 
   // Reserve the quota slot BEFORE the Claude call (refunded on failure below).

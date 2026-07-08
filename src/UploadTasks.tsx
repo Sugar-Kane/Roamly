@@ -91,6 +91,11 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade }: an
         setStage("idle");
         return;
       }
+      if (result.error === "ai_at_capacity") {
+        setError("AI uploads are at capacity this month — they reset on the 1st. You can still add tasks manually.");
+        setStage("idle");
+        return;
+      }
       if (!res.ok) {
         setError(result.error ?? "Something went wrong — try again.");
         setStage("idle");
