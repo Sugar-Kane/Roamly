@@ -712,7 +712,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
       {/* Only ONE RoomChat may be mounted at a time: mounting a second one
           (e.g. the copy inside the focus overlay) double-subscribes the same
           realtime topic, which throws and unmounts the whole screen. */}
-      {!roomImmersive && <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} />}
+      {!roomImmersive && <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />}
 
       {showInvite && <InviteModal roomId={room.id} myId={userId} onClose={() => setShowInvite(false)} />}
 
@@ -739,7 +739,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           <div className="space-y-3">
             <VoiceControls voice={voice} phase={info.phase} isPremium={isPremium} gateThen={gateThen} />
             {info.phase !== "focus"
-              ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={0} />
+              ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />
               : <p className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 text-center text-xs text-muted-foreground">
                   <MessageCircle size={13} /> Chat opens when the focus block reaches a break.
                 </p>}
@@ -749,7 +749,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   );
 }
 
-function RoomChat({ room, userId, phase, secondsToBreak }: { room: LiveRoom; userId: string; phase: "focus" | "short" | "long"; secondsToBreak: number }) {
+function RoomChat({ room, userId, phase, secondsToBreak, phaseStartMs }: { room: LiveRoom; userId: string; phase: "focus" | "short" | "long"; secondsToBreak: number; phaseStartMs: number }) {
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [names, setNames] = useState<Map<string, PublicProfile>>(new Map());
   const [draft, setDraft] = useState("");
@@ -757,6 +757,13 @@ function RoomChat({ room, userId, phase, secondsToBreak }: { room: LiveRoom; use
   const [sending, setSending] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const chatOpen = phase !== "focus";
+
+  // Break chat is ephemeral: only show messages from the CURRENT phase window,
+  // so a previous break's chatter clears the instant a new phase starts and
+  // every break begins fresh. (The 2s buffer absorbs second-rounding / small
+  // client-vs-server clock skew at the phase boundary.) Messages still persist
+  // server-side; they're just never shown past their own break.
+  const visible = messages.filter((m) => new Date(m.created_at).getTime() >= phaseStartMs - 2000);
 
   // History + live inserts. subscribe() throws if this topic is somehow
   // already subscribed (e.g. two RoomChat instances) — guard so a duplicate
@@ -779,15 +786,15 @@ function RoomChat({ room, userId, phase, secondsToBreak }: { room: LiveRoom; use
 
   // Resolve sender names we haven't seen yet.
   useEffect(() => {
-    const unknown = [...new Set(messages.map((m) => m.user_id))].filter((id) => !names.has(id));
+    const unknown = [...new Set(visible.map((m) => m.user_id))].filter((id) => !names.has(id));
     if (unknown.length === 0) return;
     getPublicProfiles(unknown).then((fresh) => setNames((prev) => new Map([...prev, ...fresh])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages]);
+  }, [messages, phaseStartMs]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [messages, chatOpen]);
+  }, [messages, phaseStartMs, chatOpen]);
 
   const send = async () => {
     const body = draft.trim();
@@ -814,10 +821,10 @@ function RoomChat({ room, userId, phase, secondsToBreak }: { room: LiveRoom; use
       </div>
 
       <div ref={listRef} className="mt-3 h-64 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3">
-        {messages.length === 0 && (
+        {visible.length === 0 && (
           <p className="pt-4 text-center text-xs text-muted-foreground">No messages yet. Say hi at the next break.</p>
         )}
-        {messages.map((m) => {
+        {visible.map((m) => {
           const mine = m.user_id === userId;
           // Always attribute the message — the sender's name for others, "You"
           // for your own — so every line shows who posted it.
