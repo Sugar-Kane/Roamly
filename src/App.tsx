@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronUp, ChevronDown, Volume2, Lock, GripVertical, HelpCircle } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronUp, ChevronDown, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2 } from "lucide-react";
 import { METHODS, SEED_TASKS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
@@ -18,6 +19,8 @@ import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { RoomsLive } from "./RoomsLive";
 import { FocusMode, CompactSounds, TimeDisplay, InfoTip } from "./FocusMode";
+import { PipTimer } from "./PipTimer";
+import { useDocumentPip, applyThemeToPip } from "./useDocumentPip";
 import { Tutorial } from "./Tutorial";
 import { AdminView } from "./Admin";
 import { Modal } from "./Modal";
@@ -147,6 +150,10 @@ export default function App() {
   }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks]);
 
   const timer = useTimer(method, handlePhaseComplete);
+
+  // Picture-in-Picture: pop the timer into a small always-on-top window so it
+  // stays visible while the user studies in other apps/tabs (desktop Chromium).
+  const { pipWindow, supported: pipSupported, openPip, closePip } = useDocumentPip(theme, a11y);
 
   // --- Built-in focus sounds (free for everyone) ---
   // Melody is preselected so music plays the moment anyone hits Start, with no
@@ -415,6 +422,12 @@ export default function App() {
     root.style.fontSize = a11y.largeText ? "112.5%" : "";
   }, [theme, a11y]);
 
+  // Keep an open Picture-in-Picture window's palette in sync when the theme or
+  // accessibility settings change (its document has its own root to restyle).
+  useEffect(() => {
+    if (pipWindow) applyThemeToPip(pipWindow, theme, a11y);
+  }, [pipWindow, theme, a11y]);
+
   return (
     <div className="min-h-screen w-full text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <OfflineBanner />
@@ -435,7 +448,9 @@ export default function App() {
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} setExamDate={setExamDate} alerts={alerts}
               session={session} onSignIn={onSignIn} sounds={sounds}
-              enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }} />
+              enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
+              pipSupported={pipSupported} pipActive={!!pipWindow}
+              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
@@ -494,6 +509,15 @@ export default function App() {
             <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
           </div>
         } />
+      {/* Picture-in-Picture floating timer. Portaled from App (not FocusView) so
+          it survives tab switches and shares the one live `timer` object. */}
+      {pipWindow && createPortal(
+        <PipTimer timer={timer}
+          phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
+          ring={timer.phase === "focus" ? theme.ring : theme.rest}
+          taskTitle={tasks.find((t) => t.id === activeTask)?.title} />,
+        pipWindow.document.body
+      )}
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
       {needsPassword && session && (
@@ -703,7 +727,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn, sounds, enterFocus }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -778,6 +802,15 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <Timer size={13} /> Focus mode
               </button>
               <InfoTip text="Focus mode fills your whole screen with the timer, your music, and your task list — Start opens it automatically, and this button gets you back in." />
+              {pipSupported && (
+                <>
+                  <button onClick={() => (pipActive ? onClosePip?.() : onPopOut?.())}
+                    className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                    <PictureInPicture2 size={13} /> {pipActive ? "Close pop-out" : "Pop out timer"}
+                  </button>
+                  <InfoTip text="Pop the timer into a small floating window that stays on top of other apps — so you can keep studying on the rest of your screen and still see the countdown. Desktop Chrome/Edge only." />
+                </>
+              )}
               <NotificationToggle alerts={alerts} />
             </div>
           </div>

@@ -167,6 +167,7 @@ const EVENT_LABELS: Record<string, string> = {
   timer_start: "Timer started",
   focus_block_done: "Focus blocks finished",
   focus_mode_enter: "Focus mode opened",
+  pip_open: "Pop-out timer opened",
   task_add: "Tasks added",
   task_done: "Tasks completed",
   task_ai_upload: "AI note uploads",

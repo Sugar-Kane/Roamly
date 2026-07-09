@@ -96,6 +96,13 @@ test("premium feature prompts sign-in when logged out", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 });
 
+test("pop-out timer button shows when Document PiP is supported", async ({ page }) => {
+  // localhost is a secure context, so Chromium exposes documentPictureInPicture
+  // and the gated "Pop out timer" button renders on the Focus tab.
+  await goHome(page);
+  await expect(page.getByRole("button", { name: "Pop out timer" })).toBeVisible();
+});
+
 test("AI upload requires sign-in when logged out", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks" }).click();
