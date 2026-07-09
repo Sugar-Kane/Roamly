@@ -216,7 +216,10 @@ export default function App() {
   // own music, synced to the shared timer). This ref lets the personal-timer
   // sound sync below stand down so the two never fight over the singleton engine.
   const inRoomRef = useRef(false);
-  const handleInRoom = useCallback((v: boolean) => { inRoomRef.current = v; }, []);
+  // `roomActive` mirrors the ref as state so the personal pop-out timer yields
+  // the single PiP window to the room's own pop-out while a room is open.
+  const [roomActive, setRoomActive] = useState(false);
+  const handleInRoom = useCallback((v: boolean) => { inRoomRef.current = v; setRoomActive(v); }, []);
 
   // Sound follows the timer: plays during a running focus block, fades out for
   // breaks and pauses. Lives here (not in the panel) so it keeps working when
@@ -469,6 +472,8 @@ export default function App() {
               onNeedUsername={openFriends} onOpenFriends={openFriends}
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
               soundAuto={soundAuto} onInRoom={handleInRoom}
+              pipSupported={pipSupported} pipWindow={pipWindow}
+              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           )}
           {view === "premium" && (
@@ -509,13 +514,27 @@ export default function App() {
             <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
           </div>
         } />
-      {/* Picture-in-Picture floating timer. Portaled from App (not FocusView) so
-          it survives tab switches and shares the one live `timer` object. */}
-      {pipWindow && createPortal(
-        <PipTimer timer={timer}
+      {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
+          App (not FocusView) so it survives tab switches and shares the one live
+          `timer` object. Yields to the room's own pop-out while a room is open. */}
+      {pipWindow && !roomActive && createPortal(
+        <PipTimer
           phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
           ring={timer.phase === "focus" ? theme.ring : theme.rest}
-          taskTitle={tasks.find((t) => t.id === activeTask)?.title} />,
+          timeText={fmt(timer.secondsLeft)} progress={timer.progress}
+          taskTitle={tasks.find((t) => t.id === activeTask)?.title}
+          controls={
+            <>
+              <button onClick={() => (timer.running ? timer.pause() : timer.start())}
+                className="flex h-11 items-center justify-center gap-2 rounded-2xl px-6 text-sm font-semibold text-white shadow-glow transition active:scale-[0.98]"
+                style={{ background: timer.phase === "focus" ? theme.ring : theme.rest }} aria-label={timer.running ? "Pause" : "Resume"}>
+                {timer.running ? <><Pause size={18} fill="currentColor" /> Pause</> : <><Play size={18} fill="currentColor" /> Resume</>}
+              </button>
+              <button onClick={timer.skip}
+                className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+                aria-label="Skip"><SkipForward size={16} /></button>
+            </>
+          } />,
         pipWindow.document.body
       )}
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}

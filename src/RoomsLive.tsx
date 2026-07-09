@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2, HelpCircle } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2, HelpCircle, PictureInPicture2 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
@@ -10,6 +11,7 @@ import {
 import { fmt } from "./useTimer";
 import { startFocusSound, stopFocusSound, unlockAudio, playChime, duckFocusSound, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 import { FocusMode, TimeDisplay, InfoTip } from "./FocusMode";
+import { PipTimer } from "./PipTimer";
 import { Modal } from "./Modal";
 import { VoiceDock, VoiceControls, useRoomVoice } from "./RoomVoice";
 import { UploadTasksPanel } from "./UploadTasks";
@@ -50,6 +52,12 @@ type RoomsLiveProps = {
   // room (so the personal-timer sound effect doesn't fight it).
   soundAuto: boolean;
   onInRoom: (inRoom: boolean) => void;
+  // Picture-in-Picture: pop the shared room timer into a floating window. The
+  // single window is owned by App; these let a room drive/close it.
+  pipSupported: boolean;
+  pipWindow: Window | null;
+  onPopOut: () => void;
+  onClosePip: () => void;
   // For the AI task generator inside hosted rooms: tasks land in the user's
   // own list, and the upgrade CTA goes to checkout.
   onImportedTasks: (rows: unknown[]) => void;
@@ -125,7 +133,7 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
+function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [active, setActive] = useState<LiveRoom | null>(null);
   const [occupancy, setOccupancy] = useState<Map<string, number>>(new Map());
@@ -245,6 +253,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     return (
       <RoomView room={active} session={session} profile={profile} now={now}
         isPremium={isPremium} gateThen={gateThen} soundAuto={soundAuto} onInRoom={onInRoom}
+        pipSupported={pipSupported} pipWindow={pipWindow} onPopOut={onPopOut} onClosePip={onClosePip}
         onImportedTasks={onImportedTasks} onUpgrade={onUpgrade}
         onMusicChange={(music) => setActive((prev) => (prev ? { ...prev, music } : prev))}
         onLeave={() => { setActive(null); reload(); }}
@@ -469,7 +478,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
 
 type Member = { id: string; username: string };
 
-function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, onInRoom, onImportedTasks, onUpgrade, onMusicChange, onLeave, onEnded }: {
+function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, onInRoom, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade, onMusicChange, onLeave, onEnded }: {
   room: LiveRoom;
   session: Session;
   profile: Profile | null;
@@ -478,6 +487,10 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   gateThen: (fn: () => void) => void;
   soundAuto: boolean;
   onInRoom: (inRoom: boolean) => void;
+  pipSupported: boolean;
+  pipWindow: Window | null;
+  onPopOut: () => void;
+  onClosePip: () => void;
   onImportedTasks: (rows: unknown[]) => void;
   onUpgrade: () => void;
   onMusicChange: (music: FocusSoundId) => void;
@@ -648,11 +661,28 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           {members.length === 0 && <span className="text-xs text-muted-foreground">Connecting…</span>}
         </div>
 
-        <button onClick={() => { unlockAudio(); track("room_focus_mode"); setRoomImmersive(true); }}
-          className="mx-auto mt-5 flex items-center gap-2 rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
-          <Maximize2 size={15} /> Focus mode
-        </button>
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+          <button onClick={() => { unlockAudio(); track("room_focus_mode"); setRoomImmersive(true); }}
+            className="flex items-center gap-2 rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
+            <Maximize2 size={15} /> Focus mode
+          </button>
+          {pipSupported && (
+            <button onClick={() => (pipWindow ? onClosePip() : onPopOut())}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2.5 text-sm font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+              <PictureInPicture2 size={15} /> {pipWindow ? "Close pop-out" : "Pop out timer"}
+            </button>
+          )}
+        </div>
       </section>
+
+      {/* Picture-in-Picture: the shared room timer in a floating window. No
+          controls — a room's timer is server-synced and can't be paused/skipped. */}
+      {pipWindow && createPortal(
+        <PipTimer phaseLabel={PHASE_LABEL[info.phase]} ring={phaseColor(info.phase)}
+          timeText={fmt(info.secondsLeft)} progress={1 - info.secondsLeft / info.phaseTotal}
+          taskTitle={room.name} />,
+        pipWindow.document.body
+      )}
 
       <section className="mt-4 rounded-3xl border border-border bg-card/80 p-4 shadow-sm">
         <div className="flex items-center justify-between gap-2">
