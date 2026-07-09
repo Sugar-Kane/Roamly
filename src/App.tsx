@@ -483,10 +483,14 @@ export default function App() {
             </button>
           </>
         }
-        music={<CompactSounds sounds={sounds} />}
         extra={
+          // Order per user feedback: 1) Tasks, 2) built-in Music, 3) the
+          // Spotify/Apple embed — so the two music boxes sit together under the
+          // task list. The built-in sounds keep the same card styling the
+          // FocusMode `music` slot gave them.
           <div className="space-y-4">
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
+            <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
             <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
           </div>
         } />
