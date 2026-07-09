@@ -473,7 +473,7 @@ export default function App() {
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
               soundAuto={soundAuto} onInRoom={handleInRoom}
               pipSupported={pipSupported} pipWindow={pipWindow}
-              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
+              onPopOut={() => openPip({ width: 340, height: 620 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           )}
           {view === "premium" && (

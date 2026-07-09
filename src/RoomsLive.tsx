@@ -509,6 +509,9 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   // the compact controls (focus overlay) are two surfaces over this hook, so
   // a live call survives entering/leaving focus mode.
   const voice = useRoomVoice(room.id, userId, username, info.phase);
+  // Likewise ONE chat data instance (messages + names + the realtime topic):
+  // the normal view, focus overlay, and pop-out window all render over it.
+  const chat = useRoomChat(room.id);
   // Local, per-listener music mute — silences the background music just for you,
   // completely separate from the voice controls (muting a mic / people talking).
   const [musicMuted, setMusicMuted] = useState(() => loadPref("roamly-room-music-muted") === "on");
@@ -675,12 +678,17 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         </div>
       </section>
 
-      {/* Picture-in-Picture: the shared room timer in a floating window. No
-          controls — a room's timer is server-synced and can't be paused/skipped. */}
+      {/* Picture-in-Picture: the shared room timer + break chat in a floating
+          window. No timer controls — a room's timer is server-synced and can't
+          be paused/skipped. The chat surface shares the useRoomChat instance
+          above and handles its own locked-during-focus lifecycle. */}
       {pipWindow && createPortal(
         <PipTimer phaseLabel={PHASE_LABEL[info.phase]} ring={phaseColor(info.phase)}
           timeText={fmt(info.secondsLeft)} progress={1 - info.secondsLeft / info.phaseTotal}
-          taskTitle={room.name} />,
+          taskTitle={room.name}
+          extra={<RoomChat compact chat={chat} room={room} userId={userId} phase={info.phase}
+            secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0}
+            phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />} />,
         pipWindow.document.body
       )}
 
@@ -739,10 +747,10 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0}
         isPremium={isPremium} gateThen={gateThen} />
 
-      {/* Only ONE RoomChat may be mounted at a time: mounting a second one
-          (e.g. the copy inside the focus overlay) double-subscribes the same
-          realtime topic, which throws and unmounts the whole screen. */}
-      {!roomImmersive && <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />}
+      {/* All chat surfaces share the single useRoomChat instance above, so any
+          combination of them can be mounted without double-subscribing the
+          realtime topic. */}
+      {!roomImmersive && <RoomChat chat={chat} room={room} userId={userId} phase={info.phase} secondsToBreak={info.phase === "focus" ? info.secondsLeft : 0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />}
 
       {showInvite && <InviteModal roomId={room.id} myId={userId} onClose={() => setShowInvite(false)} />}
 
@@ -769,7 +777,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           <div className="space-y-3">
             <VoiceControls voice={voice} phase={info.phase} isPremium={isPremium} gateThen={gateThen} />
             {info.phase !== "focus"
-              ? <RoomChat room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />
+              ? <RoomChat chat={chat} room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />
               : <p className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 text-center text-xs text-muted-foreground">
                   <MessageCircle size={13} /> Chat opens when the focus block reaches a break.
                 </p>}
@@ -779,9 +787,57 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   );
 }
 
-function RoomChat({ room, userId, phase, secondsToBreak, phaseStartMs }: { room: LiveRoom; userId: string; phase: "focus" | "short" | "long"; secondsToBreak: number; phaseStartMs: number }) {
+// One chat instance for the whole room screen (same idea as useRoomVoice):
+// the normal view, the focus overlay, and the pop-out PiP window are all just
+// surfaces over this hook, so the realtime topic `room-chat:<id>` is only ever
+// subscribed once no matter how many chat panels are visible at a time.
+function useRoomChat(roomId: string) {
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [names, setNames] = useState<Map<string, PublicProfile>>(new Map());
+
+  // History + live inserts. subscribe() throws if this topic is somehow
+  // already subscribed — guard so a duplicate can degrade to history-only
+  // instead of crashing the whole screen.
+  useEffect(() => {
+    fetchMessages(roomId).then(setMessages);
+    if (!supabase) return;
+    const client = supabase;
+    try {
+      const channel = client
+        .channel(`room-chat:${roomId}`)
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${roomId}` },
+          (payload) => setMessages((prev) => [...prev, payload.new as RoomMessage]))
+        .subscribe();
+      return () => { client.removeChannel(channel); };
+    } catch (e) {
+      console.warn("[Roamly] room chat subscribe failed", e);
+    }
+  }, [roomId]);
+
+  // Resolve sender names we haven't seen yet.
+  useEffect(() => {
+    setNames((prev) => {
+      const unknown = [...new Set(messages.map((m) => m.user_id))].filter((id) => !prev.has(id));
+      if (unknown.length > 0) {
+        getPublicProfiles(unknown).then((fresh) => setNames((cur) => new Map([...cur, ...fresh])));
+      }
+      return prev;
+    });
+  }, [messages]);
+
+  return { messages, names };
+}
+
+function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, compact }: {
+  chat: ReturnType<typeof useRoomChat>;
+  room: LiveRoom;
+  userId: string;
+  phase: "focus" | "short" | "long";
+  secondsToBreak: number;
+  phaseStartMs: number;
+  compact?: boolean; // tighter layout for the small pop-out (PiP) window
+}) {
+  const { messages, names } = chat;
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -801,33 +857,6 @@ function RoomChat({ room, userId, phase, secondsToBreak, phaseStartMs }: { room:
       ? messages.filter((m) => new Date(m.created_at).getTime() >= phaseStartMs - 2000)
       : messages;
 
-  // History + live inserts. subscribe() throws if this topic is somehow
-  // already subscribed (e.g. two RoomChat instances) — guard so a duplicate
-  // can degrade to history-only instead of crashing the whole screen.
-  useEffect(() => {
-    fetchMessages(room.id).then(setMessages);
-    if (!supabase) return;
-    const client = supabase;
-    try {
-      const channel = client
-        .channel(`room-chat:${room.id}`)
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${room.id}` },
-          (payload) => setMessages((prev) => [...prev, payload.new as RoomMessage]))
-        .subscribe();
-      return () => { client.removeChannel(channel); };
-    } catch (e) {
-      console.warn("[Roamly] room chat subscribe failed", e);
-    }
-  }, [room.id]);
-
-  // Resolve sender names we haven't seen yet.
-  useEffect(() => {
-    const unknown = [...new Set(visible.map((m) => m.user_id))].filter((id) => !names.has(id));
-    if (unknown.length === 0) return;
-    getPublicProfiles(unknown).then((fresh) => setNames((prev) => new Map([...prev, ...fresh])));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, phaseStartMs]);
-
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, phaseStartMs, chatOpen]);
@@ -844,11 +873,11 @@ function RoomChat({ room, userId, phase, secondsToBreak, phaseStartMs }: { room:
   };
 
   return (
-    <section className="mt-5 rounded-3xl border border-border bg-card/80 p-5 shadow-sm">
+    <section className={compact ? "w-full rounded-2xl border border-border bg-card/80 p-3.5 shadow-sm" : "mt-5 rounded-3xl border border-border bg-card/80 p-5 shadow-sm"}>
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold"><MessageCircle size={15} className="text-primary" /> Break-time chat</h2>
         {chatOpen ? (
-          <span className="rounded-full bg-roamly-green/10 px-2.5 py-1 text-[11px] font-medium text-roamly-green">Open — it's break time</span>
+          <span className="rounded-full bg-roamly-green/10 px-2.5 py-1 text-[11px] font-medium text-roamly-green">{compact ? "Open" : "Open — it's break time"}</span>
         ) : (
           <span className="flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             <Lock size={11} /> Opens at break · {fmt(secondsToBreak)}
@@ -856,7 +885,7 @@ function RoomChat({ room, userId, phase, secondsToBreak, phaseStartMs }: { room:
         )}
       </div>
 
-      <div ref={listRef} className="mt-3 h-64 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3">
+      <div ref={listRef} className={`mt-3 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3 ${compact ? "h-40" : "h-64"}`}>
         {visible.length === 0 && (
           <p className="pt-4 text-center text-xs text-muted-foreground">No messages yet. Say hi at the next break.</p>
         )}
@@ -879,15 +908,15 @@ function RoomChat({ room, userId, phase, secondsToBreak, phaseStartMs }: { room:
       <div className="mt-3 flex gap-2">
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()}
           disabled={!chatOpen} maxLength={500}
-          placeholder={chatOpen ? "Message the room…" : `Chat opens in ${fmt(secondsToBreak)} — keep focusing`}
-          className="flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60" />
+          placeholder={chatOpen ? "Message the room…" : compact ? "Chat opens at the break" : `Chat opens in ${fmt(secondsToBreak)} — keep focusing`}
+          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60" />
         <button onClick={send} disabled={!chatOpen || !draft.trim() || sending} aria-label="Send"
-          className="grid w-11 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95 disabled:opacity-40">
+          className="grid w-11 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95 disabled:opacity-40">
           <Send size={16} />
         </button>
       </div>
       {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
-      <p className="mt-2 text-[11px] text-muted-foreground">Chat unlocks during short and long breaks, then locks again when focus starts.</p>
+      {!compact && <p className="mt-2 text-[11px] text-muted-foreground">Chat unlocks during short and long breaks, then locks again when focus starts.</p>}
     </section>
   );
 }

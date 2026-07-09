@@ -8,16 +8,21 @@ import { TimeDisplay } from "./FocusMode";
 // RoomView, so it reflects the same live timer and stays perfectly in sync.
 // Relies on the opener's stylesheet + theme vars being cloned into the PiP
 // document (useDocumentPip.copyStylesToPip / applyThemeToPip).
-export function PipTimer({ phaseLabel, ring, timeText, progress, taskTitle, controls }: {
+export function PipTimer({ phaseLabel, ring, timeText, progress, taskTitle, controls, extra }: {
   phaseLabel: string;
   ring: string;
   timeText: string;
   progress: number;
   taskTitle?: string;
   controls?: ReactNode;
+  extra?: ReactNode; // full-width slot below the timer (e.g. the room's break chat)
 }) {
   return (
-    <div className="flex min-h-screen w-full flex-col items-center justify-center gap-3 bg-background px-4 py-4 text-foreground">
+    // m-auto (not justify-center) so the content centers when it fits but
+    // top-aligns and scrolls when it doesn't — centering an overflowing flex
+    // column clips its top unreachably (same fix as the focus overlay).
+    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
+      <div className="m-auto flex w-full flex-col items-center gap-3 px-4 py-4">
       <span className="font-mono text-[0.65rem] uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
       <TimeDisplay value={timeText} className="font-display text-6xl font-medium tracking-tight" />
 
@@ -30,6 +35,9 @@ export function PipTimer({ phaseLabel, ring, timeText, progress, taskTitle, cont
       )}
 
       {controls && <div className="mt-1 flex items-center gap-2">{controls}</div>}
+
+      {extra && <div className="mt-1 w-full">{extra}</div>}
+      </div>
     </div>
   );
 }

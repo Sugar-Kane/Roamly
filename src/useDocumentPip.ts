@@ -75,13 +75,13 @@ export function useDocumentPip(theme: Theme, a11y: A11ySettings) {
   // Close the child window if the main tab unmounts/navigates away.
   useEffect(() => () => { try { pipWindow?.close(); } catch { /* already gone */ } }, [pipWindow]);
 
-  const openPip = useCallback(async (): Promise<Window | null> => {
+  const openPip = useCallback(async (opts?: { width?: number; height?: number }): Promise<Window | null> => {
     const api = pipApi();
     if (!api || pipWindow) { pipWindow?.focus(); return pipWindow; }
     let pip: Window;
     try {
       // MUST be the first await after the user gesture, or the request is denied.
-      pip = await api.requestWindow({ width: 320, height: 360 });
+      pip = await api.requestWindow({ width: opts?.width ?? 320, height: opts?.height ?? 360 });
     } catch {
       return null; // denied / unsupported / already open — no-op
     }
