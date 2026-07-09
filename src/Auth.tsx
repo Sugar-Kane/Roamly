@@ -24,6 +24,13 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
 
   const submit = async () => {
     if (!email.trim() || !password) { setError("Enter your email and password."); return; }
+    // Basic strength check on sign-up (the free stand-in for Supabase Pro's
+    // leaked-password protection): 8+ chars with at least one letter and one
+    // digit. Sign-in doesn't re-validate — existing accounts keep working.
+    if (mode === "signup" && !(password.length >= 8 && /[a-zA-Z]/.test(password) && /\d/.test(password))) {
+      setError("Use at least 8 characters, including a letter and a number.");
+      return;
+    }
     setError(null);
     setLoading(true);
     const { error: authError } = mode === "signup"
@@ -55,7 +62,8 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
       <div className="space-y-2.5">
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email"
           className="w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password"
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+          placeholder={mode === "signup" ? "Password (8+ chars, a letter & a number)" : "Password"}
           onKeyDown={(e) => e.key === "Enter" && submit()}
           className="w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
       </div>

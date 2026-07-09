@@ -59,6 +59,16 @@ test("sign-up form rejects empty fields", async ({ page }) => {
   await expect(page.getByText(/enter your email and password/i)).toBeVisible();
 });
 
+test("sign-up form rejects a weak password", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Sign in" }).first().click();
+  await page.getByText("New here? Create an account").click();
+  await page.getByPlaceholder("Email").fill("newuser@example.com");
+  await page.getByPlaceholder(/^Password/).fill("weak"); // too short, no digit
+  await page.getByRole("button", { name: "Sign up", exact: true }).click();
+  await expect(page.getByText(/at least 8 characters/i)).toBeVisible();
+});
+
 test("a task can be added locally", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks" }).click();
