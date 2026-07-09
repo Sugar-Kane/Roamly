@@ -758,12 +758,18 @@ function RoomChat({ room, userId, phase, secondsToBreak, phaseStartMs }: { room:
   const listRef = useRef<HTMLDivElement>(null);
   const chatOpen = phase !== "focus";
 
-  // Break chat is ephemeral: only show messages from the CURRENT phase window,
-  // so a previous break's chatter clears the instant a new phase starts and
-  // every break begins fresh. (The 2s buffer absorbs second-rounding / small
-  // client-vs-server clock skew at the phase boundary.) Messages still persist
-  // server-side; they're just never shown past their own break.
-  const visible = messages.filter((m) => new Date(m.created_at).getTime() >= phaseStartMs - 2000);
+  // Nothing is shown during a focus block (study). What shows during a break
+  // depends on the room type:
+  //  • always-on (system) rooms: ephemeral — only the CURRENT break's messages
+  //    (created since this phase started; 2s buffer absorbs boundary rounding),
+  //    so the chat clears every time focus resumes.
+  //  • user-hosted rooms: the group's history persists across breaks — it's
+  //    just hidden during study and returns at the next break.
+  const visible = !chatOpen
+    ? []
+    : room.is_system
+      ? messages.filter((m) => new Date(m.created_at).getTime() >= phaseStartMs - 2000)
+      : messages;
 
   // History + live inserts. subscribe() throws if this topic is somehow
   // already subscribed (e.g. two RoomChat instances) — guard so a duplicate
