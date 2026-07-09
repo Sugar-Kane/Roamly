@@ -8,9 +8,9 @@ import { apiLog } from "./_log";
 // env-gated and try/caught so the DB action always succeeds even if the token
 // is missing or GitHub is down.
 //
-// Env: GITHUB_TOKEN, GITHUB_REPO ("owner/name", default sugar-kane/roamly).
+// Env: GITHUB_TOKEN, GITHUB_REPO ("owner/name", default Sugar-Kane/Roamly).
 
-const DEFAULT_REPO = "sugar-kane/roamly";
+const DEFAULT_REPO = "Sugar-Kane/Roamly";
 const STATUSES = ["open", "in_progress", "done"];
 
 function json(body: unknown, status: number): Response {

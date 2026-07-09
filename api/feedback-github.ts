@@ -8,9 +8,9 @@ import { apiLog } from "./_log";
 // user adds the token in Vercel.
 //
 // Env: GITHUB_TOKEN (fine-grained PAT, Issues: Read+Write), GITHUB_REPO
-// ("owner/name", default sugar-kane/roamly).
+// ("owner/name", default Sugar-Kane/Roamly).
 
-const DEFAULT_REPO = "sugar-kane/roamly";
+const DEFAULT_REPO = "Sugar-Kane/Roamly";
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
