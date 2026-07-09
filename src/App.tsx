@@ -457,7 +457,7 @@ export default function App() {
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           )}
           {view === "premium" && (
-            <PremiumView isPremium={isPremium} session={session} onSubscribe={startCheckout}
+            <PremiumView isPremium={isPremium} session={session} profile={profile} onSubscribe={startCheckout}
               checkoutLoading={checkoutLoading} checkoutError={checkoutError} />
           )}
           {view === "admin" && <AdminView isAdmin={isAdmin} />}
@@ -1677,7 +1677,11 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-function PremiumView({ isPremium, session, onSubscribe, checkoutLoading, checkoutError }: any) {
+function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading, checkoutError }: any) {
+  // A comped/admin-granted Premium account never went through Stripe checkout,
+  // so it has no customer to open the billing portal for. Only offer "Manage
+  // subscription" when there's an actual Stripe customer behind the account.
+  const hasStripeCustomer = !!profile?.stripe_customer_id;
   const perks = ["30 AI note uploads a month (~1 a day)", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
@@ -1711,12 +1715,18 @@ function PremiumView({ isPremium, session, onSubscribe, checkoutLoading, checkou
       {isPremium && (
         <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
           <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active — thanks for supporting Roamly.</p>
-          <p className="mt-1 text-xs text-muted-foreground">Manage billing below: update your card, see invoices, or cancel. If you cancel (or a payment stops), your account automatically returns to the free tier at the end of the paid period.</p>
-          <button onClick={openPortal} disabled={portalLoading}
-            className="mt-4 rounded-full border border-border bg-card px-5 py-2 text-sm font-medium transition hover:border-primary/40 disabled:opacity-60">
-            {portalLoading ? "Opening…" : "Manage subscription"}
-          </button>
-          {portalError && <p className="mt-2 text-xs text-destructive">{portalError}</p>}
+          {hasStripeCustomer ? (
+            <>
+              <p className="mt-1 text-xs text-muted-foreground">Manage billing below: update your card, see invoices, or cancel. If you cancel (or a payment stops), your account automatically returns to the free tier at the end of the paid period.</p>
+              <button onClick={openPortal} disabled={portalLoading}
+                className="mt-4 rounded-full border border-border bg-card px-5 py-2 text-sm font-medium transition hover:border-primary/40 disabled:opacity-60">
+                {portalLoading ? "Opening…" : "Manage subscription"}
+              </button>
+              {portalError && <p className="mt-2 text-xs text-destructive">{portalError}</p>}
+            </>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">Premium was granted to this account directly, so there's no paid Stripe subscription to manage here — you keep all Premium features at no charge.</p>
+          )}
         </div>
       )}
       {!isPremium && (

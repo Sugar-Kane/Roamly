@@ -36,10 +36,19 @@ export async function POST(request: Request): Promise<Response> {
   if (!customerId) return json({ error: "No subscription found for this account." }, 404);
 
   const stripe = new Stripe(stripeSecret);
-  const portal = await stripe.billingPortal.sessions.create({
-    customer: customerId,
-    return_url: `${appUrl}/`,
-  });
-
-  return json({ url: portal.url }, 200);
+  try {
+    const portal = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${appUrl}/`,
+    });
+    return json({ url: portal.url }, 200);
+  } catch (err) {
+    // The most common cause is the Billing Customer Portal not being activated
+    // in the Stripe dashboard — surface that clearly instead of a bare 500.
+    const message = (err as { message?: string })?.message ?? "";
+    if (/portal|configuration/i.test(message)) {
+      return json({ error: "Billing isn't fully set up yet — activate the Stripe Customer Portal in your Stripe dashboard." }, 503);
+    }
+    return json({ error: "Couldn't open the billing portal — try again." }, 502);
+  }
 }
