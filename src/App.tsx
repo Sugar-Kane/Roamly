@@ -669,6 +669,36 @@ function NotificationToggle({ alerts }: any) {
   );
 }
 
+// A short explainer of the Pomodoro method at the top of the main page, so
+// newcomers understand what the timer is doing (from user feedback). Dismissible
+// and remembered; collapses to a small reopen link once dismissed.
+function PomodoroExplainer() {
+  const [open, setOpen] = useState(() => loadPref("roamly-pomodoro-explainer-seen") !== "1");
+  const dismiss = () => { savePref("roamly-pomodoro-explainer-seen", "1"); setOpen(false); };
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 transition hover:text-foreground hover:underline">
+        <HelpCircle size={13} /> What's the Pomodoro method?
+      </button>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold"><HelpCircle size={15} className="text-primary" /> What's the Pomodoro method?</h2>
+        <button onClick={dismiss} className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">Got it</button>
+      </div>
+      <p className="mt-2.5 text-sm text-muted-foreground">
+        It's a simple way to study without burning out: focus in short, timed blocks — classically <span className="font-medium text-foreground">25 minutes</span> — then take a <span className="font-medium text-foreground">5-minute break</span>. After about four blocks you take a longer break. The countdown keeps you honest during focus, and the breaks keep you fresh.
+      </p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Just press <span className="font-medium text-foreground">Start</span> below to begin a block — or use <span className="font-medium text-foreground">Select timer</span> to pick a different rhythm.
+      </p>
+    </div>
+  );
+}
+
 function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn, sounds, enterFocus }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
@@ -679,6 +709,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
   return (
     <div className="space-y-8">
+      <PomodoroExplainer />
+
       {session ? (
         <ExamCountdownBar examDate={examDate} setExamDate={setExamDate} />
       ) : (
