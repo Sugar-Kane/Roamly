@@ -39,6 +39,12 @@ export function setTrackUser(userId: string | null) {
   trackedUser = userId;
 }
 
+// The signed-in user id, shared with the error reporter (errors.ts) so crash
+// reports carry an account without duplicating the auth wiring.
+export function currentTrackUser(): string | null {
+  return trackedUser;
+}
+
 // Same-name events are throttled so e.g. rapid tab flipping logs once, not
 // twenty times — the dashboard cares about "used the feature", not each tap.
 const lastSent = new Map<string, number>();

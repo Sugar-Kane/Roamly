@@ -87,6 +87,19 @@ export async function adminListFeedback(limit = 50): Promise<FeedbackRow[]> {
   return (data ?? []) as FeedbackRow[];
 }
 
+export type ErrorRow = {
+  id: string; email: string | null; username: string | null;
+  message: string; stack: string | null; page: string | null;
+  device: string | null; platform: string | null; created_at: string;
+};
+
+export async function adminListErrors(limit = 100): Promise<ErrorRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_list_errors", { p_limit: limit });
+  if (error) { console.warn("[Roamly] adminListErrors failed", error.message); return []; }
+  return (data ?? []) as ErrorRow[];
+}
+
 export async function submitFeedback(userId: string, fields: {
   category: string; message: string; repro?: string | null;
   page?: string; device?: string; platform?: string;
