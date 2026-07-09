@@ -157,9 +157,14 @@ export function FocusMode({
 
       {/* m-auto (not justify-center) so short content centers but overflowing
           content top-aligns — with justify-center the top half (the timer!)
-          gets pushed above the scrollport on phones. */}
-      <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-6">
-        <div className="m-auto flex w-full flex-col items-center gap-6">
+          gets pushed above the scrollport on phones. From lg the content
+          splits into two columns (timer left, music + tasks right) so a whole
+          session fits one desktop screen with no page scroll. */}
+      <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-6 lg:overflow-hidden">
+        <div className="m-auto flex w-full flex-col items-center gap-6 lg:max-w-6xl lg:flex-row lg:items-stretch lg:justify-center lg:gap-10">
+
+        {/* LEFT: timer, progress, controls */}
+        <div className="flex w-full flex-col items-center gap-6 lg:flex-1 lg:justify-center">
         {focusing && showNudge && (
           <div className="flex max-w-md items-start gap-2 rounded-2xl border border-border bg-card/70 px-4 py-3 text-left">
             <Moon size={16} className="mt-0.5 shrink-0 text-primary" />
@@ -172,7 +177,7 @@ export function FocusMode({
 
         <div className="flex flex-col items-center">
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
-          <TimeDisplay value={timeText} className="font-display text-[20vw] font-medium tracking-tight sm:text-[15vw] lg:text-[11rem]" />
+          <TimeDisplay value={timeText} className="font-display text-[20vw] font-medium tracking-tight sm:text-[15vw] lg:text-[8.5rem] xl:text-[10rem]" />
           {title && <span className="mt-2 max-w-[80vw] truncate text-base text-foreground">{title}</span>}
           {subtitle && <span className="mt-0.5 text-sm text-muted-foreground">{subtitle}</span>}
         </div>
@@ -194,8 +199,20 @@ export function FocusMode({
         </div>
 
         {controls && <div className="flex items-center justify-center gap-3">{controls}</div>}
-        {music && <div className="w-full max-w-md rounded-2xl border border-border bg-card/70 p-3">{music}</div>}
-        {extra && <div className="w-full max-w-md">{extra}</div>}
+        </div>
+
+        {/* RIGHT: music + tasks/panels. On desktop this column caps to the
+            viewport and scrolls internally only in the rare tall case (an open
+            Spotify embed), so the page itself never scrolls; my-auto centers it
+            when it fits. */}
+        {(music || extra) && (
+          <div className="flex w-full max-w-md flex-col lg:w-[26rem] lg:shrink-0 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto">
+            <div className="flex flex-col gap-4 lg:my-auto">
+              {music && <div className="w-full rounded-2xl border border-border bg-card/70 p-3">{music}</div>}
+              {extra && <div className="w-full">{extra}</div>}
+            </div>
+          </div>
+        )}
         </div>
       </div>
     </div>

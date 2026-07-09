@@ -125,6 +125,23 @@ test("auth modal is a labelled dialog and closes on Escape", async ({ page }) =>
   await expect(dialog).toHaveCount(0);
 });
 
+test("focus mode fits one screen on desktop (no scroll)", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "desktop-only two-column layout");
+  await goHome(page);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(overlay.locator('span[aria-label*=":"]').first()).toBeVisible(); // timer
+  // The overlay's own content region must not overflow — with the old single
+  // column it scrolled; the two-column desktop layout fits it on one screen.
+  // (The page behind is scroll-locked, so measure the overlay, not the doc.)
+  const overflow = await overlay.locator("> div.overflow-y-auto").evaluate(
+    (el) => el.scrollHeight - el.clientHeight
+  );
+  expect(overflow, "focus overlay content should fit without scrolling on desktop").toBeLessThanOrEqual(1);
+});
+
 test("visible buttons have accessible names", async ({ page }) => {
   await goHome(page);
   const buttons = page.locator("button:visible");
