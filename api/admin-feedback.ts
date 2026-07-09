@@ -1,5 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
-import { apiLog } from "./_log";
+
+// Inlined structured logger (kept local so this function bundles standalone).
+// Never log secrets, tokens, or message bodies — ids and outcomes only.
+function apiLog(route: string, outcome: string, fields: Record<string, unknown> = {}): void {
+  try {
+    console.log(JSON.stringify({ src: "roamly-api", route, outcome, time: new Date().toISOString(), ...fields }));
+  } catch {
+    console.log(`roamly-api ${route} ${outcome}`);
+  }
+}
 
 // Admin ticket actions on a feedback row: reply (internal note + GitHub issue
 // comment), status (open/in_progress/done, syncing the GitHub issue's
