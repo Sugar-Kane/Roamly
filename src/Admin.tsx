@@ -2,13 +2,27 @@
 // and Premium management. Extracted from App.tsx to keep that file focused.
 // Every data call is a SECURITY DEFINER RPC gated on is_admin() server-side.
 import { useEffect, useState } from "react";
-import { Crown } from "lucide-react";
+import { Crown, Search, ExternalLink, Trash2 } from "lucide-react";
 import {
   adminSearchUsers, adminSetPremium, sendInvite,
   adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, adminListErrors,
+  adminUserActivity, adminFeedbackAction,
   type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity,
-  type FeedbackRow, type ErrorRow,
+  type FeedbackRow, type ErrorRow, type UserActivityRow,
 } from "./db";
+
+// "3m ago" / "2h ago" / "Apr 5" — compact relative time for activity/ticket rows.
+function relTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 export function AdminView({ isAdmin }: { isAdmin: boolean }) {
   const [query, setQuery] = useState("");
@@ -205,6 +219,8 @@ function AdminUsage() {
         ))}
       </div>
 
+      <UserActivitySearch />
+
       <div className="mt-6 flex items-center justify-between">
         <h2 className="text-sm font-semibold">Feature usage</h2>
         <div className="flex gap-1">
@@ -259,6 +275,76 @@ function AdminUsage() {
   );
 }
 
+// Search one user by email / username / name and show their event timeline —
+// so the admin can watch exactly how a specific student is using the app.
+function UserActivitySearch() {
+  const [query, setQuery] = useState("");
+  const [rows, setRows] = useState<UserActivityRow[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [searched, setSearched] = useState(false);
+
+  const run = async () => {
+    if (!query.trim()) return;
+    setBusy(true);
+    const r = await adminUserActivity(query.trim());
+    setRows(r);
+    setSearched(true);
+    setBusy(false);
+  };
+
+  // Group consecutive rows by day for a readable timeline.
+  const who = rows[0];
+
+  return (
+    <div className="mt-6 rounded-2xl border border-border bg-card/70 p-4">
+      <h2 className="text-sm font-semibold">Search a user's activity</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">See what a specific student clicks on — search by email, username, or name.</p>
+      <div className="mt-3 flex gap-2">
+        <div className="relative min-w-0 flex-1">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && run()}
+            placeholder="e.g. name@example.com"
+            className="w-full rounded-xl border border-border bg-card py-2.5 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+        </div>
+        <button onClick={run} disabled={busy || !query.trim()}
+          className="shrink-0 rounded-xl gradient-primary px-4 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
+          {busy ? "…" : "Search"}
+        </button>
+      </div>
+
+      {searched && !busy && rows.length === 0 && (
+        <p className="mt-3 rounded-xl border border-dashed border-border bg-card/60 p-3 text-center text-sm text-muted-foreground">
+          No activity found for that user. They may not have clicked around since metrics went live.
+        </p>
+      )}
+
+      {rows.length > 0 && (
+        <>
+          {who && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Showing <span className="font-medium text-foreground">{who.name || who.username || who.email}</span>
+              {who.email ? ` · ${who.email}` : ""} — {rows.length} recent action{rows.length === 1 ? "" : "s"}
+            </p>
+          )}
+          <div className="mt-2 max-h-96 overflow-y-auto rounded-xl border border-border">
+            {rows.map((r, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2 text-sm last:border-b-0">
+                <span className="min-w-0 truncate">
+                  {EVENT_LABELS[r.event] ?? r.event}
+                  {r.meta && <span className="text-muted-foreground"> · {r.meta}</span>}
+                </span>
+                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                  {r.device === "pc" ? "💻" : "📱"} {relTime(r.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const FEEDBACK_STYLE: Record<string, { label: string; cls: string }> = {
   bug: { label: "Bug", cls: "bg-destructive/10 text-destructive" },
   confusing: { label: "Confusing", cls: "bg-primary/10 text-primary" },
@@ -266,38 +352,139 @@ const FEEDBACK_STYLE: Record<string, { label: string; cls: string }> = {
   other: { label: "Other", cls: "bg-secondary text-muted-foreground" },
 };
 
+const STATUS_META: Record<string, { label: string; cls: string }> = {
+  open: { label: "Open", cls: "bg-primary/10 text-primary" },
+  in_progress: { label: "In progress", cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
+  done: { label: "Done", cls: "bg-roamly-green/10 text-roamly-green" },
+};
+const STATUS_ORDER = ["open", "in_progress", "done"] as const;
+
 function AdminFeedback() {
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  useEffect(() => { adminListFeedback(100).then((r) => { setRows(r); setLoaded(true); }); }, []);
+  const [filter, setFilter] = useState<"all" | "open" | "in_progress" | "done">("all");
+
+  const load = () => adminListFeedback(100).then((r) => { setRows(r); setLoaded(true); });
+  useEffect(() => { load(); }, []);
+
+  const shown = filter === "all" ? rows : rows.filter((r) => r.status === filter);
+
+  const patchRow = (id: string, fields: Partial<FeedbackRow>) =>
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...fields } : r)));
 
   return (
-    <div className="mt-5 space-y-2">
-      {!loaded && <p className="text-sm text-muted-foreground">Loading feedback…</p>}
-      {loaded && rows.length === 0 && (
-        <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
-          No feedback yet. Users can send it from their profile menu → Send feedback.
-        </p>
-      )}
-      {rows.map((f) => {
-        const style = FEEDBACK_STYLE[f.category] ?? FEEDBACK_STYLE.other;
-        return (
-          <div key={f.id} className="rounded-2xl border border-border bg-card/70 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.cls}`}>{style.label}</span>
-              {f.repro && <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">{f.repro}</span>}
-              <span className="ml-auto text-[11px] text-muted-foreground">
-                {new Date(f.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-              </span>
-            </div>
-            <p className="mt-2 whitespace-pre-wrap text-sm">{f.message}</p>
-            <p className="mt-2 truncate text-[11px] text-muted-foreground">
-              {f.email ?? "unknown"}{f.username ? ` · @${f.username}` : ""}{f.page ? ` · on ${f.page}` : ""}{f.device ? ` · ${f.device}` : ""}
-            </p>
-            {f.platform && <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">{f.platform}</p>}
-          </div>
-        );
-      })}
+    <div className="mt-5">
+      <div className="flex flex-wrap gap-1.5">
+        {(["all", "open", "in_progress", "done"] as const).map((id) => (
+          <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${filter === id ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+            {id === "all" ? "All" : STATUS_META[id].label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {!loaded && <p className="text-sm text-muted-foreground">Loading feedback…</p>}
+        {loaded && shown.length === 0 && (
+          <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
+            {filter === "all"
+              ? "No feedback yet. Users can send it from their profile menu → Send feedback."
+              : `No ${STATUS_META[filter].label.toLowerCase()} tickets.`}
+          </p>
+        )}
+        {shown.map((f) => (
+          <FeedbackTicket key={f.id} f={f} onPatch={patchRow}
+            onDelete={(id) => setRows((prev) => prev.filter((r) => r.id !== id))} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FeedbackTicket({ f, onPatch, onDelete }: {
+  f: FeedbackRow;
+  onPatch: (id: string, fields: Partial<FeedbackRow>) => void;
+  onDelete: (id: string) => void;
+}) {
+  const style = FEEDBACK_STYLE[f.category] ?? FEEDBACK_STYLE.other;
+  const [reply, setReply] = useState(f.admin_reply ?? "");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const setStatus = async (status: string) => {
+    if (status === f.status) return;
+    setBusy("status"); setErr(null);
+    const e = await adminFeedbackAction("status", f.id, { status });
+    setBusy(null);
+    if (e) { setErr(e); return; }
+    onPatch(f.id, { status });
+  };
+
+  const sendReply = async () => {
+    if (!reply.trim()) return;
+    setBusy("reply"); setErr(null);
+    const e = await adminFeedbackAction("reply", f.id, { reply: reply.trim() });
+    setBusy(null);
+    if (e) { setErr(e); return; }
+    onPatch(f.id, { admin_reply: reply.trim() });
+  };
+
+  const remove = async () => {
+    if (!confirm("Delete this feedback? This can't be undone.")) return;
+    setBusy("delete"); setErr(null);
+    const e = await adminFeedbackAction("delete", f.id);
+    setBusy(null);
+    if (e) { setErr(e); return; }
+    onDelete(f.id);
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-card/70 p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${style.cls}`}>{style.label}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_META[f.status]?.cls ?? ""}`}>{STATUS_META[f.status]?.label ?? f.status}</span>
+        {f.repro && <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">{f.repro}</span>}
+        <span className="ml-auto text-[11px] text-muted-foreground">{relTime(f.created_at)}</span>
+      </div>
+      <p className="mt-2 whitespace-pre-wrap text-sm">{f.message}</p>
+      <p className="mt-2 truncate text-[11px] text-muted-foreground">
+        {f.email ?? "unknown"}{f.username ? ` · @${f.username}` : ""}{f.page ? ` · on ${f.page}` : ""}{f.device ? ` · ${f.device}` : ""}
+      </p>
+      {f.platform && <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">{f.platform}</p>}
+
+      {/* Status pills */}
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {STATUS_ORDER.map((s) => (
+          <button key={s} onClick={() => setStatus(s)} disabled={busy === "status"} aria-pressed={f.status === s}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${f.status === s ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40"}`}>
+            {STATUS_META[s].label}
+          </button>
+        ))}
+        {f.github_issue_url && (
+          <a href={f.github_issue_url} target="_blank" rel="noreferrer"
+            className="ml-auto inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+            Issue #{f.github_issue_number} <ExternalLink size={11} />
+          </a>
+        )}
+      </div>
+
+      {/* Reply */}
+      <div className="mt-2.5">
+        <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2}
+          placeholder="Internal note / reply — also posted on the GitHub issue if linked…"
+          className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+        <div className="mt-1.5 flex items-center gap-2">
+          <button onClick={sendReply} disabled={busy === "reply" || !reply.trim()}
+            className="rounded-full gradient-primary px-3.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
+            {busy === "reply" ? "Saving…" : f.admin_reply ? "Update reply" : "Save reply"}
+          </button>
+          <button onClick={remove} disabled={busy === "delete"}
+            className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
+            <Trash2 size={12} /> {busy === "delete" ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
+      {err && <p className="mt-2 text-xs text-destructive">{err}</p>}
     </div>
   );
 }

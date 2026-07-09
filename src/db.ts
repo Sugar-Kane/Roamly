@@ -57,6 +57,13 @@ export type FeedbackRow = {
   id: string; email: string | null; username: string | null;
   category: string; message: string; repro: string | null;
   page: string | null; device: string | null; platform: string | null; created_at: string;
+  status: string; admin_reply: string | null;
+  github_issue_number: number | null; github_issue_url: string | null; updated_at: string;
+};
+
+export type UserActivityRow = {
+  email: string | null; username: string | null; name: string | null;
+  event: string; meta: string | null; device: string | null; created_at: string;
 };
 
 export async function adminOverview(): Promise<AdminOverview | null> {
@@ -87,6 +94,37 @@ export async function adminListFeedback(limit = 50): Promise<FeedbackRow[]> {
   return (data ?? []) as FeedbackRow[];
 }
 
+export async function adminUserActivity(query: string, limit = 200): Promise<UserActivityRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_user_activity", { p_query: query, p_limit: limit });
+  if (error) { console.warn("[Roamly] adminUserActivity failed", error.message); return []; }
+  return (data ?? []) as UserActivityRow[];
+}
+
+// Admin ticket actions (reply / status / delete) go through the service-role
+// endpoint so they can also sync the linked GitHub issue. Returns an error
+// string on failure, null on success.
+export async function adminFeedbackAction(
+  action: "reply" | "status" | "delete",
+  id: string,
+  fields?: { status?: string; reply?: string },
+): Promise<string | null> {
+  const token = await getAccessToken();
+  if (!token) return "Sign in again to manage feedback.";
+  try {
+    const res = await fetch("/api/admin-feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action, id, ...fields }),
+    });
+    if (res.ok) return null;
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    return data.error ?? "Couldn't update that ticket — try again.";
+  } catch {
+    return "Couldn't reach the server. Try again soon.";
+  }
+}
+
 export type ErrorRow = {
   id: string; email: string | null; username: string | null;
   message: string; stack: string | null; page: string | null;
@@ -100,16 +138,39 @@ export async function adminListErrors(limit = 100): Promise<ErrorRow[]> {
   return (data ?? []) as ErrorRow[];
 }
 
+// Returns { id } on success (used to fire the GitHub-issue mirror), or
+// { error } with a user-facing message.
 export async function submitFeedback(userId: string, fields: {
   category: string; message: string; repro?: string | null;
   page?: string; device?: string; platform?: string;
-}): Promise<string | null> {
-  if (!supabase) return "Feedback isn't available right now.";
-  const { error } = await supabase.from("feedback").insert({ user_id: userId, ...fields });
-  if (!error) return null;
-  if (error.message.includes("does not exist")) return "Feedback isn't set up yet — check back soon.";
+}): Promise<{ id?: string; error?: string }> {
+  if (!supabase) return { error: "Feedback isn't available right now." };
+  const { data, error } = await supabase
+    .from("feedback")
+    .insert({ user_id: userId, ...fields })
+    .select("id")
+    .single();
+  if (!error) return { id: (data as { id: string }).id };
+  if (error.message.includes("does not exist")) return { error: "Feedback isn't set up yet — check back soon." };
   console.warn("[Roamly] submitFeedback failed", error.message);
-  return "Couldn't send that — try again.";
+  return { error: "Couldn't send that — try again." };
+}
+
+// Best-effort: mirror a just-submitted feedback row to a GitHub issue so it
+// becomes a trackable ticket. No-ops silently if the server isn't configured
+// with a GitHub token — the feedback is already saved either way.
+export async function mirrorFeedbackToGitHub(id: string): Promise<void> {
+  const token = await getAccessToken();
+  if (!token) return;
+  try {
+    await fetch("/api/feedback-github", {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id }),
+    });
+  } catch {
+    // Non-fatal — the ticket just won't have a GitHub issue yet.
+  }
 }
 
 // ---- Invites ----

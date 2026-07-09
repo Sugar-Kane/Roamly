@@ -5,7 +5,7 @@
 
 import { useState } from "react";
 import { X, MessageSquare, Check } from "lucide-react";
-import { submitFeedback } from "./db";
+import { submitFeedback, mirrorFeedbackToGitHub } from "./db";
 import { deviceType, platformInfo, track } from "./track";
 import { Modal } from "./Modal";
 
@@ -41,7 +41,7 @@ export function FeedbackModal({ userId, page, onClose }: { userId: string; page:
     }
     setBusy(true);
     setError(null);
-    const err = await submitFeedback(userId, {
+    const res = await submitFeedback(userId, {
       category,
       message: message.trim().slice(0, 2000),
       repro: needsRepro ? repro : null,
@@ -50,8 +50,11 @@ export function FeedbackModal({ userId, page, onClose }: { userId: string; page:
       platform: platformInfo().slice(0, 160),
     });
     setBusy(false);
-    if (err) { setError(err); return; }
+    if (res.error) { setError(res.error); return; }
     track("feedback_sent");
+    // Fire-and-forget: turn this into a GitHub ticket if the server has a
+    // token. Never blocks the thank-you — the feedback is already saved.
+    if (res.id) void mirrorFeedbackToGitHub(res.id);
     setDone(true);
   };
 

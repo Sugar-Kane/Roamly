@@ -845,7 +845,14 @@ create table if not exists public.feedback (
   page text check (page is null or char_length(page) <= 40),
   device text check (device is null or char_length(device) <= 20),
   platform text check (platform is null or char_length(platform) <= 160),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Ticket lifecycle (2026-07-09): admins triage feedback and each row mirrors
+  -- to a GitHub issue so fixes can be tracked there.
+  status text not null default 'open' check (status in ('open', 'in_progress', 'done')),
+  admin_reply text,
+  github_issue_number int,
+  github_issue_url text,
+  updated_at timestamptz not null default now()
 );
 
 create index if not exists feedback_created on public.feedback (created_at desc);
@@ -911,18 +918,47 @@ as $$
 $$;
 
 create or replace function public.admin_list_feedback(p_limit int default 50)
-returns table (id uuid, email text, username text, category text, message text, repro text, page text, device text, platform text, created_at timestamptz)
+returns table (
+  id uuid, email text, username text, category text, message text,
+  repro text, page text, device text, platform text, created_at timestamptz,
+  status text, admin_reply text, github_issue_number int, github_issue_url text, updated_at timestamptz
+)
 language sql
 security definer
 set search_path = public
 stable
 as $$
-  select f.id, p.email, p.username, f.category, f.message, f.repro, f.page, f.device, f.platform, f.created_at
+  select f.id, p.email, p.username, f.category, f.message, f.repro, f.page,
+         f.device, f.platform, f.created_at,
+         f.status, f.admin_reply, f.github_issue_number, f.github_issue_url, f.updated_at
     from public.feedback f
     left join public.profiles p on p.id = f.user_id
    where public.is_admin()
-   order by f.created_at desc
+   order by (case f.status when 'open' then 0 when 'in_progress' then 1 else 2 end),
+            f.created_at desc
    limit greatest(1, least(p_limit, 200));
+$$;
+
+-- Search one user's activity timeline (2026-07-09) — admin-only, matches on
+-- email / username / display name, newest events first.
+create or replace function public.admin_user_activity(p_query text, p_limit int default 200)
+returns table (email text, username text, name text, event text, meta text, device text, created_at timestamptz)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select p.email, p.username, p.display_name as name,
+         e.name as event, e.meta, e.device, e.created_at
+    from public.app_events e
+    join public.profiles p on p.id = e.user_id
+   where public.is_admin()
+     and coalesce(nullif(trim(p_query), ''), '') <> ''
+     and (p.email ilike '%' || p_query || '%'
+          or p.username ilike '%' || p_query || '%'
+          or p.display_name ilike '%' || p_query || '%')
+   order by e.created_at desc
+   limit greatest(1, least(p_limit, 500));
 $$;
 
 revoke execute on function public.admin_overview() from public, anon;
@@ -933,6 +969,8 @@ grant execute on function public.admin_overview() to authenticated;
 grant execute on function public.admin_event_stats(int) to authenticated;
 grant execute on function public.admin_daily_activity(int) to authenticated;
 grant execute on function public.admin_list_feedback(int) to authenticated;
+revoke execute on function public.admin_user_activity(text, int) from public, anon;
+grant execute on function public.admin_user_activity(text, int) to authenticated;
 
 
 -- ============ QA hardening (2026-07-08): indexes, atomic AI quota, private chat, stripe dedupe, admin audit ============
