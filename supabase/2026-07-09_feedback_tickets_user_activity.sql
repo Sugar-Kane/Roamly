@@ -19,6 +19,16 @@ alter table public.feedback
 alter table public.feedback
   add column if not exists updated_at timestamptz not null default now();
 
+-- Read-own policy so submitFeedback's insert().select("id") can return the new
+-- row (the client uses that id to mirror the feedback to a GitHub issue).
+-- Without a SELECT policy the RETURNING clause is filtered out by RLS and the
+-- insert reads as a failure even though the row was saved.
+drop policy if exists "feedback_select_own" on public.feedback;
+create policy "feedback_select_own"
+  on public.feedback for select
+  to authenticated
+  using (auth.uid() = user_id);
+
 -- Admins read the inbox through this RPC — extend it to return the new ticket
 -- fields and sort open tickets first, newest within each status.
 create or replace function public.admin_list_feedback(p_limit int default 50)

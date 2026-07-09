@@ -865,6 +865,14 @@ create policy "feedback_insert_own"
   to authenticated
   with check (auth.uid() = user_id);
 
+-- Read-own so insert().select() can return the new row's id (used to mirror
+-- the feedback to a GitHub issue). Admins read everyone's via the RPC.
+drop policy if exists "feedback_select_own" on public.feedback;
+create policy "feedback_select_own"
+  on public.feedback for select
+  to authenticated
+  using (auth.uid() = user_id);
+
 -- ============ 3) admin readers ============
 create or replace function public.admin_overview()
 returns table (total_users bigint, premium_users bigint, active_7d bigint, feedback_total bigint)
