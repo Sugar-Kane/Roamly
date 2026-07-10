@@ -57,8 +57,18 @@ export async function POST(request: Request): Promise<Response> {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     const userId = session.metadata?.supabase_user_id;
-    const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-    if (userId) {
+    if (session.mode === "payment" && session.metadata?.credits) {
+      // One-time credit-pack purchase: grant exactly the credits recorded in
+      // the session metadata (set server-side at checkout creation, never by
+      // the client). stripe_events dedupe above makes replays a no-op.
+      const credits = parseInt(session.metadata.credits, 10);
+      if (userId && Number.isFinite(credits) && credits > 0) {
+        const { error: creditErr } = await admin.rpc("add_ai_credits", { p_user: userId, p_credits: credits });
+        if (creditErr) apiLog("stripe-webhook", "add_credits_failed", { user: userId, message: creditErr.message });
+        else apiLog("stripe-webhook", "credits_granted", { user: userId, credits });
+      }
+    } else if (userId) {
+      const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
       await admin.from("profiles").update({ is_premium: true, stripe_subscription_id: subscriptionId ?? null }).eq("id", userId);
     }
   } else if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {

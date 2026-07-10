@@ -383,16 +383,23 @@ export default function App() {
     setTasks((prev) => [...prev, ...rows]);
   }, []);
 
-  const startCheckout = useCallback(async () => {
+  // No pack → the $6/mo subscription; pack "small"/"large" → a one-time
+  // AI-upload credit pack (prices live server-side only).
+  const startCheckout = useCallback(async (packArg?: "small" | "large") => {
+    // Sanitize: this is also wired directly as an onClick handler, where the
+    // click event would arrive as the first argument.
+    const pack = packArg === "small" || packArg === "large" ? packArg : undefined;
     if (!session) { setShowAuth(true); return; }
     setCheckoutError(null);
     setCheckoutLoading(true);
+    if (pack) track("buy_credits", pack);
     try {
       const token = await getAccessToken();
       if (!token) { setCheckoutLoading(false); setShowAuth(true); return; }
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...(pack ? { "content-type": "application/json" } : {}) },
+        ...(pack ? { body: JSON.stringify({ pack }) } : {}),
       });
       if (!res.ok) { setCheckoutError("Payments aren't set up yet — check back soon."); setCheckoutLoading(false); return; }
       const { url } = await res.json();
@@ -460,7 +467,8 @@ export default function App() {
               addTask={addTask} toggleTask={toggleTask} removeTask={removeTask} updateTaskEst={updateTaskEst}
               moveTask={moveTask} reorderTask={reorderTask} onFocusTask={focusTask}
               session={session} onSignIn={onSignIn} tasksLoaded={tasksLoaded}
-              profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout} />
+              profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout}
+              onBuyCredits={() => setView("premium")} />
           )}
           {view === "analytics" && (
             <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
@@ -537,7 +545,8 @@ export default function App() {
           } />,
         pipWindow.document.body
       )}
-      {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }} />}
+      {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }}
+        onBuyCredits={() => { setShowUpsell(false); setView("premium"); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
       {needsPassword && session && (
         <SetPasswordModal onDone={() => {
@@ -1280,7 +1289,7 @@ function TagPill({ tag }: { tag: string }) {
 
 type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
@@ -1433,7 +1442,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       )}
       {session && (
         <div className="mt-4">
-          <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} />
+          <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} onBuyCredits={onBuyCredits} />
         </div>
       )}
       {/* On phones the task input takes the full row and the subject + add
@@ -1771,6 +1780,19 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   // subscription" when there's an actual Stripe customer behind the account.
   const hasStripeCustomer = !!profile?.stripe_customer_id;
   const perks = ["30 AI note uploads a month (~1 a day)", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
+  const credits = (profile?.ai_credits as number | undefined) ?? 0;
+  // [feature, free, premium] — strings render as text, booleans as ✓/—.
+  const compare: [string, string | boolean, string | boolean][] = [
+    ["Price", "$0", "$6 / month"],
+    ["AI note uploads", "3 a month", "30 a month"],
+    ["Extra upload credits", "Buy anytime", "Buy anytime"],
+    ["Timer methods", "Core methods", "+ PANCE Drill & Marathon"],
+    ["Study rooms", "Join any room", "Join + host up to 3"],
+    ["Voice chat during breaks", false, true],
+    ["Analytics", "This week", "Full history"],
+    ["Themes", "Core themes", "All themes"],
+    ["Spotify & Apple Music", false, true],
+  ];
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
 
@@ -1800,6 +1822,26 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-3xl font-semibold">{isPremium ? "Your Premium" : "Go Premium"}</h1>
       <p className="mt-1 text-sm text-muted-foreground">Built for the long road to the PANCE.</p>
+
+      {!isPremium && (
+        <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-card/70">
+          <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-x-3 border-b border-border px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <span>What you get</span><span>Free</span><span className="text-primary">Premium</span>
+          </div>
+          {compare.map(([feature, free, prem]) => (
+            <div key={feature} className="grid grid-cols-[1.4fr_1fr_1fr] items-center gap-x-3 border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
+              <span className="min-w-0 text-muted-foreground">{feature}</span>
+              <span className="min-w-0 text-xs">
+                {free === true ? <Check size={15} className="text-roamly-green" /> : free === false ? <span className="text-muted-foreground/50">—</span> : free}
+              </span>
+              <span className="min-w-0 text-xs font-medium">
+                {prem === true ? <Check size={15} className="text-roamly-green" /> : prem === false ? <span className="text-muted-foreground/50">—</span> : prem}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {isPremium && (
         <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
           <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active — thanks for supporting Roamly.</p>
@@ -1840,6 +1882,36 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
           </div>
         </div>
       )}
+
+      {/* Credit packs — one-time purchases, for subscribers and free users alike. */}
+      <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <Plus size={15} className="text-primary" /> Upload credits — no subscription needed
+        </h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Extra AI note uploads you buy once. They never expire and are used automatically after your monthly allowance
+          ({isPremium ? "30 with Premium" : "3 free"}) runs out.
+          {session && <span className="font-medium text-foreground"> You have {credits} credit{credits === 1 ? "" : "s"}.</span>}
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {[
+            { id: "small" as const, credits: 10, price: "$3" },
+            { id: "large" as const, credits: 25, price: "$5" },
+          ].map((p) => (
+            <div key={p.id} className="rounded-2xl border border-border bg-card/70 p-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm font-semibold">{p.credits} uploads</span>
+                <span className="font-display text-xl font-bold">{p.price}</span>
+              </div>
+              <button onClick={() => onSubscribe(p.id)} disabled={checkoutLoading}
+                className="mt-3 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20 active:scale-95 disabled:opacity-60">
+                {session ? (checkoutLoading ? "Redirecting…" : "Buy with Stripe") : "Sign in to buy"}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-center text-[11px] text-muted-foreground">One-time purchase · credits never expire · secure checkout via Stripe.</p>
+      </div>
     </div>
   );
 }
@@ -1900,7 +1972,7 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask }: any) {
   );
 }
 
-function Upsell({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => void }) {
+function Upsell({ onClose, onUpgrade, onBuyCredits }: { onClose: () => void; onUpgrade: () => void; onBuyCredits?: () => void }) {
   return (
     // z-[130] so the upsell is visible even when triggered from inside the
     // focus-mode overlay (which sits at z-[120]).
@@ -1911,6 +1983,11 @@ function Upsell({ onClose, onUpgrade }: { onClose: () => void; onUpgrade: () => 
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
         <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 30 AI note uploads a month, and hosting your own study rooms.</p>
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Try Premium free</button>
+        {onBuyCredits && (
+          <button onClick={onBuyCredits} className="mt-2 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20">
+            Or buy AI upload credits — no subscription
+          </button>
+        )}
         <button onClick={onClose} className="mt-2 w-full rounded-full py-2 text-sm text-muted-foreground">Maybe later</button>
     </Modal>
   );

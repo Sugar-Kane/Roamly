@@ -1054,6 +1054,52 @@ revoke execute on function public.refund_ai_upload(uuid, text) from public, anon
 grant execute on function public.reserve_ai_upload(uuid, text, int, int) to service_role;
 grant execute on function public.refund_ai_upload(uuid, text) to service_role;
 
+-- ============ AI upload credits (2026-07-10): one-time purchasable packs ============
+-- Credits are extra AI uploads bought as one-time Stripe packs. They never
+-- expire and are consumed only after the monthly allowance runs out. Only the
+-- server changes balances (existing column grants block client writes).
+alter table public.profiles
+  add column if not exists ai_credits int not null default 0;
+
+-- Grant credits after a verified Stripe payment (called by the webhook).
+create or replace function public.add_ai_credits(p_user uuid, p_credits int)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.profiles
+     set ai_credits = ai_credits + greatest(p_credits, 0)
+   where id = p_user;
+$$;
+
+-- Atomically spend one credit: 'ok' when consumed, 'no_credits' when empty.
+create or replace function public.consume_ai_credit(p_user uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_left int;
+begin
+  update public.profiles
+     set ai_credits = ai_credits - 1
+   where id = p_user
+     and ai_credits > 0
+  returning ai_credits into v_left;
+  if v_left is null then
+    return 'no_credits';
+  end if;
+  return 'ok';
+end;
+$$;
+
+revoke execute on function public.add_ai_credits(uuid, int) from public, anon, authenticated;
+revoke execute on function public.consume_ai_credit(uuid) from public, anon, authenticated;
+grant execute on function public.add_ai_credits(uuid, int) to service_role;
+grant execute on function public.consume_ai_credit(uuid) to service_role;
+
 -- ============ 3) participant-scoped room chat ============
 drop policy if exists "room_messages_select_all" on public.room_messages;
 drop policy if exists "room_messages_select_participants" on public.room_messages;

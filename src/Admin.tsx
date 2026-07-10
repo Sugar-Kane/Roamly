@@ -180,6 +180,7 @@ const EVENT_LABELS: Record<string, string> = {
   theme_change: "Theme changed",
   tutorial_done: "Tutorial completed",
   feedback_sent: "Feedback sent",
+  buy_credits: "Credit pack checkout",
 };
 
 function AdminUsage() {

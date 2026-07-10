@@ -13,6 +13,9 @@ export type Profile = {
   exam_date: string | null;
   ai_uploads_count: number;
   ai_uploads_period: string | null;
+  // Purchased AI-upload credits (never expire; used after the monthly
+  // allowance). Optional so the client tolerates the pre-migration schema.
+  ai_credits?: number;
 };
 
 export type FocusSessionRow = { date: string; minutes: number };

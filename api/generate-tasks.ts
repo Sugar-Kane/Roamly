@@ -12,6 +12,7 @@ const ALLOWED_MEDIA_TYPES = [
 ] as const;
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 const MAX_TEXT_CHARS = 60_000; // keep worst-case Claude input (and cost) bounded
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12MB — bounds a worst-case PDF's Claude cost
 
 const FREE_MONTHLY_QUOTA = 3;
 // Premium is capped too — "unlimited" uploads would be an open tab on the
@@ -111,11 +112,32 @@ export async function POST(request: Request): Promise<Response> {
   const usedThisPeriod = profileRow.ai_uploads_period === period ? (profileRow.ai_uploads_count as number) : 0;
   const quota = isPremium ? PREMIUM_MONTHLY_QUOTA : FREE_MONTHLY_QUOTA;
 
+  // Size safeguard BEFORE burning quota/credits: a giant scanned PDF can cost
+  // several times a normal upload in Claude input. The client rejects >12MB
+  // too, but this server check can't be bypassed. Verified via storage
+  // metadata; skipped gracefully if the listing doesn't return a size.
+  {
+    const slash = storagePath.indexOf("/");
+    const fileName = storagePath.slice(slash + 1);
+    const { data: listed } = await admin.storage
+      .from(STORAGE_BUCKET)
+      .list(user.id, { search: fileName, limit: 1 });
+    const size = listed?.[0]?.metadata?.size as number | undefined;
+    if (typeof size === "number" && size > MAX_UPLOAD_BYTES) {
+      await admin.storage.from(STORAGE_BUCKET).remove([storagePath]);
+      return jsonResponse({ error: "file_too_large" }, 413);
+    }
+  }
+
   // Reserve a quota slot BEFORE the Claude call (refunded on failure below).
   // reserve_ai_upload checks-and-increments in one row-locked statement, so
   // parallel requests can't race past the per-user cap or the app-wide spend
   // ceiling the way a read-then-write here could.
   let atomicReserve = true;
+  // When the monthly allowance is spent, purchased credits cover the upload
+  // instead. Credit uploads are prepaid (revenue-backed), so they bypass the
+  // free/premium global circuit breaker; the balance itself bounds them.
+  let usedCredit = false;
   {
     const { data: outcome, error: reserveError } = await admin.rpc("reserve_ai_upload", {
       p_user: user.id,
@@ -146,7 +168,12 @@ export async function POST(request: Request): Promise<Response> {
         .update({ ai_uploads_count: usedThisPeriod + 1, ai_uploads_period: period })
         .eq("id", user.id);
     } else if (outcome === "quota_exceeded") {
-      return jsonResponse({ error: "quota_exceeded" }, 403);
+      // Monthly allowance spent — fall back to purchased credits.
+      const { data: creditOutcome, error: creditError } = await admin.rpc("consume_ai_credit", { p_user: user.id });
+      if (creditError || creditOutcome !== "ok") {
+        return jsonResponse({ error: "quota_exceeded" }, 403);
+      }
+      usedCredit = true;
     } else if (outcome === "ai_at_capacity") {
       return jsonResponse({ error: "ai_at_capacity" }, 503);
     }
@@ -277,8 +304,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (claudeError) {
-    // Refund the reserved quota slot — the user got nothing for it.
-    if (atomicReserve) {
+    // Refund whichever pool paid for this — the user got nothing for it.
+    if (usedCredit) {
+      await admin.rpc("add_ai_credits", { p_user: user.id, p_credits: 1 });
+    } else if (atomicReserve) {
       await admin.rpc("refund_ai_upload", { p_user: user.id, p_period: period });
     } else {
       await admin

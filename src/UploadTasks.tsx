@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Sparkles, X, Check } from "lucide-react";
 import { uploadStudyMaterial, getAccessToken } from "./db";
+import { InfoTip } from "./FocusMode";
 
 export const FREE_MONTHLY_UPLOAD_QUOTA = 3;
-const MAX_UPLOAD_BYTES = 22 * 1024 * 1024;
+// Mirrors MAX_UPLOAD_BYTES in api/generate-tasks.ts (the server re-checks, so
+// this is UX, not the safeguard) — bounds a worst-case PDF's AI cost.
+const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+const FILE_TOO_LARGE_MSG = "That file is over 12 MB — split big decks into parts and upload them separately.";
+
+const CREDITS_EXPLAINER =
+  "Every month you get free AI uploads (3 free, 30 with Premium). Credits are extra uploads you buy once on the Premium page — they never expire and are used automatically after your monthly allowance runs out.";
 
 // Keep in sync with ALLOWED_MEDIA_TYPES in api/generate-tasks.ts. Some
 // platforms report an empty MIME for .md/.csv, so the extension map below is
@@ -33,7 +40,7 @@ export function currentUploadPeriod() {
 
 type Stage = "idle" | "uploading" | "reading" | "done";
 
-export function UploadTasksPanel({ profile, session, onImported, onUpgrade }: any) {
+export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBuyCredits }: any) {
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
@@ -45,6 +52,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade }: an
   const isPremium = profile?.is_premium ?? false;
   const usedThisPeriod = profile?.ai_uploads_period === currentUploadPeriod() ? (profile?.ai_uploads_count ?? 0) : 0;
   const remaining = Math.max(0, FREE_MONTHLY_UPLOAD_QUOTA - usedThisPeriod);
+  const credits = (profile?.ai_credits as number | undefined) ?? 0;
   const loading = stage === "uploading" || stage === "reading";
 
   const stopCreep = () => { if (creep.current) { window.clearInterval(creep.current); creep.current = null; } };
@@ -60,7 +68,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade }: an
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError("That file is too large — try something under 22MB.");
+      setError(FILE_TOO_LARGE_MSG);
       return;
     }
     const userId = session?.user.id;
@@ -96,6 +104,11 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade }: an
         setStage("idle");
         return;
       }
+      if (result.error === "file_too_large") {
+        setError(FILE_TOO_LARGE_MSG);
+        setStage("idle");
+        return;
+      }
       if (!res.ok) {
         setError(result.error ?? "Something went wrong — try again.");
         setStage("idle");
@@ -114,24 +127,37 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade }: an
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)}
-        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-left transition hover:border-primary/40">
-        <span className="flex items-center gap-2 text-sm font-medium">
-          <Sparkles size={16} className="text-primary" /> Upload notes or slides — auto-generate tasks
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {isPremium ? "30 uploads a month" : `${remaining} of ${FREE_MONTHLY_UPLOAD_QUOTA} free left this month`}
-        </span>
-      </button>
+      <div className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-border bg-card/60 p-4 transition hover:border-primary/40">
+        <button onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <Sparkles size={16} className="shrink-0 text-primary" /> Upload notes or slides — auto-generate tasks
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {isPremium ? "30 a month" : `${remaining} of ${FREE_MONTHLY_UPLOAD_QUOTA} free left`}
+            {credits > 0 && ` · ${credits} credit${credits === 1 ? "" : "s"}`}
+          </span>
+        </button>
+        <InfoTip text={CREDITS_EXPLAINER} />
+      </div>
     );
   }
 
   if (quotaExceeded) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
-        <p className="text-sm text-muted-foreground">You've used your {FREE_MONTHLY_UPLOAD_QUOTA} free uploads this month.</p>
-        <div className="mt-3 flex items-center gap-3">
-          <button onClick={onUpgrade} className="rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow">Go Premium</button>
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          You've used your monthly AI uploads{isPremium ? "" : ` (${FREE_MONTHLY_UPLOAD_QUOTA} free)`} — and any purchased credits.
+          <InfoTip text={CREDITS_EXPLAINER} />
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {!isPremium && (
+            <button onClick={onUpgrade} className="rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow">Go Premium</button>
+          )}
+          {onBuyCredits && (
+            <button onClick={onBuyCredits} className="rounded-full border border-primary/50 bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20">
+              Buy upload credits
+            </button>
+          )}
           <button onClick={() => setOpen(false)} className="text-xs text-muted-foreground underline">Close</button>
         </div>
       </div>
@@ -144,7 +170,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade }: an
         <span className="text-sm font-medium">Upload notes, slides, or a photo</span>
         <button onClick={() => { setOpen(false); setStage("idle"); setProgress(0); }} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">PDF, Word, PowerPoint, text, or photos.</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">PDF, Word, PowerPoint, text, or photos — up to 12 MB.</p>
       {stage !== "done" && (
         <input type="file" accept={ACCEPT} disabled={loading}
           onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
