@@ -1,29 +1,25 @@
-// Built-in focus sounds — no accounts, no ads. Because the app owns this
+// Built-in focus music — no accounts, no ads. Because the app owns this
 // audio (unlike the Spotify/Apple embeds), the timer can control it
 // perfectly: start on focus, fade out at the break.
 //
-// Three families: noise textures (rain, stream, ocean, deep/white noise) and
-// meditation tones (singing bowl, calm drone, wind chimes) synthesized with
-// WebAudio, plus "Café music" — real free-license recordings bundled under
-// /audio/lofi and played as a shuffled playlist through the same graph.
+// Every option is actual music, and nothing repeats within an hour:
+//  - "melody", "beats", "piano" are generative WebAudio — they synthesize a
+//    fresh, non-looping performance each session, so they never repeat.
+//  - "lofi" (Café) and "calm" are real free-license recordings (Kevin MacLeod)
+//    bundled under /audio/lofi and played as a shuffle that exhausts the whole
+//    category before repeating, so with >60 min per category nothing recurs
+//    within an hour. Each falls back to a generative station if its manifest
+//    is missing.
 
 export type FocusSoundId =
-  | "melody" | "lofi" | "calm"
-  | "bowl" | "om" | "chimes" | "stream"
-  | "rain" | "ocean" | "brown" | "white";
+  | "melody" | "lofi" | "calm" | "beats" | "piano";
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
   { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
   { id: "lofi", name: "Café music", hint: "Real tracks · mellow jazz" },
   { id: "calm", name: "Calm music", hint: "Real tracks · ambient, meditative" },
-  { id: "bowl", name: "Singing bowl", hint: "Soft strikes, long resonance" },
-  { id: "om", name: "Calm drone", hint: "Warm meditative hum" },
-  { id: "chimes", name: "Wind chimes", hint: "Gentle drifting tones" },
-  { id: "stream", name: "Stream", hint: "Babbling water" },
-  { id: "rain", name: "Rain", hint: "Steady rainfall" },
-  { id: "ocean", name: "Ocean", hint: "Slow wave swells" },
-  { id: "brown", name: "Deep noise", hint: "Low, warm rumble" },
-  { id: "white", name: "White noise", hint: "Even static wash" },
+  { id: "beats", name: "Lo-fi beats", hint: "Live chillhop groove" },
+  { id: "piano", name: "Piano", hint: "Gentle drifting piano" },
 ];
 
 let ctx: AudioContext | null = null;
@@ -152,150 +148,6 @@ const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 // ---- builders: each wires its graph into `out` and returns a teardown ----
 
-function buildNoise(audio: AudioContext, out: GainNode, id: "rain" | "white" | "brown" | "ocean" | "stream"): () => void {
-  const src = audio.createBufferSource();
-  src.buffer = noiseBuffer(audio, id === "white" || id === "rain" || id === "stream" ? "white" : "brown");
-  src.loop = true;
-  const extras: (OscillatorNode | AudioBufferSourceNode)[] = [src];
-
-  let head: AudioNode = src;
-  if (id === "rain") {
-    const hp = audio.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 500;
-    const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 8000;
-    head.connect(hp); hp.connect(lp); head = lp;
-  } else if (id === "white") {
-    const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 10000;
-    head.connect(lp); head = lp;
-  } else if (id === "ocean") {
-    const swell = audio.createGain();
-    swell.gain.value = 0.65;
-    const osc = audio.createOscillator();
-    osc.frequency.value = 0.09; // ~11s per wave
-    const depth = audio.createGain();
-    depth.gain.value = 0.35;
-    osc.connect(depth); depth.connect(swell.gain); osc.start();
-    extras.push(osc);
-    head.connect(swell); head = swell;
-  } else if (id === "stream") {
-    // Babble: band-limited noise whose center wobbles, plus a faint sparkle.
-    const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1100; lp.Q.value = 1.2;
-    const wob = audio.createOscillator(); wob.frequency.value = 0.35;
-    const wobDepth = audio.createGain(); wobDepth.gain.value = 420;
-    wob.connect(wobDepth); wobDepth.connect(lp.frequency); wob.start();
-    extras.push(wob);
-    head.connect(lp);
-    const sparkleHp = audio.createBiquadFilter(); sparkleHp.type = "highpass"; sparkleHp.frequency.value = 3200;
-    const sparkleGain = audio.createGain(); sparkleGain.gain.value = 0.12;
-    src.connect(sparkleHp); sparkleHp.connect(sparkleGain); sparkleGain.connect(out);
-    head = lp;
-  }
-  head.connect(out);
-  src.start();
-
-  return () => {
-    for (const n of extras) { try { n.stop(); } catch { /* stopped */ } n.disconnect(); }
-  };
-}
-
-function buildOm(audio: AudioContext, out: GainNode): () => void {
-  // Warm hum: low fundamental with a beating twin, a fifth and an octave,
-  // low-passed and swelling slowly.
-  const mix = audio.createGain(); mix.gain.value = 0.5;
-  const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 520;
-  const voices: [number, number][] = [[82.41, 0.5], [82.9, 0.35], [123.6, 0.22], [164.8, 0.12]];
-  const nodes: OscillatorNode[] = [];
-  for (const [freq, level] of voices) {
-    const o = audio.createOscillator(); o.type = "sine"; o.frequency.value = freq;
-    const g = audio.createGain(); g.gain.value = level;
-    o.connect(g); g.connect(mix); o.start();
-    nodes.push(o);
-  }
-  const swellOsc = audio.createOscillator(); swellOsc.frequency.value = 0.06;
-  const swellDepth = audio.createGain(); swellDepth.gain.value = 0.15;
-  swellOsc.connect(swellDepth); swellDepth.connect(mix.gain); swellOsc.start();
-  nodes.push(swellOsc);
-  mix.connect(lp); lp.connect(out);
-  return () => { for (const n of nodes) { try { n.stop(); } catch { /* stopped */ } n.disconnect(); } };
-}
-
-function buildBowl(audio: AudioContext, out: GainNode): () => void {
-  const timers: number[] = [];
-  // Constant faint resonance under the strikes.
-  const droneStop = (() => {
-    const o = audio.createOscillator(); o.type = "sine"; o.frequency.value = 196;
-    const g = audio.createGain(); g.gain.value = 0.045;
-    o.connect(g); g.connect(out); o.start();
-    return () => { try { o.stop(); } catch { /* stopped */ } o.disconnect(); };
-  })();
-
-  const strike = () => {
-    const detune = rand(0.99, 1.01);
-    // A bowl's inharmonic partials with individual decays.
-    const partials: [number, number, number][] = [[196, 0.5, 9], [533, 0.16, 6], [1060, 0.05, 4]];
-    for (const [freq, level, decay] of partials) {
-      const o = audio.createOscillator(); o.type = "sine"; o.frequency.value = freq * detune;
-      const g = audio.createGain();
-      const t = audio.currentTime;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.linearRampToValueAtTime(level, t + 0.025);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
-      o.connect(g); g.connect(out);
-      o.start(t); o.stop(t + decay + 0.3);
-    }
-  };
-  const scheduleNext = () => {
-    const id = window.setTimeout(() => { strike(); scheduleNext(); }, rand(9000, 16000));
-    timers.push(id);
-  };
-  strike();
-  scheduleNext();
-  return () => { timers.forEach((t) => window.clearTimeout(t)); droneStop(); };
-}
-
-function buildChimes(audio: AudioContext, out: GainNode): () => void {
-  const timers: number[] = [];
-  // Faint low pad so the silence between chimes isn't dead air.
-  const padStop = (() => {
-    const src = audio.createBufferSource();
-    src.buffer = noiseBuffer(audio, "brown");
-    src.loop = true;
-    const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 600;
-    const g = audio.createGain(); g.gain.value = 0.05;
-    src.connect(lp); lp.connect(g); g.connect(out); src.start();
-    return () => { try { src.stop(); } catch { /* stopped */ } src.disconnect(); };
-  })();
-
-  const scale = [523.25, 587.33, 659.25, 783.99, 880.0]; // C major pentatonic
-  const ding = () => {
-    const freq = scale[Math.floor(Math.random() * scale.length)];
-    const o = audio.createOscillator(); o.type = "triangle"; o.frequency.value = freq;
-    const g = audio.createGain();
-    const t = audio.currentTime;
-    const decay = rand(3, 5);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(rand(0.12, 0.2), t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
-    let tail: AudioNode = g;
-    if (audio.createStereoPanner) {
-      const pan = audio.createStereoPanner(); pan.pan.value = rand(-0.6, 0.6);
-      g.connect(pan); tail = pan;
-    }
-    o.connect(g); tail.connect(out);
-    o.start(t); o.stop(t + decay + 0.2);
-  };
-  const scheduleNext = () => {
-    const id = window.setTimeout(() => {
-      ding();
-      if (Math.random() < 0.3) { const id2 = window.setTimeout(ding, rand(250, 600)); timers.push(id2); }
-      scheduleNext();
-    }, rand(2500, 7000));
-    timers.push(id);
-  };
-  ding();
-  scheduleNext();
-  return () => { timers.forEach((t) => window.clearTimeout(t)); padStop(); };
-}
-
 function buildMelody(audio: AudioContext, out: GainNode): () => void {
   const timers: number[] = [];
   const oscs: OscillatorNode[] = [];
@@ -381,6 +233,68 @@ function buildMelody(audio: AudioContext, out: GainNode): () => void {
     timers.forEach((t) => window.clearTimeout(t));
     for (const o of oscs) { try { o.stop(); } catch { /* stopped */ } o.disconnect(); }
   };
+}
+
+function buildPiano(audio: AudioContext, out: GainNode): () => void {
+  const timers: number[] = [];
+  // Warm room: soften the top so the piano reads mellow, not bright.
+  const warm = audio.createBiquadFilter(); warm.type = "lowpass"; warm.frequency.value = 2600;
+  warm.connect(out);
+
+  // One felt-piano note: a triangle fundamental plus a soft octave partial,
+  // fast attack and a long exponential tail — the envelope that reads "piano".
+  const note = (freq: number, t: number, vel: number) => {
+    const decay = rand(2.5, 4.5);
+    const g = audio.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vel, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    let tail: AudioNode = g;
+    if (audio.createStereoPanner) {
+      const pan = audio.createStereoPanner(); pan.pan.value = rand(-0.3, 0.3);
+      g.connect(pan); tail = pan;
+    }
+    tail.connect(warm);
+    const o1 = audio.createOscillator(); o1.type = "triangle"; o1.frequency.value = freq;
+    const o2 = audio.createOscillator(); o2.type = "sine"; o2.frequency.value = freq * 2;
+    const o2g = audio.createGain(); o2g.gain.value = 0.35;
+    o1.connect(g); o2.connect(o2g); o2g.connect(g);
+    o1.start(t); o1.stop(t + decay + 0.2);
+    o2.start(t); o2.stop(t + decay + 0.2);
+  };
+
+  // Diatonic 4-chord progressions in C (root-position triads, Hz), one chord
+  // per bar. A random progression + random transpose gives each session its
+  // own key; the per-bar note choices below keep it from ever repeating.
+  const PROGRESSIONS: number[][][] = [
+    [[261.63, 329.63, 392.0], [220.0, 261.63, 329.63], [174.61, 220.0, 261.63], [196.0, 246.94, 293.66]], // C Am F G
+    [[220.0, 261.63, 329.63], [174.61, 220.0, 261.63], [196.0, 246.94, 293.66], [261.63, 329.63, 392.0]], // Am F G C
+    [[174.61, 220.0, 261.63], [261.63, 329.63, 392.0], [196.0, 246.94, 293.66], [220.0, 261.63, 329.63]], // F C G Am
+    [[261.63, 329.63, 392.0], [196.0, 246.94, 293.66], [220.0, 261.63, 329.63], [174.61, 220.0, 261.63]], // C G Am F
+  ];
+  const progression = PROGRESSIONS[Math.floor(Math.random() * PROGRESSIONS.length)];
+  const transpose = Math.pow(2, Math.round(rand(-2, 2)) / 12);
+
+  let bar = 0;
+  const playBar = () => {
+    const chord = progression[bar % progression.length].map((f) => f * transpose);
+    const t0 = audio.currentTime + 0.05;
+    // Left hand: a low root, then the chord tones gently rolled up.
+    note(chord[0] / 2, t0, 0.14);
+    chord.forEach((f, i) => note(f, t0 + 0.35 + i * rand(0.28, 0.5), rand(0.06, 0.11)));
+    // Right hand: a few chord-tone notes an octave up, spread across the bar
+    // with rests — random each time, so the melody never repeats.
+    const melodyNotes = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < melodyNotes; i++) {
+      const f = chord[Math.floor(Math.random() * chord.length)] * 2;
+      note(f, t0 + rand(1.0, 5.5), rand(0.05, 0.1));
+    }
+    bar++;
+    timers.push(window.setTimeout(playBar, rand(6500, 8500)));
+  };
+  playBar();
+
+  return () => { timers.forEach((t) => window.clearTimeout(t)); };
 }
 
 function buildLofi(audio: AudioContext, out: GainNode): () => void {
@@ -678,15 +592,14 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   gain.connect(audio.destination);
 
   let stop: () => void;
-  if (id === "melody") stop = buildMelody(audio, gain);
-  // Café / Calm play real bundled tracks; the synth builders remain only as the
+  if (id === "beats") stop = buildLofi(audio, gain);
+  else if (id === "piano") stop = buildPiano(audio, gain);
+  // Café / Calm play real bundled tracks; a generative station stands in as the
   // fallback while that category's manifest is missing (e.g. before the workflow ran).
   else if (id === "lofi") stop = hasTracks("lofi") ? buildMusic(audio, gain, "lofi") : buildLofi(audio, gain);
-  else if (id === "calm") stop = hasTracks("calm") ? buildMusic(audio, gain, "calm") : buildOm(audio, gain);
-  else if (id === "om") stop = buildOm(audio, gain);
-  else if (id === "bowl") stop = buildBowl(audio, gain);
-  else if (id === "chimes") stop = buildChimes(audio, gain);
-  else stop = buildNoise(audio, gain, id);
+  else if (id === "calm") stop = hasTracks("calm") ? buildMusic(audio, gain, "calm") : buildPiano(audio, gain);
+  // "melody" and any unknown/legacy id fall back to the Melody station.
+  else stop = buildMelody(audio, gain);
 
   masterGain = gain;
   teardown = stop;
