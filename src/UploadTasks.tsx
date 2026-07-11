@@ -4,6 +4,8 @@ import { uploadStudyMaterial, getAccessToken } from "./db";
 import { InfoTip } from "./FocusMode";
 
 export const FREE_MONTHLY_UPLOAD_QUOTA = 3;
+// Mirrors PREMIUM_MONTHLY_QUOTA in api/generate-tasks.ts.
+export const PREMIUM_MONTHLY_UPLOAD_QUOTA = 30;
 // Mirrors MAX_UPLOAD_BYTES in api/generate-tasks.ts (the server re-checks, so
 // this is UX, not the safeguard) — bounds a worst-case PDF's AI cost.
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -51,7 +53,8 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
 
   const isPremium = profile?.is_premium ?? false;
   const usedThisPeriod = profile?.ai_uploads_period === currentUploadPeriod() ? (profile?.ai_uploads_count ?? 0) : 0;
-  const remaining = Math.max(0, FREE_MONTHLY_UPLOAD_QUOTA - usedThisPeriod);
+  const monthlyQuota = isPremium ? PREMIUM_MONTHLY_UPLOAD_QUOTA : FREE_MONTHLY_UPLOAD_QUOTA;
+  const remaining = Math.max(0, monthlyQuota - usedThisPeriod);
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
   const loading = stage === "uploading" || stage === "reading";
 
@@ -133,7 +136,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
             <Sparkles size={16} className="shrink-0 text-primary" /> Upload notes or slides — auto-generate tasks
           </span>
           <span className="shrink-0 text-xs text-muted-foreground">
-            {isPremium ? "30 a month" : `${remaining} of ${FREE_MONTHLY_UPLOAD_QUOTA} free left`}
+            {`${remaining} of ${monthlyQuota}${isPremium ? "" : " free"} left`}
             {credits > 0 && ` · ${credits} credit${credits === 1 ? "" : "s"}`}
           </span>
         </button>
