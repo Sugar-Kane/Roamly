@@ -56,9 +56,8 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const search = async () => {
-    if (!query.trim()) return;
     setError(null);
-    setResults(await adminSearchUsers(query.trim()));
+    setResults(await adminSearchUsers(query.trim())); // blank query lists everyone
     setSearched(true);
   };
 
@@ -72,6 +71,15 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
   };
 
   const [tab, setTab] = useState<"usage" | "feedback" | "errors" | "users">("usage");
+
+  // Show the full roster by default when the Users tab opens; the search box
+  // then filters it (and a cleared box restores the full list).
+  useEffect(() => {
+    if (!isAdmin || tab !== "users") return;
+    let alive = true;
+    adminSearchUsers("").then((r) => { if (alive) { setResults(r); setSearched(true); } });
+    return () => { alive = false; };
+  }, [isAdmin, tab]);
 
   if (!isAdmin) {
     return (
@@ -120,8 +128,15 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       <h2 className="mt-8 text-sm font-semibold">Manage Premium</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">Everyone's listed below — search to filter by email, username, or name.</p>
       <div className="mt-3 flex gap-2">
-        <input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Enter" && search()}
+        <input value={query}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQuery(v);
+            if (!v.trim()) { setError(null); adminSearchUsers("").then((r) => { setResults(r); setSearched(true); }); }
+          }}
+          onKeyDown={(e) => e.key === "Enter" && search()}
           placeholder="Search by email or username…"
           className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
         <button onClick={search} className="shrink-0 rounded-xl gradient-primary px-4 text-sm font-semibold text-white shadow-glow transition active:scale-95">Search</button>
@@ -129,8 +144,13 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
       <div className="mt-6 space-y-2">
+        {results.length > 0 && (
+          <p className="px-1 text-xs text-muted-foreground">
+            {query.trim() ? `${results.length} match${results.length === 1 ? "" : "es"}` : `${results.length} user${results.length === 1 ? "" : "s"}`}
+          </p>
+        )}
         {searched && results.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">No users match that search.</p>
+          <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">{query.trim() ? "No users match that search." : "No users yet."}</p>
         )}
         {results.map((u) => (
           <div key={u.id} className="flex items-center gap-3 rounded-xl border border-border bg-card/70 p-3">
