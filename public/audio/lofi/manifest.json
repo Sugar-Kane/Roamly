@@ -104,6 +104,102 @@
     "category": "lofi"
   },
   {
+    "file": "/audio/lofi/off-to-osaka.mp3",
+    "title": "Off to Osaka",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/bossa-antigua.mp3",
+    "title": "Bossa Antigua",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/casa-bossa-nova.mp3",
+    "title": "Casa Bossa Nova",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/marty-gots-a-plan.mp3",
+    "title": "Marty Gots a Plan",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/hep-cats.mp3",
+    "title": "Hep Cats",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/sidewalk-shade.mp3",
+    "title": "Sidewalk Shade",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/spy-glass.mp3",
+    "title": "Spy Glass",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/brightly-fancy.mp3",
+    "title": "Brightly Fancy",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/faster-does-it.mp3",
+    "title": "Faster Does It",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/life-of-riley.mp3",
+    "title": "Life of Riley",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/walking-along.mp3",
+    "title": "Walking Along",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
+    "file": "/audio/lofi/batty-mcfaddin.mp3",
+    "title": "Batty McFaddin",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "lofi"
+  },
+  {
     "file": "/audio/lofi/meditation-impromptu-01.mp3",
     "title": "Meditation Impromptu 01",
     "artist": "Kevin MacLeod",
@@ -162,6 +258,86 @@
   {
     "file": "/audio/lofi/ossuary-1-a-beginning.mp3",
     "title": "Ossuary 1 - A Beginning",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/ossuary-5-rest.mp3",
+    "title": "Ossuary 5 - Rest",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/ossuary-6-air.mp3",
+    "title": "Ossuary 6 - Air",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/fluidscape.mp3",
+    "title": "Fluidscape",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/heartbreaking.mp3",
+    "title": "Heartbreaking",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/impact-andante.mp3",
+    "title": "Impact Andante",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/the-descent.mp3",
+    "title": "The Descent",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/at-rest.mp3",
+    "title": "At Rest",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/long-note-two.mp3",
+    "title": "Long Note Two",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/wounded.mp3",
+    "title": "Wounded",
+    "artist": "Kevin MacLeod",
+    "source": "incompetech",
+    "license": "CC BY 4.0",
+    "category": "calm"
+  },
+  {
+    "file": "/audio/lofi/anxiety.mp3",
+    "title": "Anxiety",
     "artist": "Kevin MacLeod",
     "source": "incompetech",
     "license": "CC BY 4.0",
