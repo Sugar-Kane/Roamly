@@ -54,8 +54,12 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
   const isPremium = profile?.is_premium ?? false;
   const usedThisPeriod = profile?.ai_uploads_period === currentUploadPeriod() ? (profile?.ai_uploads_count ?? 0) : 0;
   const monthlyQuota = isPremium ? PREMIUM_MONTHLY_UPLOAD_QUOTA : FREE_MONTHLY_UPLOAD_QUOTA;
-  const remaining = Math.max(0, monthlyQuota - usedThisPeriod);
+  const monthlyRemaining = Math.max(0, monthlyQuota - usedThisPeriod);
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
+  // What the user can actually upload right now: this month's remaining free
+  // allowance plus any purchased credits. Shown as one live number so buying a
+  // top-up bumps it immediately (profiles is on the realtime subscription).
+  const uploadsLeft = monthlyRemaining + credits;
   const loading = stage === "uploading" || stage === "reading";
 
   const stopCreep = () => { if (creep.current) { window.clearInterval(creep.current); creep.current = null; } };
@@ -129,6 +133,10 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
   };
 
   if (!open) {
+    // Signed in with nothing left this month and no credits → surface a Top up
+    // button right here. Buying credits lifts uploadsLeft above 0 live, so the
+    // count updates and this button disappears without a reload.
+    const outOfUploads = !!session && uploadsLeft === 0;
     return (
       <div className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-border bg-card/60 p-4 transition hover:border-primary/40">
         <button onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
@@ -136,10 +144,15 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
             <Sparkles size={16} className="shrink-0 text-primary" /> Upload notes or slides — auto-generate tasks
           </span>
           <span className="shrink-0 text-xs text-muted-foreground">
-            {`${remaining} of ${monthlyQuota}${isPremium ? "" : " free"} left`}
-            {credits > 0 && ` · ${credits} credit${credits === 1 ? "" : "s"}`}
+            {`${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}
           </span>
         </button>
+        {outOfUploads && onBuyCredits && (
+          <button onClick={onBuyCredits}
+            className="shrink-0 rounded-full border border-primary/50 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20 active:scale-95">
+            Top up
+          </button>
+        )}
         <InfoTip text={CREDITS_EXPLAINER} />
       </div>
     );
