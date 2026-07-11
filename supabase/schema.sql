@@ -232,12 +232,12 @@ as $$
   select p.id, p.email, p.username, p.display_name, p.is_premium
     from public.profiles p
    where public.is_admin()
-     and length(trim(p_query)) >= 1
-     and (p.email ilike '%' || trim(p_query) || '%'
+     and (length(trim(coalesce(p_query, ''))) = 0
+       or p.email ilike '%' || trim(p_query) || '%'
        or p.username ilike '%' || trim(p_query) || '%'
        or p.display_name ilike '%' || trim(p_query) || '%')
    order by p.email
-   limit 25;
+   limit 200;
 $$;
 
 revoke execute on function public.admin_search_users(text) from public, anon;
