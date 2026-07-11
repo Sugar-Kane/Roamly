@@ -133,10 +133,9 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
   };
 
   if (!open) {
-    // Signed in with nothing left this month and no credits → surface a Top up
-    // button right here. Buying credits lifts uploadsLeft above 0 live, so the
-    // count updates and this button disappears without a reload.
-    const outOfUploads = !!session && uploadsLeft === 0;
+    // Signed-in users can top up anytime (stock up before running out).
+    // Buying credits lifts uploadsLeft live, so the count updates without a reload.
+    const canTopUp = !!session;
     return (
       <div className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-border bg-card/60 p-4 transition hover:border-primary/40">
         <button onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
@@ -147,7 +146,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
             {`${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}
           </span>
         </button>
-        {outOfUploads && onBuyCredits && (
+        {canTopUp && onBuyCredits && (
           <button onClick={onBuyCredits}
             className="shrink-0 rounded-full border border-primary/50 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20 active:scale-95">
             Top up
