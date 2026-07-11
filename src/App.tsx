@@ -162,7 +162,10 @@ export default function App() {
   const [focusSound, setFocusSound] = useState<FocusSoundId | null>(() => {
     const saved = loadPref("roamly-focus-sound");
     if (saved === "off") return null;
-    return (saved as FocusSoundId) || "melody";
+    // A saved pick for a since-removed sound (e.g. an old "rain") must not load
+    // an invalid station — only honour ids still in the picker, else Melody.
+    const valid = new Set<string>(FOCUS_SOUNDS.map((s) => s.id));
+    return saved && valid.has(saved) ? (saved as FocusSoundId) : "melody";
   });
   const [soundAuto, setSoundAuto] = useState(() => loadPref("roamly-sound-auto") !== "off");
   const [soundVolume, setSoundVolume] = useState(() => {
