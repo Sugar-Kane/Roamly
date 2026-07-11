@@ -1,6 +1,17 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
-import { apiLog } from "./_log";
+
+// Inlined structured logger (kept local so this function bundles standalone).
+// Vercel's per-function bundler doesn't reliably trace the shared ./_log
+// import, which crashed this endpoint at load with ERR_MODULE_NOT_FOUND.
+// Never log secrets, tokens, or message bodies — ids and outcomes only.
+function apiLog(route: string, outcome: string, fields: Record<string, unknown> = {}): void {
+  try {
+    console.log(JSON.stringify({ src: "roamly-api", route, outcome, time: new Date().toISOString(), ...fields }));
+  } catch {
+    console.log(`roamly-api ${route} ${outcome}`);
+  }
+}
 
 // Uses the Web Standard Request/Response export style (not the legacy
 // VercelRequest/VercelResponse shape) specifically so `await request.text()`
