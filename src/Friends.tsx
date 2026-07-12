@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { X, UserPlus, Check, Search, Users, Mail, ChevronDown, ChevronRight } from "lucide-react";
+import { X, UserPlus, Check, Search, Users, Mail, ChevronDown, ChevronRight, BarChart3 } from "lucide-react";
 import {
   fetchFriendships, searchUsers, findUserByEmail, sendFriendRequest, respondFriendRequest, removeFriendship,
-  setUsername, getPublicProfiles, type Friendship, type PublicProfile,
+  setUsername, getPublicProfiles, fetchStatPermissions, requestStatComparison, respondStatComparison, revokeStatComparison, getFriendComparison,
+  type Friendship, type PublicProfile, type StatPermission, type FriendComparison,
 } from "./rooms";
 import { sendInvite, type Profile } from "./db";
 import { Modal } from "./Modal";
@@ -65,6 +66,9 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteName, setInviteName] = useState("");
   const [showSentInvites, setShowSentInvites] = useState(false);
+  const [statPermissions, setStatPermissions] = useState<StatPermission[]>([]);
+  const [comparison, setComparison] = useState<{ friendId: string; data: FriendComparison } | null>(null);
+  const [statError, setStatError] = useState<string | null>(null);
 
   const invite = async (addr: string, name?: string) => {
     setInviting(true); setInviteError(null); setInviteMsg(null);
@@ -83,8 +87,9 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   };
 
   const reload = useCallback(async () => {
-    const rows = await fetchFriendships();
+    const [rows, permissions] = await Promise.all([fetchFriendships(), fetchStatPermissions()]);
     setFriendships(rows);
+    setStatPermissions(permissions);
     const others = rows.map((f) => (f.requester === myId ? f.addressee : f.requester));
     setPeople(await getPublicProfiles(others));
   }, [myId]);
@@ -116,6 +121,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const incoming = friendships.filter((f) => f.status === "pending" && f.addressee === myId);
   const outgoing = friendships.filter((f) => f.status === "pending" && f.requester === myId);
   const accepted = friendships.filter((f) => f.status === "accepted");
+  const incomingStatRequests = statPermissions.filter((p) => p.owner_id === myId && p.status === "pending");
   // Outgoing splits in two: requests to real members (they have a username)
   // stay visible; email invites to people who haven't joined yet are tucked
   // into a collapsed "Invites sent" section so they don't clutter the list.
@@ -138,6 +144,23 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const remove = async (id: string) => {
     await removeFriendship(id);
     reload();
+  };
+
+  const requestStats = async (friendId: string) => {
+    setStatError(await requestStatComparison(friendId));
+    reload();
+  };
+  const respondStats = async (viewerId: string, approve: boolean) => {
+    setStatError(await respondStatComparison(viewerId, approve));
+    reload();
+  };
+  const revokeStats = async (friendId: string) => {
+    await revokeStatComparison(friendId); setComparison(null); reload();
+  };
+  const viewStats = async (friendId: string) => {
+    const data = await getFriendComparison(friendId);
+    if (!data) { setStatError("Statistics are no longer shared."); return; }
+    setComparison({ friendId, data });
   };
 
   return (
@@ -235,20 +258,44 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
               </section>
             )}
 
+            {incomingStatRequests.length > 0 && (
+              <section className="mt-5">
+                <h4 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Statistics requests</h4>
+                <p className="mt-1 text-[11px] text-muted-foreground">Friendship never grants analytics access automatically.</p>
+                <div className="mt-2 space-y-1.5">{incomingStatRequests.map((permission) => <div key={`${permission.owner_id}:${permission.viewer_id}`} className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2">
+                  <PersonLabel person={people.get(permission.viewer_id)} />
+                  <div className="flex gap-1.5"><button onClick={() => respondStats(permission.viewer_id, true)} className="rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white">Approve</button><button onClick={() => respondStats(permission.viewer_id, false)} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">Reject</button></div>
+                </div>)}</div>
+              </section>
+            )}
+            {statError && <p className="mt-2 text-xs text-destructive">{statError}</p>}
+
             <section className="mt-5">
               <h4 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Your friends</h4>
               {accepted.length === 0 && outgoing.length === 0 && (
                 <p className="mt-2 text-sm text-muted-foreground">No friends yet — search above to add classmates.</p>
               )}
               <div className="mt-2 space-y-1.5">
-                {accepted.map((f) => (
-                  <div key={f.id} className="group flex items-center justify-between rounded-xl border border-border bg-card/70 px-3 py-2">
-                    <PersonLabel person={people.get(f.requester === myId ? f.addressee : f.requester)} />
-                    <button onClick={() => remove(f.id)} className="text-xs text-muted-foreground underline opacity-100 hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100">
-                      Remove
-                    </button>
-                  </div>
-                ))}
+                {accepted.map((f) => {
+                  const friendId = f.requester === myId ? f.addressee : f.requester;
+                  const outgoingPermission = statPermissions.find((p) => p.owner_id === friendId && p.viewer_id === myId);
+                  const incomingPermission = statPermissions.find((p) => p.owner_id === myId && p.viewer_id === friendId);
+                  const open = comparison?.friendId === friendId;
+                  return <div key={f.id} className="rounded-xl border border-border bg-card/70 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <PersonLabel person={people.get(friendId)} />
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        {!outgoingPermission && <button onClick={() => requestStats(friendId)} className="rounded-full border border-primary/40 px-2.5 py-1 text-[11px] text-primary">Request stats</button>}
+                        {outgoingPermission?.status === "pending" && <span className="text-[11px] text-muted-foreground">Stats requested</span>}
+                        {outgoingPermission?.status === "approved" && <button onClick={() => open ? setComparison(null) : viewStats(friendId)} className="flex items-center gap-1 rounded-full border border-primary/40 px-2.5 py-1 text-[11px] text-primary"><BarChart3 size={11} /> {open ? "Hide" : "Compare"}</button>}
+                        {incomingPermission?.status === "approved" && <span className="text-[10px] text-roamly-green">Sharing yours</span>}
+                        {(outgoingPermission?.status === "approved" || incomingPermission?.status === "approved") && <button onClick={() => revokeStats(friendId)} className="text-[11px] text-muted-foreground underline hover:text-destructive">Revoke sharing</button>}
+                        <button onClick={() => remove(f.id)} className="text-[11px] text-muted-foreground underline hover:text-destructive">Remove</button>
+                      </div>
+                    </div>
+                    {open && comparison && <ComparisonCard data={comparison.data} />}
+                  </div>;
+                })}
                 {outgoingRequests.map((f) => (
                   <div key={f.id} className="flex items-center justify-between rounded-xl border border-dashed border-border bg-card/50 px-3 py-2">
                     <PersonLabel person={people.get(f.addressee)} />
@@ -301,4 +348,13 @@ function PersonLabel({ person, fallbackName }: { person: PublicProfile | undefin
       </span>
     </span>
   );
+}
+
+function ComparisonCard({ data }: { data: FriendComparison }) {
+  const categories = Object.entries(data.category_minutes ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  return <div className="mt-2 rounded-xl bg-secondary p-3">
+    <div className="grid grid-cols-3 gap-2 text-center"><span><b className="block font-mono text-sm">{Math.floor(data.focus_minutes / 60)}h {data.focus_minutes % 60}m</b><small className="text-[10px] text-muted-foreground">Focus</small></span><span><b className="block font-mono text-sm">{data.session_count}</b><small className="text-[10px] text-muted-foreground">Sessions</small></span><span><b className="block font-mono text-sm">{data.weekly_consistency}/7</b><small className="text-[10px] text-muted-foreground">This week</small></span></div>
+    <p className="mt-2 text-[11px] text-muted-foreground">Level {data.level} · {data.achievements} achievements</p>
+    {categories.length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">Top categories: {categories.map(([name, minutes]) => `${name} ${minutes}m`).join(" · ")}</p>}
+  </div>;
 }

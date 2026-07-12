@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Users, DoorOpen, UserPlus } from "lucide-react";
+import { Bell, Users, DoorOpen, UserPlus, BarChart3 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchNotifications, markAllNotificationsRead, getPublicProfiles, fetchRooms,
@@ -22,6 +22,8 @@ const KIND_ICON = {
   room_invite: DoorOpen,
   room_created: DoorOpen,
   room_joined: Users,
+  stats_request: BarChart3,
+  stats_approved: BarChart3,
 } as const;
 
 function label(n: AppNotification, actor: PublicProfile | undefined, room: { name: string; mine: boolean } | undefined): string {
@@ -35,6 +37,8 @@ function label(n: AppNotification, actor: PublicProfile | undefined, room: { nam
     case "room_invite": return `${who} invited you to ${roomText}`;
     case "room_created": return `${who} started ${roomText}`;
     case "room_joined": return room?.mine ? `${who} joined your room ${roomText}` : `${who} joined ${roomText}`;
+    case "stats_request": return `${who} requested permission to compare study statistics`;
+    case "stats_approved": return `${who} approved your study statistics request`;
   }
 }
 

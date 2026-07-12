@@ -5,7 +5,7 @@ import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
   fetchMessages, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
-  setRoomMusic,
+  setRoomMusic, joinRoom, joinRoomByCode,
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
@@ -154,6 +154,8 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   const [query, setQuery] = useState("");
   const [showAllHosted, setShowAllHosted] = useState(false);
   const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
+  const [joinCode, setJoinCode] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
   const emptySince = useRef<Map<string, number>>(new Map()); // hosted roomId → ms it went empty
   const now = useNow();
 
@@ -201,7 +203,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     if (!supabase || active) return; // in a room, the lobby isn't visible
     const client = supabase;
     const channels = watchedRooms.map((room) => {
-      const ch = client.channel(`room:${room.id}`);
+      const ch = client.channel(`room:${room.id}`, { config: { private: true } });
       ch.on("presence", { event: "sync" }, () => {
         const count = Object.keys(ch.presenceState()).length;
         setOccupancy((prev) => new Map(prev).set(room.id, count));
@@ -241,12 +243,27 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetRoomId, rooms]);
 
-  const join = (room: LiveRoom) => {
+  const join = async (room: LiveRoom) => {
     if (!profile?.username) { onNeedUsername(); return; }
-    unlockAudio(); // synchronous, inside the tap — lets room music play on iOS
+    unlockAudio(); // Keep audio permission inside the user gesture for iOS.
+    setJoinError(null);
+    const result = await joinRoom(room.id);
+    if (!result.room) { setJoinError(result.error ?? "Couldn't join that room."); return; }
     track("room_join");
-    setActive(room);
+    setActive(result.room);
     notifyFriendsOfRoom(room.id, "room_joined");
+  };
+
+  const joinWithCode = async () => {
+    if (!profile?.username) { onNeedUsername(); return; }
+    if (!joinCode.trim()) return;
+    unlockAudio();
+    setJoinError(null);
+    const result = await joinRoomByCode(joinCode);
+    if (!result.room) { setJoinError(result.error ?? "Couldn't join that room."); return; }
+    setRooms((prev) => prev.some((r) => r.id === result.room!.id) ? prev : [result.room!, ...prev]);
+    setActive(result.room);
+    setJoinCode("");
   };
 
   // Keep the joined room's fields fresh from the live lobby list — so when a
@@ -323,6 +340,14 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
       </div>
 
       <HowRoomsWork />
+
+      <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-border bg-card/70 p-3 sm:flex-row">
+        <input value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} maxLength={10}
+          placeholder="Private room invite code" aria-label="Private room invite code"
+          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm uppercase tracking-widest outline-none focus:border-primary" />
+        <button onClick={joinWithCode} disabled={!joinCode.trim()} className="rounded-xl border border-primary/50 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary disabled:opacity-50">Join private room</button>
+      </div>
+      {joinError && <p className="mt-2 text-xs text-destructive">{joinError}</p>}
 
       {totalHosted > 0 && (
         <div className="relative mt-5">
@@ -405,7 +430,7 @@ function RoomCard({ room, now, count, onJoin }: { room: LiveRoom; now: number; c
           {/* Always-on community rooms aren't tied to a subject — show their
               rhythm instead of a topic. */}
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {room.is_system ? `${room.focus_min}/${room.short_min} rhythm · always on` : room.topic}
+            {room.is_system ? `${room.focus_min}/${room.short_min} rhythm · always on` : `${room.topic} · ${room.visibility === "private" ? "Private" : "Public"}`}
           </p>
         </div>
         <span className="mt-1 flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[11px] font-medium text-white" style={{ background: phaseColor(info.phase) }}>
@@ -439,6 +464,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
   const [preset, setPreset] = useState(0);
   const [cap, setCap] = useState(12);
   const [music, setMusic] = useState<FocusSoundId>("lofi");
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -448,7 +474,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
     setError(null);
     const { label, ...method } = ROOM_PRESETS[preset];
     void label;
-    const room = await createRoom(hostId, { name: name.trim(), topic: topic.trim() || "Open study", cap, music, ...method });
+    const room = await createRoom(hostId, { name: name.trim(), topic: topic.trim() || "Open study", cap, music, visibility, ...method });
     setSaving(false);
     if (!room) { setError("Couldn't create the room — try again."); return; }
     onCreated(room);
@@ -467,6 +493,12 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
             className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Topic (optional) — e.g. Beta-blockers review" maxLength={80}
             className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          <div className="grid grid-cols-2 gap-2" aria-label="Room visibility">
+            {(["public", "private"] as const).map((value) => <button key={value} onClick={() => setVisibility(value)} aria-pressed={visibility === value}
+              className={`rounded-xl border px-3 py-2 text-left text-sm capitalize transition ${visibility === value ? "border-primary bg-primary/5 font-medium" : "border-border"}`}>
+              {value}<span className="mt-0.5 block text-[10px] normal-case text-muted-foreground">{value === "public" ? "Discoverable and open" : "Invite or code required"}</span>
+            </button>)}
+          </div>
           <div className="grid grid-cols-2 gap-2">
             {ROOM_PRESETS.map((p, i) => (
               <button key={p.label} onClick={() => setPreset(i)}
@@ -591,7 +623,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
-    const ch = client.channel(`room:${room.id}`, { config: { presence: { key: userId } } });
+    const ch = client.channel(`room:${room.id}`, { config: { private: true, presence: { key: userId } } });
     ch.on("presence", { event: "sync" }, () => {
       const state = ch.presenceState<{ username: string }>();
       setMembers(Object.entries(state).map(([id, metas]) => ({ id, username: metas[0]?.username ?? "student" })));
@@ -643,6 +675,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           <p className="mt-1 text-sm text-muted-foreground">
             {room.is_system ? `Always on · ${room.focus_min}/${room.short_min} rhythm — study anything` : room.topic}
           </p>
+          {room.visibility === "private" && room.invite_code && <p className="mt-1 font-mono text-xs text-primary">Private invite code: {room.invite_code}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={() => setShowInvite(true)}

@@ -88,7 +88,7 @@ export function useRoomVoice(roomId: string, userId: string, username: string, p
       peer.audio.remove();
     };
 
-    const ch = client.channel(`room-voice:${roomId}`, { config: { presence: { key: userId } } });
+    const ch = client.channel(`room-voice:${roomId}`, { config: { private: true, presence: { key: userId } } });
     channelRef.current = ch;
 
     const signal = (event: "voice-offer" | "voice-answer" | "voice-ice", payload: Signal) => {

@@ -13,6 +13,8 @@ export type LiveRoom = {
   cycles: number;
   cap: number;
   music: string; // FocusSoundId of the room's shared track; always-on rooms are 'lofi'
+  visibility: "public" | "private";
+  invite_code: string | null;
   started_at: string;
   created_at: string;
 };
@@ -70,7 +72,7 @@ export type AppNotification = {
   id: string;
   user_id: string;
   actor_id: string | null;
-  kind: "friend_request" | "friend_accepted" | "room_invite" | "room_created" | "room_joined";
+  kind: "friend_request" | "friend_accepted" | "room_invite" | "room_created" | "room_joined" | "stats_request" | "stats_approved";
   room_id: string | null;
   read: boolean;
   created_at: string;
@@ -102,7 +104,7 @@ export async function fetchRooms(): Promise<LiveRoom[]> {
 
 export async function createRoom(
   hostId: string,
-  fields: { name: string; topic: string; focus_min: number; short_min: number; long_min: number; cycles: number; cap: number; music: string }
+  fields: { name: string; topic: string; focus_min: number; short_min: number; long_min: number; cycles: number; cap: number; music: string; visibility: "public" | "private" }
 ): Promise<LiveRoom | null> {
   if (!supabase) return null;
   const client = supabase;
@@ -124,6 +126,23 @@ export async function createRoom(
   }
   console.warn("[Roamly] createRoom failed", error.message);
   return null;
+}
+
+export async function joinRoom(roomId: string, code?: string): Promise<{ room?: LiveRoom; error?: string }> {
+  if (!supabase) return { error: "Rooms aren't available right now." };
+  const { data, error } = await supabase.rpc("join_room", { p_room: roomId, p_code: code?.trim() || null });
+  if (!error && data?.[0]) return { room: data[0] as LiveRoom };
+  if (error?.message.includes("room_access_denied")) return { error: "This private room requires an invitation or valid code." };
+  if (error?.message.includes("room_not_found")) return { error: "That room is no longer available." };
+  return { error: "Couldn't join that room — try again." };
+}
+
+export async function joinRoomByCode(code: string): Promise<{ room?: LiveRoom; error?: string }> {
+  if (!supabase) return { error: "Rooms aren't available right now." };
+  const { data, error } = await supabase.rpc("join_room_by_code", { p_code: code.trim().toUpperCase() });
+  if (!error && data?.[0]) return { room: data[0] as LiveRoom };
+  if (error?.message.includes("invalid_invite_code")) return { error: "That invite code isn't valid." };
+  return { error: "Couldn't join that room — try again." };
 }
 
 export async function deleteRoom(id: string) {
@@ -291,4 +310,33 @@ export async function getPublicProfiles(ids: string[]): Promise<Map<string, Publ
   if (error) { console.warn("[Roamly] getPublicProfiles failed", error.message); return map; }
   for (const p of (data ?? []) as PublicProfile[]) map.set(p.id, p);
   return map;
+}
+
+export type StatPermission = { owner_id: string; viewer_id: string; status: "pending" | "approved"; requested_by: string; created_at: string; updated_at: string };
+export type FriendComparison = { focus_minutes: number; session_count: number; weekly_consistency: number; achievements: number; level: number; category_minutes: Record<string, number> };
+
+export async function fetchStatPermissions(): Promise<StatPermission[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("stat_comparison_permissions").select("*").order("updated_at", { ascending: false });
+  if (error) { console.warn("[Roamly] fetchStatPermissions failed", error.message); return []; }
+  return (data ?? []) as StatPermission[];
+}
+export async function requestStatComparison(friendId: string): Promise<string | null> {
+  if (!supabase) return "Statistics aren't available right now.";
+  const { error } = await supabase.rpc("request_stat_comparison", { p_friend: friendId });
+  return error ? "Couldn't request statistics sharing." : null;
+}
+export async function respondStatComparison(viewerId: string, approve: boolean): Promise<string | null> {
+  if (!supabase) return "Statistics aren't available right now.";
+  const { error } = await supabase.rpc("respond_stat_comparison", { p_viewer: viewerId, p_approve: approve });
+  return error ? "Couldn't update that request." : null;
+}
+export async function revokeStatComparison(friendId: string): Promise<void> {
+  if (supabase) await supabase.rpc("revoke_stat_comparison", { p_friend: friendId });
+}
+export async function getFriendComparison(friendId: string): Promise<FriendComparison | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("get_friend_comparison", { p_friend: friendId });
+  if (error || !data?.[0]) return null;
+  return data[0] as FriendComparison;
 }
