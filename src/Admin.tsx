@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Crown, Search, ExternalLink, Trash2 } from "lucide-react";
 import {
-  adminSearchUsers, adminGrantPremium, sendInvite,
+  adminSearchUsers, adminGrantPremium, adminRevokePremium, sendInvite,
   adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, adminListErrors,
   adminUserActivity, adminFeedbackAction,
   type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity,
@@ -68,6 +68,17 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     setBusyId(null);
     if (result.error) { setError(result.error); return; }
     setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: true } : r)));
+  };
+
+  const revoke = async (u: AdminUser) => {
+    const label = u.display_name || u.username || u.email || "this user";
+    if (!window.confirm(`Revoke all current Premium access for ${label}? This does not cancel Stripe billing.`)) return;
+    setBusyId(`${u.id}:revoke`);
+    setError(null);
+    const result = await adminRevokePremium(u.id, "Revoked from Roamly admin portal");
+    setBusyId(null);
+    if (result.error) { setError(result.error); return; }
+    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: false } : r)));
   };
 
   const [tab, setTab] = useState<"usage" | "feedback" | "errors" | "users">("usage");
@@ -164,6 +175,12 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
               </span>
             )}
             <div className="flex shrink-0 gap-1">
+              {u.is_premium && (
+                <button onClick={() => revoke(u)} disabled={busyId !== null}
+                  className="rounded-full border border-destructive/50 px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50">
+                  {busyId === `${u.id}:revoke` ? "…" : "Revoke"}
+                </button>
+              )}
               <button onClick={() => grant(u, 1)} disabled={busyId !== null}
                 className="rounded-full border border-primary/50 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20 disabled:opacity-50">
                 {busyId === `${u.id}:1` ? "…" : "+1 month"}

@@ -54,6 +54,15 @@ export async function adminGrantPremium(userId: string, months: 1 | 12, reason?:
   return { error: "Couldn't grant Premium — try again." };
 }
 
+export async function adminRevokePremium(userId: string, reason?: string): Promise<{ revoked?: number; error?: string }> {
+  if (!supabase) return { error: "Not available right now." };
+  const { data, error } = await supabase.rpc("admin_revoke_premium", { p_user: userId, p_reason: reason?.trim() || null });
+  if (!error) return { revoked: Number(data ?? 0) };
+  if (error.message.includes("not_admin")) return { error: "You don't have admin access." };
+  console.warn("[Roamly] adminRevokePremium failed", error.message);
+  return { error: "Couldn't revoke Premium — try again." };
+}
+
 // ---- Admin analytics + feedback ----
 // Same pattern: SECURITY DEFINER RPCs that return nothing unless the caller
 // is in the admins table. All return empty fallbacks when the migration
