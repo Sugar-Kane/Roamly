@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import type { Task } from "./data";
+import type { MissedReason, PlannedStudySession, StudyEvent } from "./release3";
 
 export type Profile = {
   id: string;
@@ -262,7 +263,45 @@ export async function logFocusMinutes(date: string, minutes: number) {
   if (error) console.warn("[Roamly] logFocusMinutes failed", error.message);
 }
 
-export async function fetchRecentSessions(userId: string, days = 60): Promise<FocusSessionRow[]> {
+export async function recordFocusSession(date: string, minutes: number, task: Task | undefined, kind: StudyEvent["session_kind"]): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.rpc("record_focus_session", {
+    p_date: date, p_minutes: minutes, p_task: task?.id ?? null,
+    p_task_title: task?.title ?? null, p_category: task?.tag || "Uncategorized", p_kind: kind,
+  });
+  if (error) { console.warn("[Roamly] recordFocusSession failed", error.message); return false; }
+  return true;
+}
+
+export async function fetchStudyEvents(userId: string): Promise<StudyEvent[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("study_session_events").select("id, task_id, task_title, category, minutes, session_kind, completed_at").eq("user_id", userId).order("completed_at", { ascending: false }).limit(1000);
+  if (error) { console.warn("[Roamly] fetchStudyEvents failed", error.message); return []; }
+  return (data ?? []) as StudyEvent[];
+}
+
+export async function fetchPlannedStudySessions(userId: string): Promise<PlannedStudySession[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.from("planned_study_sessions").select("*").eq("user_id", userId).order("scheduled_for", { ascending: false }).limit(100);
+  if (error) { console.warn("[Roamly] fetchPlannedStudySessions failed", error.message); return []; }
+  return (data ?? []) as PlannedStudySession[];
+}
+
+export async function createPlannedStudySession(userId: string, row: Pick<PlannedStudySession, "task_id" | "task_title" | "category" | "scheduled_for" | "expected_minutes">): Promise<PlannedStudySession | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from("planned_study_sessions").insert({ ...row, user_id: userId }).select("*").single();
+  if (error) { console.warn("[Roamly] createPlannedStudySession failed", error.message); return null; }
+  return data as PlannedStudySession;
+}
+
+export async function updatePlannedStudySession(id: string, fields: { status?: PlannedStudySession["status"]; missed_reason?: MissedReason | null }): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("planned_study_sessions").update({ ...fields, updated_at: new Date().toISOString() }).eq("id", id);
+  if (error) { console.warn("[Roamly] updatePlannedStudySession failed", error.message); return false; }
+  return true;
+}
+
+export async function fetchRecentSessions(userId: string, days = 36_500): Promise<FocusSessionRow[]> {
   if (!supabase) return [];
   const since = new Date();
   since.setDate(since.getDate() - days);

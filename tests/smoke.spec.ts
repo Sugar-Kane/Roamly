@@ -188,6 +188,26 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByText(/Includes 7 days Premium/)).toBeVisible();
 });
 
+test("Release 3 study insights and planned sessions render", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Analytics", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Study breakdown" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "All time" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Planned study" })).toBeVisible();
+  await expect(page.getByLabel("Planned study time")).toBeVisible();
+});
+
+test("Release 3 break activities are optional and interactive", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Skip", exact: true }).first().click();
+  const activities = page.getByRole("region", { name: "Healthy break activities" });
+  await expect(activities).toBeVisible();
+  const options = activities.getByRole("button");
+  await expect(options).toHaveCount(2);
+  await options.first().click();
+  await expect(options.first()).toHaveAttribute("aria-pressed", "true");
+});
+
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
   for (const width of [320, 375, 390, 430, 768, 1280]) {

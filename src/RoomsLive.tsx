@@ -21,6 +21,7 @@ import { track } from "./track";
 import { loadPref, savePref } from "./storage";
 import type { Profile } from "./db";
 import type { Session } from "@supabase/supabase-js";
+import { HealthyBreakActivities } from "./HealthyBreakActivities";
 
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
@@ -701,6 +702,8 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         </div>
       </section>
 
+      <div className="mt-4"><HealthyBreakActivities active={info.phase !== "focus"} breakKey={`room-${room.id}-${info.phase}-${info.focusIndex}`} /></div>
+
       {/* Picture-in-Picture: the shared room timer + break chat in a floating
           window. No timer controls — a room's timer is server-synced and can't
           be paused/skipped. The chat surface shares the useRoomChat instance
@@ -798,6 +801,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         }
         extra={
           <div className="space-y-3">
+            <HealthyBreakActivities compact active={info.phase !== "focus"} breakKey={`room-focus-${room.id}-${info.phase}-${info.focusIndex}`} />
             <VoiceControls voice={voice} phase={info.phase} isPremium={isPremium} gateThen={gateThen} />
             {info.phase !== "focus"
               ? <RoomChat chat={chat} room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />

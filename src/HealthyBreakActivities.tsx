@@ -1,0 +1,50 @@
+import { useEffect, useMemo, useState } from "react";
+import { Check, Heart } from "lucide-react";
+import { loadPref, savePref } from "./storage";
+
+type Activity = { id: string; title: string; instruction: string; category: string; movement: boolean };
+const ACTIVITIES: Activity[] = [
+  { id: "water", title: "Drink water", instruction: "Take a few comfortable sips.", category: "hydrate", movement: false },
+  { id: "stand", title: "Stand up", instruction: "Change position for a moment, with support if needed.", category: "movement", movement: true },
+  { id: "back", title: "Gentle back stretch", instruction: "Lengthen your spine without pushing into discomfort.", category: "mobility", movement: true },
+  { id: "eyes", title: "Rest your eyes", instruction: "Look at something far away and soften your focus.", category: "rest", movement: false },
+  { id: "breathe", title: "Slow breaths", instruction: "Take three slow, comfortable breaths.", category: "reset", movement: false },
+  { id: "walk", title: "Brief walk", instruction: "Walk for a minute if your space and mobility allow.", category: "movement", movement: true },
+  { id: "posture", title: "Reset posture", instruction: "Let your shoulders relax and place both feet comfortably.", category: "mobility", movement: false },
+  { id: "hands", title: "Relax your hands", instruction: "Unclench your hands and gently move your fingers.", category: "mobility", movement: false },
+];
+
+export function HealthyBreakActivities({ active, breakKey, compact = false }: { active: boolean; breakKey: string; compact?: boolean }) {
+  const [completed, setCompleted] = useState<string[]>([]);
+  const picks = useMemo(() => {
+    if (!active) return [];
+    const previous = (loadPref("roamly-break-activity-last") ?? "").split(",").filter(Boolean);
+    let hash = 0; for (const c of breakKey) hash = ((hash << 5) - hash + c.charCodeAt(0)) | 0;
+    const pool = ACTIVITIES.filter((a) => !previous.includes(a.id));
+    const source = pool.length >= 2 ? pool : ACTIVITIES;
+    const first = Math.abs(hash) % source.length;
+    const second = (first + 1 + Math.abs(hash >> 3) % (source.length - 1)) % source.length;
+    return [source[first], source[second]];
+  }, [active, breakKey]);
+
+  useEffect(() => {
+    setCompleted([]);
+    if (picks.length) savePref("roamly-break-activity-last", picks.map((p) => p.id).join(","));
+  }, [breakKey, picks]);
+  if (!active || picks.length !== 2) return null;
+
+  return <section className={`rounded-2xl border border-roamly-green/30 bg-roamly-green/5 ${compact ? "p-3" : "p-4"}`} aria-label="Healthy break activities">
+    <h2 className="flex items-center gap-1.5 text-sm font-semibold"><Heart size={14} className="text-roamly-green" /> Optional break reset</h2>
+    <p className="mt-0.5 text-[11px] text-muted-foreground">Choose either, both, or neither. Your timer keeps going.</p>
+    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+      {picks.map((activity) => {
+        const done = completed.includes(activity.id);
+        return <button key={activity.id} onClick={() => setCompleted((v) => done ? v.filter((id) => id !== activity.id) : [...v, activity.id])}
+          aria-pressed={done} className={`rounded-xl border p-3 text-left transition ${done ? "border-roamly-green bg-roamly-green/10" : "border-border bg-card/70 hover:border-roamly-green/50"}`}>
+          <span className="flex items-center gap-1.5 text-xs font-semibold">{done && <Check size={13} className="text-roamly-green" />}{activity.title}</span>
+          <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">{activity.instruction}</span>
+        </button>;
+      })}
+    </div>
+  </section>;
+}

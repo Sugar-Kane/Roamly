@@ -9,7 +9,7 @@ import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc,
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, startPremiumTrial, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, type Profile } from "./db";
+import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { loadPref, savePref } from "./storage";
@@ -29,6 +29,9 @@ import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel } from "./UploadTasks";
 import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks } from "./guestData";
+import { loadGuestStudyEvents, loadGuestStudyPlans, newStudyEvent, saveGuestStudyEvents, saveGuestStudyPlans, type MissedReason, type PlannedStudySession, type StudyEvent } from "./release3";
+import { StudyInsights } from "./StudyInsights";
+import { HealthyBreakActivities } from "./HealthyBreakActivities";
 import type { Session } from "@supabase/supabase-js";
 
 export type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
@@ -53,6 +56,8 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [sessions, setSessions] = useState<FocusSession[]>(loadGuestSessions);
+  const [studyEvents, setStudyEvents] = useState<StudyEvent[]>(loadGuestStudyEvents);
+  const [plannedSessions, setPlannedSessions] = useState<PlannedStudySession[]>(loadGuestStudyPlans);
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
@@ -106,6 +111,8 @@ export default function App() {
       setProfile(null);
       const guestTasks = loadGuestTasks();
       setSessions(loadGuestSessions());
+      setStudyEvents(loadGuestStudyEvents());
+      setPlannedSessions(loadGuestStudyPlans());
       setTasks(guestTasks);
       setActiveTask(guestTasks[0]?.id ?? null);
       setTasksLoaded(true);
@@ -122,6 +129,8 @@ export default function App() {
       setProfile(nextProfile);
     })();
     fetchRecentSessions(userId).then(setSessions);
+    fetchStudyEvents(userId).then(setStudyEvents);
+    fetchPlannedStudySessions(userId).then(setPlannedSessions);
     fetchTasks(userId).then((rows) => {
       setTasks(rows);
       setActiveTask(rows[0]?.id ?? null);
@@ -137,6 +146,9 @@ export default function App() {
   useEffect(() => {
     if (!session) saveGuestSessions(sessions);
   }, [session, sessions]);
+
+  useEffect(() => { if (!session) saveGuestStudyEvents(studyEvents); }, [session, studyEvents]);
+  useEffect(() => { if (!session) saveGuestStudyPlans(plannedSessions); }, [session, plannedSessions]);
 
   // Reflect a Stripe webhook's is_premium update live, without a manual refresh.
   useEffect(() => {
@@ -162,9 +174,9 @@ export default function App() {
       if (session?.user.id) updateTask(activeTask!, { poms: nextPoms });
     }
     setSessions((prev) => addSession(prev, method.focus));
-    if (session?.user.id) {
-      logFocusMinutes(dateKey(), method.focus);
-    }
+    const event = newStudyEvent(method.focus, current, "countdown");
+    setStudyEvents((prev) => [...prev, event]);
+    if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown");
   }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks]);
 
   const timer = useTimer(method, handlePhaseComplete);
@@ -174,10 +186,26 @@ export default function App() {
     if (countUp.elapsedSeconds <= 0) return;
     if (!window.confirm(`Save this ${fmt(countUp.elapsedSeconds)} focus session to Analytics?`)) return;
     const minutes = Math.max(1, Math.ceil(countUp.stop() / 60));
+    const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
     setSessions((prev) => addSession(prev, minutes));
-    if (session?.user.id) logFocusMinutes(dateKey(), minutes);
+    setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
+    if (session?.user.id) void recordFocusSession(dateKey(), minutes, current, "count_up");
     track("count_up_complete", String(minutes));
-  }, [countUp, session?.user.id]);
+  }, [countUp, session?.user.id, activeTask, tasks]);
+
+  const createStudyPlan = useCallback(async (row: Pick<PlannedStudySession, "task_id" | "task_title" | "category" | "scheduled_for" | "expected_minutes">) => {
+    if (session?.user.id) {
+      const created = await createPlannedStudySession(session.user.id, row);
+      if (created) setPlannedSessions((prev) => [created, ...prev]);
+    } else {
+      setPlannedSessions((prev) => [{ ...row, id: crypto.randomUUID(), status: "planned", missed_reason: null }, ...prev]);
+    }
+  }, [session?.user.id]);
+
+  const updateStudyPlan = useCallback(async (id: string, fields: { status?: PlannedStudySession["status"]; missed_reason?: MissedReason | null }) => {
+    if (session?.user.id && !await updatePlannedStudySession(id, fields)) return;
+    setPlannedSessions((prev) => prev.map((plan) => plan.id === id ? { ...plan, ...fields } : plan));
+  }, [session?.user.id]);
 
   // Picture-in-Picture: pop the timer into a small always-on-top window so it
   // stays visible while the user studies in other apps/tabs (desktop Chromium).
@@ -528,7 +556,8 @@ export default function App() {
           {view === "analytics" && (
             <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
               streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
-              session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks} />
+              session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
+              studyEvents={studyEvents} plannedSessions={plannedSessions} onCreatePlan={createStudyPlan} onUpdatePlan={updateStudyPlan} />
           )}
           {/* Rooms stay MOUNTED (just hidden) on other tabs: leaving the tab no
               longer kicks you out of a room — presence, the shared timer, room
@@ -577,6 +606,7 @@ export default function App() {
           // task list. The built-in sounds keep the same card styling the
           // FocusMode `music` slot gave them.
           <div className="space-y-4">
+            <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
             <MusicPanel isPremium={isPremium} gateThen={gateThen} embed={embed} onPlay={playEmbed} />
@@ -944,6 +974,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           </div>
         </div>
       </section>
+
+      <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-main-${timer.phase}-${timer.completedFocus}`} />
 
       <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8" aria-labelledby="count-up-title">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
@@ -1673,8 +1705,8 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
   );
 }
 
-function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks }: any) {
-  // All numbers below come from the user's real focus_sessions rows (last 60
+function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks, studyEvents, plannedSessions, onCreatePlan, onUpdatePlan }: any) {
+  // All numbers below come from the user's real focus_sessions rows
   // days, one row per day) and their real tasks — nothing is mocked.
   const byDate = new Map<string, number>((sessions as FocusSession[]).map((s) => [s.date, s.minutes]));
   const DAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -1746,6 +1778,8 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         </div>
       </div>
 
+      <StudyInsights events={studyEvents} daily={sessions} tasks={tasks} plans={plannedSessions} signedIn={!!session} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} />
+
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Achievements</h2>
@@ -1789,7 +1823,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
 
       <div className="relative mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">60-day history</h2>
+          <h2 className="text-sm font-semibold">Study history</h2>
           {!isPremium && <span className="flex items-center gap-1 text-xs text-primary"><Crown size={12} /> Premium</span>}
         </div>
         <div className={`mt-2 grid grid-cols-3 gap-3 ${!isPremium ? "blur-sm" : ""}`}>
