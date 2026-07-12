@@ -94,6 +94,25 @@ export async function POST(request: Request): Promise<Response> {
     const { data: authUser } = await admin.auth.admin.getUserById(existing.id);
     const pendingInvitee = !!authUser?.user && !authUser.user.last_sign_in_at && !!authUser.user.invited_at;
     if (pendingInvitee) {
+      // Only the inviter who originally created this placeholder may delete and
+      // re-invite it. Otherwise a second inviter could wipe someone else's
+      // pending account (and their pending friendship) just by targeting the
+      // same unaccepted email. A different inviter instead simply pre-creates
+      // their own pending friend request so they connect on signup too.
+      const { data: priorInvite } = await admin
+        .from("invitations")
+        .select("id")
+        .eq("inviter_id", inviter.id)
+        .eq("invited_user_id", existing.id)
+        .limit(1)
+        .maybeSingle();
+      if (!priorInvite) {
+        await admin.from("friendships").insert({ requester: inviter.id, addressee: existing.id, status: "pending" });
+        await admin.from("notifications").insert({ user_id: existing.id, actor_id: inviter.id, kind: "friend_request" });
+        await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: existing.id });
+        apiLog("invite", "connected_pending", { inviter: inviter.id });
+        return json({ status: "invited", note: "connected_pending" }, 200);
+      }
       const { error: delErr } = await admin.auth.admin.deleteUser(existing.id);
       if (delErr) {
         console.warn("[Roamly] invite resend: deleteUser failed", delErr.message);
@@ -107,6 +126,9 @@ export async function POST(request: Request): Promise<Response> {
         if (frErr.message.includes("already_exists")) return json({ status: "friend_request", note: "already_connected" }, 200);
         return json({ error: "Couldn't send that friend request — try again." }, 500);
       }
+      // Record the send so friend requests count against the same daily caps as
+      // email invites — otherwise this branch is an uncapped notification spammer.
+      await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: existing.id });
       return json({ status: "friend_request" }, 200);
     }
   }

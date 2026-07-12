@@ -9,7 +9,7 @@ import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc,
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, type Profile } from "./db";
+import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { loadPref, savePref } from "./storage";
@@ -28,7 +28,7 @@ import { Modal } from "./Modal";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel } from "./UploadTasks";
-import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks } from "./guestData";
+import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks, clearMigratedGuestData } from "./guestData";
 import { loadGuestStudyEvents, loadGuestStudyPlans, newStudyEvent, saveGuestStudyEvents, saveGuestStudyPlans, type MissedReason, type PlannedStudySession, type StudyEvent } from "./release3";
 import { StudyInsights } from "./StudyInsights";
 import { HealthyBreakActivities } from "./HealthyBreakActivities";
@@ -120,23 +120,43 @@ export default function App() {
     }
     // Don't flash the demo SEED_TASKS at a signed-in user while theirs load.
     setTasksLoaded(false);
+    let cancelled = false;
     void (async () => {
+      // Fold any guest-mode work into the new account BEFORE loading server
+      // data, then clear local guest storage so it can't double-apply on a
+      // later sign-in. Running this first means the fetches below see the
+      // migrated rows rather than racing them.
+      const guestTasks = loadGuestTasks();
+      const guestSessions = loadGuestSessions();
+      if (guestTasks.length > 0 || guestSessions.length > 0) {
+        await migrateGuestDataToAccount(userId, guestTasks, guestSessions);
+        clearMigratedGuestData();
+      }
+
       let nextProfile = await fetchProfile(userId);
       if (session?.user.email_confirmed_at && !nextProfile?.is_premium) {
         const trialReady = await startPremiumTrial();
         if (trialReady) nextProfile = await fetchProfile(userId);
       }
+      if (cancelled) return;
       setProfile(nextProfile);
-    })();
-    fetchRecentSessions(userId).then(setSessions);
-    fetchStudyEvents(userId).then(setStudyEvents);
-    fetchPlannedStudySessions(userId).then(setPlannedSessions);
-    fetchTasks(userId).then((rows) => {
-      setTasks(rows);
-      setActiveTask(rows[0]?.id ?? null);
+
+      const [recent, events, planned, taskRows] = await Promise.all([
+        fetchRecentSessions(userId),
+        fetchStudyEvents(userId),
+        fetchPlannedStudySessions(userId),
+        fetchTasks(userId),
+      ]);
+      if (cancelled) return;
+      setSessions(recent);
+      setStudyEvents(events);
+      setPlannedSessions(planned);
+      setTasks(taskRows);
+      setActiveTask(taskRows[0]?.id ?? null);
       setTasksLoaded(true);
-    });
-    checkIsAdmin().then(setIsAdmin);
+    })();
+    checkIsAdmin().then((admin) => { if (!cancelled) setIsAdmin(admin); });
+    return () => { cancelled = true; };
   }, [session?.user.id]);
 
   useEffect(() => {
@@ -183,9 +203,14 @@ export default function App() {
   const countUp = useCountUpTimer();
 
   const completeCountUp = useCallback(() => {
-    if (countUp.elapsedSeconds <= 0) return;
-    if (!window.confirm(`Save this ${fmt(countUp.elapsedSeconds)} focus session to Analytics?`)) return;
-    const minutes = Math.max(1, Math.ceil(countUp.stop() / 60));
+    // Snapshot elapsed BEFORE the blocking confirm: countUp.stop() recomputes
+    // from startedAt at call time, so any seconds the user spends on the dialog
+    // would otherwise inflate the saved session past the duration it showed.
+    const elapsed = countUp.elapsedSeconds;
+    if (elapsed <= 0) return;
+    if (!window.confirm(`Save this ${fmt(elapsed)} focus session to Analytics?`)) return;
+    countUp.stop();
+    const minutes = Math.max(1, Math.ceil(elapsed / 60));
     const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
     setSessions((prev) => addSession(prev, minutes));
     setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
@@ -898,7 +923,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       <PomodoroExplainer />
 
       {session ? (
-        <ExamCountdownBar examDate={examDate} examName={examName} setExam={setExam} />
+        <ExamCountdownBar key={`${examDate ?? "none"}|${examName ?? ""}`} examDate={examDate} examName={examName} setExam={setExam} />
       ) : (
         <SignInPrompt onSignIn={onSignIn} message="Sign in to track your exam countdown." />
       )}

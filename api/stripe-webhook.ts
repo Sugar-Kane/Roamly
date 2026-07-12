@@ -38,7 +38,7 @@ async function processSubscription(
   if (!matched) throw new Error("profile_not_found");
   const firstItem = snapshot.items?.data?.[0];
   const periodEnd = firstItem?.current_period_end ?? snapshot.current_period_end;
-  const { data, error } = await admin.rpc("process_stripe_subscription_event", {
+  const baseParams = {
     p_event_id: event.id,
     p_event_type: event.type,
     p_user: matched.id,
@@ -46,7 +46,19 @@ async function processSubscription(
     p_status: snapshot.status,
     p_period_end: periodEnd ? new Date(periodEnd * 1000).toISOString() : new Date().toISOString(),
     p_price_id: firstItem?.price?.id ?? null,
+  };
+  // Stripe does not guarantee webhook ordering; p_event_created lets the RPC
+  // ignore an out-of-order status change (e.g. a delayed "active" arriving after
+  // a cancel). That parameter only exists after the release-6 migration, so if
+  // this code deploys first, fall back to the pre-migration signature — the
+  // webhook must never start failing just because the DB hasn't migrated yet.
+  let { data, error } = await admin.rpc("process_stripe_subscription_event", {
+    ...baseParams,
+    p_event_created: new Date(event.created * 1000).toISOString(),
   });
+  if (error && (error.code === "PGRST202" || /find the function|does not exist/i.test(error.message))) {
+    ({ data, error } = await admin.rpc("process_stripe_subscription_event", baseParams));
+  }
   if (error) throw error;
   return String(data);
 }

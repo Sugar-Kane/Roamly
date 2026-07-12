@@ -1,6 +1,6 @@
 import type { Task } from "./data";
 import type { FocusSession } from "./streaks";
-import { loadPref, savePref } from "./storage";
+import { loadPref, savePref, removePref } from "./storage";
 
 export const GUEST_TASK_LIMIT = 5;
 
@@ -34,4 +34,11 @@ export function loadGuestSessions(): FocusSession[] {
 
 export function saveGuestSessions(sessions: FocusSession[]): void {
   savePref(SESSIONS_KEY, JSON.stringify(sessions.slice(-60)));
+}
+
+// Drop the guest tasks + sessions after they've been migrated into a signed-in
+// account, so they can't be re-applied (and re-doubled) on a later sign-in.
+export function clearMigratedGuestData(): void {
+  removePref(TASKS_KEY);
+  removePref(SESSIONS_KEY);
 }

@@ -639,13 +639,37 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   // a room as empty after 60s without a beat, so this survives two dropped
   // beats); clear on leave.
   useEffect(() => {
-    heartbeatRoom(room.id, userId);
-    const iv = window.setInterval(() => heartbeatRoom(room.id, userId), 20_000);
+    const beat = () => heartbeatRoom(room.id, userId);
+    beat();
+    const iv = window.setInterval(beat, 20_000);
+    // Background tabs throttle setInterval past the 60s reap window, so also
+    // beat the instant the tab is refocused — the quickest way to reassert
+    // occupancy after the browser has been starving our timer.
+    const onVisible = () => { if (document.visibilityState === "visible") beat(); };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
       clearRoomHeartbeat(room.id, userId);
     };
   }, [room.id, userId]);
+
+  // Eject to the lobby if this room is deleted out from under us — the host
+  // ends it, or the server sweep reaps it — instead of rendering a dead timer
+  // and firing heartbeat/chat writes at a row that no longer exists. (System
+  // rooms are never deleted, so they need no watcher.)
+  const onLeaveRef = useRef(onLeave);
+  onLeaveRef.current = onLeave;
+  useEffect(() => {
+    if (!supabase || room.is_system) return;
+    const client = supabase;
+    const ch = client
+      .channel(`room-delete:${room.id}`)
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "rooms", filter: `id=eq.${room.id}` },
+        () => onLeaveRef.current())
+      .subscribe();
+    return () => { client.removeChannel(ch); };
+  }, [room.id, room.is_system]);
 
   // Chime on every shared-timer phase boundary (study session ending and break
   // ending), matching the personal timer. prevPhase seeds to the current phase
@@ -857,32 +881,41 @@ function useRoomChat(roomId: string) {
 
   // History + live inserts. subscribe() throws if this topic is somehow
   // already subscribed — guard so a duplicate can degrade to history-only
-  // instead of crashing the whole screen.
+  // instead of crashing the whole screen. Merge keyed by id (never blind-append)
+  // so a message that lands in both the history snapshot and a realtime event
+  // shows once, and load history only AFTER the subscription is live so an
+  // insert during setup can't fall through the gap between the two.
   useEffect(() => {
-    fetchMessages(roomId).then(setMessages);
     if (!supabase) return;
     const client = supabase;
+    const merge = (incoming: RoomMessage[]) =>
+      setMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        for (const m of incoming) byId.set(m.id, m);
+        return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
+      });
     try {
       const channel = client
         .channel(`room-chat:${roomId}`)
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${roomId}` },
-          (payload) => setMessages((prev) => [...prev, payload.new as RoomMessage]))
-        .subscribe();
+          (payload) => merge([payload.new as RoomMessage]))
+        .subscribe((status) => { if (status === "SUBSCRIBED") fetchMessages(roomId).then(merge); });
       return () => { client.removeChannel(channel); };
     } catch (e) {
       console.warn("[Roamly] room chat subscribe failed", e);
+      fetchMessages(roomId).then(merge); // degrade to history-only
     }
   }, [roomId]);
 
-  // Resolve sender names we haven't seen yet.
+  // Resolve sender names we haven't seen yet. Track requested ids in a ref so
+  // the fetch lives in the effect body (not inside a setState updater, which
+  // must stay pure and runs twice under StrictMode — double-firing the RPC).
+  const requestedNamesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    setNames((prev) => {
-      const unknown = [...new Set(messages.map((m) => m.user_id))].filter((id) => !prev.has(id));
-      if (unknown.length > 0) {
-        getPublicProfiles(unknown).then((fresh) => setNames((cur) => new Map([...cur, ...fresh])));
-      }
-      return prev;
-    });
+    const unknown = [...new Set(messages.map((m) => m.user_id))].filter((id) => !requestedNamesRef.current.has(id));
+    if (unknown.length === 0) return;
+    unknown.forEach((id) => requestedNamesRef.current.add(id));
+    getPublicProfiles(unknown).then((fresh) => setNames((cur) => new Map([...cur, ...fresh])));
   }, [messages]);
 
   return { messages, names };

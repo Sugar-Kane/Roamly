@@ -326,6 +326,36 @@ export async function fetchRecentSessions(userId: string, days = 36_500): Promis
   return (data ?? []) as FocusSessionRow[];
 }
 
+// Fold work done in guest (signed-out) mode into a freshly signed-in account.
+// Called once on sign-in when local guest data is present; the caller clears
+// guest storage immediately afterward so this can never run twice (a second run
+// would double each migrated day's minutes). Best-effort per item — a single
+// failed row must not abort the rest. Only the two non-overlapping guest
+// sources are migrated: the task list and the per-day focus minutes that drive
+// the streak. (Guest study-insights events aren't carried over, to avoid
+// double-counting the daily totals that log_focus_minutes already reconstructs.)
+export async function migrateGuestDataToAccount(
+  userId: string,
+  guestTasks: Task[],
+  guestSessions: FocusSessionRow[],
+): Promise<void> {
+  if (!supabase) return;
+  for (let i = 0; i < guestTasks.length; i++) {
+    const g = guestTasks[i];
+    const created = await createTask(userId, g.title, g.tag, i + 1);
+    if (created && (g.done || g.poms > 0 || g.est > 0)) {
+      await updateTask(created.id, {
+        ...(g.done ? { done: true } : {}),
+        ...(g.poms > 0 ? { poms: g.poms } : {}),
+        ...(g.est > 0 ? { est: g.est } : {}),
+      });
+    }
+  }
+  for (const s of guestSessions) {
+    if (s.minutes > 0) await logFocusMinutes(s.date, s.minutes);
+  }
+}
+
 export async function getAccessToken(): Promise<string | null> {
   if (!supabase) return null;
   const { data } = await supabase.auth.getSession();

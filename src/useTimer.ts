@@ -63,18 +63,33 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
   // effect — not inside a state updater.
   useEffect(() => {
     if (!running || deadlineRef.current == null) return;
-    const iv = window.setInterval(() => {
+    let done = false; // fire the boundary exactly once across interval + refocus
+    const check = () => {
+      if (done) return;
       const left = Math.max(0, Math.ceil((deadlineRef.current! - Date.now()) / 1000));
       if (left <= 0) {
+        done = true;
         window.clearInterval(iv);
+        document.removeEventListener("visibilitychange", onVisible);
         setRunning(false);
         onPhaseCompleteRef.current?.(phase);
         advance();
       } else {
         forceRender((n) => n + 1);
       }
-    }, 250);
-    return () => window.clearInterval(iv);
+    };
+    const iv = window.setInterval(check, 250);
+    // A backgrounded/locked tab throttles this interval, so a phase that ends
+    // while hidden would otherwise not chime, notify, or auto-advance until the
+    // next throttled tick. Re-check the moment the tab is refocused so those
+    // fire immediately on return. (A fully suspended tab still can't alert
+    // mid-phase without a service worker — this just removes the return lag.)
+    const onVisible = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [running, phase, advance]);
 
   const total = phaseLength(phase);
