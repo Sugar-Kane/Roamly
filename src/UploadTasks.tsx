@@ -81,7 +81,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
     const userId = session?.user.id;
     if (!userId) { setError("Sign in to upload study material."); return; }
     setStage("uploading");
-    setProgress(8);
+    setProgress(15);
     try {
       // Upload straight to Storage first — the file never passes through our
       // serverless function, which is capped at a 4.5MB request body by Vercel.
@@ -91,7 +91,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       setStage("reading");
       // The AI read takes ~5-30s with no progress events — creep the bar toward
       // 90% so the user can see it's alive; it jumps to 100% on completion.
-      creep.current = window.setInterval(() => setProgress((p) => Math.min(90, p + 2)), 700);
+      creep.current = window.setInterval(() => setProgress((p) => Math.min(90, p + 3)), 350);
       const token = await getAccessToken();
       if (!token) { setError("Sign in to upload study material."); setStage("idle"); return; }
       const res = await fetch("/api/generate-tasks", {
@@ -137,22 +137,22 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
     // Buying credits lifts uploadsLeft live, so the count updates without a reload.
     const canTopUp = !!session;
     return (
-      <div className="flex w-full items-center gap-2 rounded-2xl border border-dashed border-border bg-card/60 p-4 transition hover:border-primary/40">
-        <button onClick={() => setOpen(true)} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left">
-          <span className="flex items-center gap-2 text-sm font-medium">
-            <Sparkles size={16} className="shrink-0 text-primary" /> Upload notes or slides — auto-generate tasks
-          </span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {`${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}
-          </span>
+      <div className="w-full">
+        {/* A real button, so it's obviously a click-to-upload feature. */}
+        <button onClick={() => setOpen(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-2xl gradient-primary p-4 text-sm font-semibold text-white shadow-glow transition hover:opacity-95 active:scale-[0.99]">
+          <Sparkles size={16} className="shrink-0" /> Upload notes or slides — auto-generate tasks
         </button>
-        {canTopUp && onBuyCredits && (
-          <button onClick={onBuyCredits}
-            className="shrink-0 rounded-full border border-primary/50 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20 active:scale-95">
-            Top up
-          </button>
-        )}
-        <InfoTip text={CREDITS_EXPLAINER} />
+        <p className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          {`${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}
+          {canTopUp && onBuyCredits && (
+            <button onClick={onBuyCredits}
+              className="rounded-full border border-primary/50 bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary transition hover:bg-primary/20 active:scale-95">
+              Top up
+            </button>
+          )}
+          <InfoTip text={CREDITS_EXPLAINER} />
+        </p>
       </div>
     );
   }
@@ -194,7 +194,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       {(loading || stage === "done") && (
         <div className="mt-3">
           <div className="h-2 w-full overflow-hidden rounded-full bg-border">
-            <div className="h-full rounded-full bg-[hsl(var(--primary))] transition-all duration-500" style={{ width: `${progress}%` }} />
+            <div className="h-full rounded-full bg-[hsl(var(--primary))] transition-all duration-200" style={{ width: `${progress}%` }} />
           </div>
           <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
             {stage === "uploading" && "Uploading your file…"}

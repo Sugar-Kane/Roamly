@@ -11,6 +11,9 @@ export type Profile = {
   stripe_subscription_id: string | null;
   daily_goal_minutes: number;
   exam_date: string | null;
+  // Which exam the countdown is for (PANCE, EOR, USMLE Step 1, custom…).
+  // Optional so the client tolerates the pre-migration schema.
+  exam_name?: string | null;
   ai_uploads_count: number;
   ai_uploads_period: string | null;
   // Purchased AI-upload credits (never expire; used after the monthly
@@ -206,9 +209,15 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   return data as Profile;
 }
 
-export async function updateGoalAndExam(fields: { daily_goal_minutes?: number; exam_date?: string | null }) {
+export async function updateGoalAndExam(fields: { daily_goal_minutes?: number; exam_date?: string | null; exam_name?: string | null }) {
   if (!supabase) return;
-  const { error } = await supabase.from("profiles").update(fields);
+  let { error } = await supabase.from("profiles").update(fields);
+  // If the exam_name column hasn't been migrated in yet, retry without it —
+  // saving the date always beats losing the whole update.
+  if (error && fields.exam_name !== undefined && error.message.includes("exam_name")) {
+    const { exam_name: _dropped, ...rest } = fields;
+    if (Object.keys(rest).length > 0) ({ error } = await supabase.from("profiles").update(rest));
+  }
   if (error) console.warn("[Roamly] updateGoalAndExam failed", error.message);
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronUp, ChevronDown, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2 } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2 } from "lucide-react";
 import { METHODS, SEED_TASKS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
@@ -173,16 +173,22 @@ export default function App() {
     return Number.isNaN(v) ? 0.5 : v;
   });
   const [soundPlaying, setSoundPlaying] = useState(false);
+  // Bumped whenever a built-in sound is chosen; MusicPanel watches it and
+  // unmounts any playing Spotify/Apple embed — the mirror of embedTakeover,
+  // so the two music sources can never play over each other.
+  const [embedEpoch, setEmbedEpoch] = useState(0);
 
   const sounds = {
     sound: focusSound,
     auto: soundAuto,
     volume: soundVolume,
     playing: soundPlaying,
+    embedEpoch,
     choose: (id: FocusSoundId) => {
       unlockAudio(); // synchronous, inside the tap — required by iOS
       track("music_play", id);
       savePref("roamly-focus-sound", id);
+      setEmbedEpoch((e) => e + 1); // silence any streaming embed
       if (focusSound === id && soundPlaying) { stopFocusSound(); setSoundPlaying(false); return; }
       setFocusSound(id);
       startFocusSound(id, soundVolume);
@@ -290,9 +296,9 @@ export default function App() {
     setProfile((p) => (p ? { ...p, daily_goal_minutes: minutes } : p));
     updateGoalAndExam({ daily_goal_minutes: minutes });
   };
-  const setExamDate = (date: string | null) => {
-    setProfile((p) => (p ? { ...p, exam_date: date } : p));
-    updateGoalAndExam({ exam_date: date });
+  const setExam = (date: string | null, name: string | null) => {
+    setProfile((p) => (p ? { ...p, exam_date: date, exam_name: name } : p));
+    updateGoalAndExam({ exam_date: date, exam_name: name });
   };
 
   // Task CRUD: optimistic local update always; when signed in, also persist to
@@ -342,14 +348,6 @@ export default function App() {
     }
   }, [tasks, session?.user.id]);
 
-  const moveTask = useCallback((id: string, dir: -1 | 1) => {
-    const sorted = sortTasks(tasks);
-    const me = sorted.find((t) => t.id === id);
-    if (!me) return;
-    const i = sorted.filter((t) => !t.done && t.tag === me.tag).findIndex((t) => t.id === id);
-    reorderTask(id, i + dir);
-  }, [tasks, reorderTask]);
-
   const focusTask = useCallback((id: string) => {
     setActiveTask(id);
     setView("focus");
@@ -363,16 +361,6 @@ export default function App() {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: nextDone } : t)));
     if (session?.user.id) updateTask(id, { done: nextDone });
   }, [tasks, session?.user.id]);
-
-  // Lets a task's Pomodoro estimate be adjusted at any point — before starting
-  // (to override an auto-generated guess) or after (if it took fewer/more than
-  // expected). Clamped to a generous 1-20 range; auto-generated estimates start
-  // narrower (1-6, set server-side) but a manually raised estimate isn't capped there.
-  const updateTaskEst = useCallback((id: string, est: number) => {
-    const clamped = Math.max(1, Math.min(20, est));
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, est: clamped } : t)));
-    if (session?.user.id) updateTask(id, { est: clamped });
-  }, [session?.user.id]);
 
   const removeTask = useCallback((id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
@@ -459,7 +447,7 @@ export default function App() {
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
-              examDate={examDate} setExamDate={setExamDate} alerts={alerts}
+              examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               pipSupported={pipSupported} pipActive={!!pipWindow}
@@ -467,8 +455,8 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
-              addTask={addTask} toggleTask={toggleTask} removeTask={removeTask} updateTaskEst={updateTaskEst}
-              moveTask={moveTask} reorderTask={reorderTask} onFocusTask={focusTask}
+              addTask={addTask} toggleTask={toggleTask} removeTask={removeTask}
+              reorderTask={reorderTask} onFocusTask={focusTask}
               session={session} onSignIn={onSignIn} tasksLoaded={tasksLoaded}
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout}
               onBuyCredits={() => setView("premium")} />
@@ -522,7 +510,7 @@ export default function App() {
           <div className="space-y-4">
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
+            <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} stopSignal={sounds.embedEpoch} />
           </div>
         } />
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
@@ -647,27 +635,50 @@ function localTodayISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function ExamCountdownBar({ examDate, setExamDate }: any) {
+// The board exams PA (and med) students most often count down to. "Custom…"
+// covers everything else (shelf exams, finals, quizzes) with a free-text name.
+const EXAM_OPTIONS = [
+  "PANCE", "PANRE", "EOR (End of Rotation)",
+  "USMLE Step 1", "USMLE Step 2 CK", "USMLE Step 3",
+  "COMLEX Level 1", "COMLEX Level 2-CE", "COMLEX Level 3",
+  "MCAT",
+];
+
+function ExamCountdownBar({ examDate, examName, setExam }: any) {
   const [editing, setEditing] = useState(!examDate);
   const [draft, setDraft] = useState(examDate ?? "");
+  const isListed = !examName || EXAM_OPTIONS.includes(examName);
+  const [examPick, setExamPick] = useState(() => (examName ? (isListed ? examName : "custom") : "PANCE"));
+  const [customName, setCustomName] = useState(isListed ? "" : examName ?? "");
   const todayStr = localTodayISO();
   const isPast = !!draft && draft < todayStr;
 
   const save = () => {
     if (!draft || isPast) return; // the exam can't be in the past
-    setExamDate(draft);
+    const name = examPick === "custom" ? (customName.trim().slice(0, 60) || "exam") : examPick;
+    setExam(draft, name);
     setEditing(false);
   };
 
   if (editing) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+      <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
         <div className="flex items-center gap-2">
           <CalendarClock size={16} className="text-primary" />
-          <span className="text-sm font-medium">Set your PANCE exam date</span>
-          <InfoTip text="Roamly keeps a live day countdown to your exam at the top of the Focus tab — a little pressure, applied kindly." />
+          <span className="text-sm font-medium">Set your exam date</span>
+          <InfoTip text="Pick your board exam — PANCE, EOR, USMLE, COMLEX, MCAT — or name your own. Roamly keeps a live day countdown at the top of the Focus tab: a little pressure, applied kindly." />
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select value={examPick} onChange={(e) => setExamPick(e.target.value)} aria-label="Which exam"
+            className="rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+            {EXAM_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
+            <option value="custom">Custom…</option>
+          </select>
+          {examPick === "custom" && (
+            <input value={customName} onChange={(e) => setCustomName(e.target.value)} maxLength={60}
+              placeholder="Exam name (e.g. Cardio final)"
+              className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 sm:flex-none sm:w-52" />
+          )}
           <input type="date" value={draft} min={todayStr} onChange={(e) => setDraft(e.target.value)}
             className="rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           {isPast && <span className="w-full text-xs text-destructive sm:w-auto">Pick today or a future date.</span>}
@@ -688,18 +699,19 @@ function ExamCountdownBar({ examDate, setExamDate }: any) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const exam = new Date(`${examDate}T00:00:00`); // local-time parse, not UTC
   const days = Math.ceil((exam.getTime() - today.getTime()) / 86400000);
+  const label = examName || "exam";
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
       <div className="flex items-center gap-2">
-        <CalendarClock size={16} className="text-primary" />
+        <CalendarClock size={16} className="shrink-0 text-primary" />
         <span className="text-sm">
-          {days > 0 && <><span className="font-display text-lg font-semibold">{days}</span> day{days === 1 ? "" : "s"} until your exam</>}
-          {days === 0 && "Your exam is today — good luck!"}
-          {days < 0 && "Your exam date has passed"}
+          {days > 0 && <><span className="font-display text-lg font-semibold">{days}</span> day{days === 1 ? "" : "s"} until your <span className="font-medium">{label}</span></>}
+          {days === 0 && `Your ${label} is today — good luck!`}
+          {days < 0 && `Your ${label} date has passed`}
         </span>
       </div>
-      <button onClick={() => setEditing(true)} className="text-xs text-muted-foreground underline">Change</button>
+      <button onClick={() => setEditing(true)} className="shrink-0 text-xs text-muted-foreground underline">Change</button>
     </div>
   );
 }
@@ -758,7 +770,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, setExamDate, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -771,7 +783,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       <PomodoroExplainer />
 
       {session ? (
-        <ExamCountdownBar examDate={examDate} setExamDate={setExamDate} />
+        <ExamCountdownBar examDate={examDate} examName={examName} setExam={setExam} />
       ) : (
         <SignInPrompt onSignIn={onSignIn} message="Sign in to track your exam countdown." />
       )}
@@ -850,7 +862,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} />
+      <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} stopSignal={sounds.embedEpoch} />
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
@@ -1092,7 +1104,7 @@ function FocusSoundsPanel({ sounds }: any) {
   );
 }
 
-function MusicPanel({ isPremium, gateThen, onEmbedPlay }: any) {
+function MusicPanel({ isPremium, gateThen, onEmbedPlay, stopSignal }: any) {
   const [service, setService] = useState<"spotify" | "apple">("spotify");
 
   const [spotifySelectedId, setSpotifySelectedId] = useState<string | null>(null);
@@ -1104,6 +1116,19 @@ function MusicPanel({ isPremium, gateThen, onEmbedPlay }: any) {
   const [appleCustomUrl, setAppleCustomUrl] = useState("");
   const [appleCustomError, setAppleCustomError] = useState(false);
   const [appleCustomTarget, setAppleCustomTarget] = useState<{ type: AppleMusicEmbedType; path: string } | null>(null);
+
+  // Choosing a built-in focus sound bumps stopSignal (App). Deselect any
+  // playing embed — unmounting the iframe is the only reliable way to stop a
+  // cross-origin Spotify/Apple player. Skips the initial mount.
+  const stopSeen = useRef(stopSignal);
+  useEffect(() => {
+    if (stopSignal === stopSeen.current) return;
+    stopSeen.current = stopSignal;
+    setSpotifySelectedId(null);
+    setSpotifyCustomTarget(null);
+    setAppleSelectedId(null);
+    setAppleCustomTarget(null);
+  }, [stopSignal]);
 
   const spotifyPreset = spotifySelectedId ? SPOTIFY_PRESETS.find((p) => p.id === spotifySelectedId) ?? null : null;
   const spotifyTarget = spotifyCustomTarget ?? (spotifyPreset ? { type: spotifyPreset.type, id: spotifyPreset.spotifyId } : null);
@@ -1292,7 +1317,7 @@ function TagPill({ tag }: { tag: string }) {
 
 type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, updateTaskEst, moveTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
@@ -1425,7 +1450,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3. Use the −/+ buttons to adjust an estimate. To reorder within a subject, drag the ⋮⋮ handle (or press and hold a task), or use the arrows." />
+        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3 (estimates come from the AI or default to 1). To reorder within a subject, drag the ⋮⋮ handle — or press and hold a task on touch screens." />
       </p>
       {tasks.length > 0 && (
         <div className="mt-4">
@@ -1542,25 +1567,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
                             <Play size={13} />
                           </button>
                         )}
-                        <button onClick={() => updateTaskEst(t.id, t.est - 1)} aria-label="Decrease estimated Pomodoros"
-                          className="grid h-7 w-6 place-items-center rounded text-muted-foreground transition hover:text-foreground">
-                          <Minus size={11} />
-                        </button>
                         <span className="w-8 text-center font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
-                        <button onClick={() => updateTaskEst(t.id, t.est + 1)} aria-label="Increase estimated Pomodoros"
-                          className="grid h-7 w-6 place-items-center rounded text-muted-foreground transition hover:text-foreground">
-                          <Plus size={11} />
-                        </button>
-                        <span className="flex flex-col">
-                          <button onClick={() => moveTask(t.id, -1)} disabled={i === 0} aria-label="Move task up"
-                            className="grid h-3.5 w-6 place-items-center text-muted-foreground transition hover:text-foreground disabled:opacity-25">
-                            <ChevronUp size={13} />
-                          </button>
-                          <button onClick={() => moveTask(t.id, 1)} disabled={i === groupTasks.length - 1} aria-label="Move task down"
-                            className="grid h-3.5 w-6 place-items-center text-muted-foreground transition hover:text-foreground disabled:opacity-25">
-                            <ChevronDown size={13} />
-                          </button>
-                        </span>
                         <button onClick={() => removeTask(t.id)} aria-label={`Delete ${t.title}`}
                           className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:text-destructive">
                           <X size={15} />

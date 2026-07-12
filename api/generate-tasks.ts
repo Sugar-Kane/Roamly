@@ -272,7 +272,10 @@ export async function POST(request: Request): Promise<Response> {
         (existingTags.length > 0
           ? `The student's existing subjects are: ${existingTags.join(", ")}. Reuse one of those subjects whenever the material fits it; only introduce a new subject when none of them match, and use that same new subject consistently across related tasks. `
           : "The student has no subjects yet — create apt short subject labels from the material and use each consistently across related tasks. ") +
-        "Estimate 'est' as a rough number of 25-minute focus sessions (Pomodoros) the task would take, between 1 and 6. " +
+        "Estimate 'est' as the number of 25-minute focus sessions (Pomodoros) a typical student needs to genuinely learn that topic — think critically about density and difficulty. " +
+        "A quick recap, a definitions list, or a short handout section is 1; a substantial lecture topic with mechanisms or drug names to memorize is 2-3; reserve 4-6 for truly dense, exam-heavy material. " +
+        "Most tasks should be 1-2 — estimate conservatively rather than inflating. " +
+        "Sanity-check the total: added up, the est values should roughly match how long the whole upload takes to study (a typical single-lecture upload totals about 3-6 sessions across all its tasks). " +
         "Return at most 15 tasks, ordered by how the material is organized.",
       messages: [
         {

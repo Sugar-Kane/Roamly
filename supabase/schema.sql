@@ -17,6 +17,7 @@ create table public.profiles (
   stripe_subscription_id text,
   daily_goal_minutes int not null default 120,
   exam_date date,
+  exam_name text check (exam_name is null or char_length(exam_name) <= 60),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   ai_uploads_count int not null default 0,
@@ -50,7 +51,7 @@ create policy "profiles_update_own"
 -- role), never the client. username/display_name are also excluded: they're
 -- only set through the set_username() RPC, which validates the format.
 revoke update on public.profiles from authenticated;
-grant update (daily_goal_minutes, exam_date) on public.profiles to authenticated;
+grant update (daily_goal_minutes, exam_date, exam_name) on public.profiles to authenticated;
 
 -- No insert policy for authenticated/anon: profile rows are created only by
 -- the trigger below (running as security definer), never directly by the client.
