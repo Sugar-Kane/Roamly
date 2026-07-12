@@ -489,7 +489,9 @@ create table public.notifications (
   user_id uuid not null references auth.users (id) on delete cascade,
   actor_id uuid references auth.users (id) on delete set null,
   kind text not null check (kind in ('friend_request', 'friend_accepted', 'room_invite', 'room_created', 'room_joined')),
-  room_id uuid references public.rooms (id) on delete cascade,
+  -- SET NULL, not CASCADE: hosted rooms are reaped ~60s after emptying, and a
+  -- cascade silently deleted room invites before invitees ever saw them.
+  room_id uuid references public.rooms (id) on delete set null,
   read boolean not null default false,
   created_at timestamptz not null default now()
 );

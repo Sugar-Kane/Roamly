@@ -24,15 +24,17 @@ const KIND_ICON = {
   room_joined: Users,
 } as const;
 
-function label(n: AppNotification, actor: PublicProfile | undefined, roomName: string | undefined): string {
+function label(n: AppNotification, actor: PublicProfile | undefined, room: { name: string; mine: boolean } | undefined): string {
   const who = displayNameOf(actor);
-  const room = roomName ? `“${roomName}”` : "a study room";
+  // room_id goes null when the room has since ended (rooms are reaped once
+  // empty) — the notification survives with an honest fallback.
+  const roomText = room ? `“${room.name}”` : n.room_id ? "a study room" : "a study room (it has since ended)";
   switch (n.kind) {
     case "friend_request": return `${who} sent you a friend request`;
     case "friend_accepted": return `${who} accepted your friend request`;
-    case "room_invite": return `${who} invited you to ${room}`;
-    case "room_created": return `${who} started ${room}`;
-    case "room_joined": return `${who} joined ${room}`;
+    case "room_invite": return `${who} invited you to ${roomText}`;
+    case "room_created": return `${who} started ${roomText}`;
+    case "room_joined": return room?.mine ? `${who} joined your room ${roomText}` : `${who} joined ${roomText}`;
   }
 }
 
@@ -43,7 +45,7 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends }: {
 }) {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [actors, setActors] = useState<Map<string, PublicProfile>>(new Map());
-  const [roomNames, setRoomNames] = useState<Map<string, string>>(new Map());
+  const [roomInfo, setRoomInfo] = useState<Map<string, { name: string; mine: boolean }>>(new Map());
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +62,7 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends }: {
       const actorIds = [...new Set(rows.map((n) => n.actor_id).filter(Boolean))] as string[];
       setActors(await getPublicProfiles(actorIds));
       const rooms = await fetchRooms();
-      if (!cancelled) setRoomNames(new Map(rooms.map((r) => [r.id, r.name])));
+      if (!cancelled) setRoomInfo(new Map(rooms.map((r) => [r.id, { name: r.name, mine: r.host_id === userId }])));
     };
     load();
 
@@ -124,13 +126,19 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends }: {
           <div className="max-h-80 overflow-y-auto">
             {items.map((n) => {
               const Icon = KIND_ICON[n.kind];
+              const room = n.room_id ? roomInfo.get(n.room_id) : undefined;
               return (
                 <button key={n.id} onClick={() => activate(n)}
                   className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-primary/5">
                   <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Icon size={13} /></span>
-                  <span className="min-w-0">
-                    <span className="block text-sm leading-snug">{label(n, n.actor_id ? actors.get(n.actor_id) : undefined, n.room_id ? roomNames.get(n.room_id) : undefined)}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm leading-snug">{label(n, n.actor_id ? actors.get(n.actor_id) : undefined, room)}</span>
                     <span className="block text-[11px] text-muted-foreground">{timeAgo(n.created_at)}</span>
+                    {n.kind === "room_invite" && n.room_id && room && (
+                      <span className="mt-1 inline-block rounded-full gradient-primary px-3 py-1 text-[11px] font-semibold text-white shadow-glow">
+                        Accept & join
+                      </span>
+                    )}
                   </span>
                 </button>
               );

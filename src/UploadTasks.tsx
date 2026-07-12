@@ -144,7 +144,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
           <Sparkles size={16} className="shrink-0" /> Upload notes or slides — auto-generate tasks
         </button>
         <p className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-          {`${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}
+          {`You have ${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}
           {canTopUp && onBuyCredits && (
             <button onClick={onBuyCredits}
               className="rounded-full border border-primary/50 bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary transition hover:bg-primary/20 active:scale-95">

@@ -294,11 +294,11 @@ export default function App() {
 
   const setDailyGoal = (minutes: number) => {
     setProfile((p) => (p ? { ...p, daily_goal_minutes: minutes } : p));
-    updateGoalAndExam({ daily_goal_minutes: minutes });
+    if (session?.user.id) updateGoalAndExam(session.user.id, { daily_goal_minutes: minutes });
   };
   const setExam = (date: string | null, name: string | null) => {
     setProfile((p) => (p ? { ...p, exam_date: date, exam_name: name } : p));
-    updateGoalAndExam({ exam_date: date, exam_name: name });
+    if (session?.user.id) updateGoalAndExam(session.user.id, { exam_date: date, exam_name: name });
   };
 
   // Task CRUD: optimistic local update always; when signed in, also persist to

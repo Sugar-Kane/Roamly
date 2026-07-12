@@ -209,14 +209,17 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   return data as Profile;
 }
 
-export async function updateGoalAndExam(fields: { daily_goal_minutes?: number; exam_date?: string | null; exam_name?: string | null }) {
+// NOTE the explicit .eq(id) filter: without it this update silently fails
+// (production data showed every profile still at the defaults — goals and
+// exam dates never persisted while the optimistic UI looked saved).
+export async function updateGoalAndExam(userId: string, fields: { daily_goal_minutes?: number; exam_date?: string | null; exam_name?: string | null }) {
   if (!supabase) return;
-  let { error } = await supabase.from("profiles").update(fields);
+  let { error } = await supabase.from("profiles").update(fields).eq("id", userId);
   // If the exam_name column hasn't been migrated in yet, retry without it —
   // saving the date always beats losing the whole update.
   if (error && fields.exam_name !== undefined && error.message.includes("exam_name")) {
     const { exam_name: _dropped, ...rest } = fields;
-    if (Object.keys(rest).length > 0) ({ error } = await supabase.from("profiles").update(rest));
+    if (Object.keys(rest).length > 0) ({ error } = await supabase.from("profiles").update(rest).eq("id", userId));
   }
   if (error) console.warn("[Roamly] updateGoalAndExam failed", error.message);
 }
