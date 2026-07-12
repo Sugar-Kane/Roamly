@@ -72,7 +72,8 @@ test("sign-up form rejects a weak password", async ({ page }) => {
 test("a task can be added locally", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks" }).click();
-  await page.getByPlaceholder("Add a study task…").fill("Smoke test task");
+  await page.getByPlaceholder(/Add a study task/).fill("Smoke test task");
+  await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
   await expect(page.getByText("Smoke test task")).toBeVisible();
 });
@@ -80,10 +81,61 @@ test("a task can be added locally", async ({ page }) => {
 test("a task can be completed locally", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByPlaceholder(/Add a study task/).fill("Complete me");
+  await page.getByLabel("New subject name").fill("Testing");
+  await page.getByRole("button", { name: "Add task", exact: true }).click();
   const before = await page.getByText(/of \d+ done/).textContent();
-  await page.getByRole("button", { name: /Mark Pharm flashcards.*done/ }).click();
+  await page.getByRole("button", { name: "Mark Complete me done" }).click();
   await expect(page.getByText(/of \d+ done/)).not.toHaveText(before ?? "");
   await expect(page.getByText(/Completed · \d+/)).toBeVisible();
+});
+
+test("guest tasks persist and stop at five", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Tasks" }).click();
+  for (let i = 1; i <= 5; i++) {
+    await page.getByPlaceholder(/Add a study task/).fill(`Guest task ${i}`);
+    if (i === 1) await page.getByLabel("New subject name").fill("Guest");
+    await page.getByRole("button", { name: "Add task", exact: true }).click();
+  }
+  await expect(page.getByText(/reached the 5-task guest limit/i)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add task", exact: true })).toBeDisabled();
+  await page.reload();
+  await page.getByRole("button", { name: "Tasks" }).click();
+  await expect(page.getByText("Guest task 1")).toBeVisible();
+  await expect(page.getByText("Guest task 5")).toBeVisible();
+});
+
+test("count-up timer starts, pauses, and can be reset", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Start count-up timer" }).click();
+  await page.waitForTimeout(1200);
+  await page.getByRole("button", { name: "Pause count-up timer" }).click();
+  await expect(page.getByRole("button", { name: "Resume count-up timer" })).toBeVisible();
+  await page.getByRole("button", { name: "Reset count-up timer" }).click();
+  await expect(page.getByRole("button", { name: "Start count-up timer" })).toBeVisible();
+});
+
+test("guest count-up completion is saved to analytics", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Start count-up timer" }).click();
+  await page.waitForTimeout(1100);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Stop & save" }).click();
+  await page.getByRole("button", { name: "Analytics" }).click();
+  await expect(page.getByText("1 / 120 min")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Analytics" }).click();
+  await expect(page.getByText("1 / 120 min")).toBeVisible();
+});
+
+test("completion sound preference persists", async ({ page }) => {
+  await goHome(page);
+  const toggle = page.getByRole("switch", { name: /Completion sound on/ });
+  await toggle.click();
+  await expect(page.getByRole("switch", { name: /Completion sound off/ })).toHaveAttribute("aria-checked", "false");
+  await page.reload();
+  await expect(page.getByRole("switch", { name: /Completion sound off/ })).toHaveAttribute("aria-checked", "false");
 });
 
 test("premium feature prompts sign-in when logged out", async ({ page }) => {
@@ -106,7 +158,7 @@ test("pop-out timer button shows when Document PiP is supported", async ({ page 
 test("AI upload requires sign-in when logged out", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks" }).click();
-  await expect(page.getByText("Sign in to save your tasks across devices.")).toBeVisible();
+  await expect(page.getByText(/Guest tasks stay on this device/)).toBeVisible();
   // The upload panel (with its file-type allowlist) only renders for sessions.
   await expect(page.getByText(/Upload notes or slides/)).toHaveCount(0);
 });
@@ -119,6 +171,26 @@ test("no horizontal overflow on any tab", async ({ page }) => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `${tab} tab overflows horizontally`).toBeLessThanOrEqual(1);
   }
+});
+
+test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
+  for (const width of [320, 375, 390, 430, 768, 1280]) {
+    await page.setViewportSize({ width, height: width >= 768 ? 800 : 844 });
+    await goHome(page);
+    for (const tab of ["Focus", "Tasks", "Rooms", "Analytics"]) {
+      await page.getByRole("button", { name: tab, exact: true }).click();
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `${tab} overflows at ${width}px`).toBeLessThanOrEqual(1);
+    }
+  }
+});
+
+test("Spotify and Apple Music choices are visible without opening a popup", async ({ page }) => {
+  await goHome(page);
+  await expect(page.getByRole("button", { name: "Spotify", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apple Music", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("starting the timer counts down", async ({ page }) => {

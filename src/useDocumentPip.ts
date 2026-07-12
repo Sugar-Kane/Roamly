@@ -81,7 +81,7 @@ export function useDocumentPip(theme: Theme, a11y: A11ySettings) {
     let pip: Window;
     try {
       // MUST be the first await after the user gesture, or the request is denied.
-      pip = await api.requestWindow({ width: opts?.width ?? 320, height: opts?.height ?? 360 });
+      pip = await api.requestWindow({ width: opts?.width ?? 240, height: opts?.height ?? 270 });
     } catch {
       return null; // denied / unsupported / already open — no-op
     }

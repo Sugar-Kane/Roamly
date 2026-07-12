@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Phase } from "./useTimer";
+import { playChime } from "./focusSounds";
+import { loadPref, savePref } from "./storage";
 
 const PHASE_MESSAGE: Record<Phase, string> = {
   focus: "Focus session complete — time for a break.",
@@ -17,6 +19,7 @@ export function useEndOfPhaseAlerts() {
   const [permission, setPermission] = useState<Permission>(
     supported ? Notification.permission : "unsupported"
   );
+  const [soundEnabled, setSoundEnabledState] = useState(() => loadPref("roamly-completion-sound") !== "off");
 
   const flashTimer = useRef<number | null>(null);
   const originalTitle = useRef<string | null>(null);
@@ -57,13 +60,19 @@ export function useEndOfPhaseAlerts() {
   }, [supported]);
 
   const notify = useCallback((finishedPhase: Phase) => {
+    if (soundEnabled) playChime();
     if (supported && Notification.permission === "granted") {
       try {
         new Notification("Roamly Focus", { body: PHASE_MESSAGE[finishedPhase] });
       } catch { /* some browsers restrict Notification construction; ignore */ }
     }
     if (document.hidden) startFlashing();
-  }, [supported, startFlashing]);
+  }, [supported, startFlashing, soundEnabled]);
 
-  return { permission, requestPermission, notify };
+  const setSoundEnabled = useCallback((enabled: boolean) => {
+    setSoundEnabledState(enabled);
+    savePref("roamly-completion-sound", enabled ? "on" : "off");
+  }, []);
+
+  return { permission, requestPermission, notify, soundEnabled, setSoundEnabled };
 }

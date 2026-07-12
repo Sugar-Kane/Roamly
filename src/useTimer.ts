@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Method } from "./data";
-import { playChime } from "./focusSounds";
 
 export type Phase = "focus" | "short" | "long";
 
@@ -68,7 +67,6 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
       const left = Math.max(0, Math.ceil((deadlineRef.current! - Date.now()) / 1000));
       if (left <= 0) {
         window.clearInterval(iv);
-        playChime(); // end-of-phase cue (session end + break over)
         setRunning(false);
         onPhaseCompleteRef.current?.(phase);
         advance();

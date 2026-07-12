@@ -59,6 +59,7 @@ type RoomsLiveProps = {
   // honors it as the mute path. onInRoom lets App hand audio control to the
   // room (so the personal-timer sound effect doesn't fight it).
   soundAuto: boolean;
+  completionSoundEnabled: boolean;
   onInRoom: (inRoom: boolean) => void;
   // Bumped by App when the user confirms starting a solo timer while in a
   // room — the lobby leaves the active room so only one timer runs at a time.
@@ -144,7 +145,7 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom, leaveSignal, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
+function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, completionSoundEnabled, onInRoom, leaveSignal, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [active, setActive] = useState<LiveRoom | null>(null);
   const [occupancy, setOccupancy] = useState<Map<string, number>>(new Map());
@@ -273,7 +274,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   if (active) {
     return (
       <RoomView room={active} session={session} profile={profile} now={now}
-        isPremium={isPremium} gateThen={gateThen} soundAuto={soundAuto} onInRoom={onInRoom}
+        isPremium={isPremium} gateThen={gateThen} soundAuto={soundAuto} completionSoundEnabled={completionSoundEnabled} onInRoom={onInRoom}
         pipSupported={pipSupported} pipWindow={pipWindow} onPopOut={onPopOut} onClosePip={onClosePip}
         onImportedTasks={onImportedTasks} onUpgrade={onUpgrade}
         onMusicChange={(music) => setActive((prev) => (prev ? { ...prev, music } : prev))}
@@ -499,7 +500,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
 
 type Member = { id: string; username: string };
 
-function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, onInRoom, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade, onMusicChange, onLeave, onEnded }: {
+function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, completionSoundEnabled, onInRoom, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade, onMusicChange, onLeave, onEnded }: {
   room: LiveRoom;
   session: Session;
   profile: Profile | null;
@@ -507,6 +508,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   isPremium: boolean;
   gateThen: (fn: () => void) => void;
   soundAuto: boolean;
+  completionSoundEnabled: boolean;
   onInRoom: (inRoom: boolean) => void;
   pipSupported: boolean;
   pipWindow: Window | null;
@@ -619,9 +621,9 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   useEffect(() => {
     if (prevPhase.current !== info.phase) {
       prevPhase.current = info.phase;
-      playChime();
+      if (completionSoundEnabled) playChime();
     }
-  }, [info.phase]);
+  }, [info.phase, completionSoundEnabled]);
 
   // Ending is host-only and blocked during focus, so a host can't pull the room
   // out from under people who are mid-session.

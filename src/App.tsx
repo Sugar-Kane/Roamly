@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2 } from "lucide-react";
-import { METHODS, SEED_TASKS, THEMES, sortTasks, tagColor, type Task } from "./data";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil } from "lucide-react";
+import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
@@ -21,12 +21,14 @@ import { RoomsLive } from "./RoomsLive";
 import { FocusMode, CompactSounds, TimeDisplay, InfoTip } from "./FocusMode";
 import { PipTimer } from "./PipTimer";
 import { useDocumentPip, applyThemeToPip } from "./useDocumentPip";
+import { useCountUpTimer } from "./useCountUpTimer";
 import { Tutorial } from "./Tutorial";
 import { AdminView } from "./Admin";
 import { Modal } from "./Modal";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel } from "./UploadTasks";
+import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks } from "./guestData";
 import type { Session } from "@supabase/supabase-js";
 
 export type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
@@ -36,9 +38,9 @@ export default function App() {
   const [immersive, setImmersive] = useState(false); // personal focus-mode takeover
   const [methodId, setMethodId] = useState("classic");
   const [themeId, setThemeId] = useState("coffee");
-  const [tasks, setTasks] = useState<Task[]>(SEED_TASKS);
+  const [tasks, setTasks] = useState<Task[]>(loadGuestTasks);
   const [tasksLoaded, setTasksLoaded] = useState(false);
-  const [activeTask, setActiveTask] = useState<string | null>("t1");
+  const [activeTask, setActiveTask] = useState<string | null>(() => loadGuestTasks()[0]?.id ?? null);
   const [showUpsell, setShowUpsell] = useState(false);
   // User-editable values for the Custom method (minutes).
   const [custom, setCustom] = useState({ focus: 30, short: 7, long: 20, cycles: 4 });
@@ -50,7 +52,7 @@ export default function App() {
 
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [sessions, setSessions] = useState<FocusSession[]>([]);
+  const [sessions, setSessions] = useState<FocusSession[]>(loadGuestSessions);
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
@@ -96,16 +98,17 @@ export default function App() {
   }, []);
 
   // Load this user's profile, recent focus sessions, and tasks whenever they sign
-  // in/out. Signed-out users keep working with the local in-memory demo tasks.
+  // in/out. Signed-out users keep working with their local guest data.
   useEffect(() => {
     const userId = session?.user.id;
     setTrackUser(userId ?? null);
     if (!userId) {
       setProfile(null);
-      setSessions([]);
-      setTasks(SEED_TASKS);
-      setActiveTask(SEED_TASKS[0]?.id ?? null);
-      setTasksLoaded(true); // demo tasks are immediately "ready"
+      const guestTasks = loadGuestTasks();
+      setSessions(loadGuestSessions());
+      setTasks(guestTasks);
+      setActiveTask(guestTasks[0]?.id ?? null);
+      setTasksLoaded(true);
       return;
     }
     // Don't flash the demo SEED_TASKS at a signed-in user while theirs load.
@@ -119,6 +122,14 @@ export default function App() {
     });
     checkIsAdmin().then(setIsAdmin);
   }, [session?.user.id]);
+
+  useEffect(() => {
+    if (!session && tasksLoaded) saveGuestTasks(tasks);
+  }, [session, tasksLoaded, tasks]);
+
+  useEffect(() => {
+    if (!session) saveGuestSessions(sessions);
+  }, [session, sessions]);
 
   // Reflect a Stripe webhook's is_premium update live, without a manual refresh.
   useEffect(() => {
@@ -143,13 +154,23 @@ export default function App() {
       setTasks((prev) => prev.map((t) => (t.id === activeTask ? { ...t, poms: nextPoms } : t)));
       if (session?.user.id) updateTask(activeTask!, { poms: nextPoms });
     }
+    setSessions((prev) => addSession(prev, method.focus));
     if (session?.user.id) {
-      setSessions((prev) => addSession(prev, method.focus));
       logFocusMinutes(dateKey(), method.focus);
     }
   }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks]);
 
   const timer = useTimer(method, handlePhaseComplete);
+  const countUp = useCountUpTimer();
+
+  const completeCountUp = useCallback(() => {
+    if (countUp.elapsedSeconds <= 0) return;
+    if (!window.confirm(`Save this ${fmt(countUp.elapsedSeconds)} focus session to Analytics?`)) return;
+    const minutes = Math.max(1, Math.ceil(countUp.stop() / 60));
+    setSessions((prev) => addSession(prev, minutes));
+    if (session?.user.id) logFocusMinutes(dateKey(), minutes);
+    track("count_up_complete", String(minutes));
+  }, [countUp, session?.user.id]);
 
   // Picture-in-Picture: pop the timer into a small always-on-top window so it
   // stays visible while the user studies in other apps/tabs (desktop Chromium).
@@ -232,8 +253,8 @@ export default function App() {
   const handleInRoom = useCallback((v: boolean) => {
     inRoomRef.current = v;
     setRoomActive(v);
-    if (v) { timerRef.current.reset(); setImmersive(false); }
-  }, []);
+    if (v) { timerRef.current.reset(); countUp.reset(); setImmersive(false); }
+  }, [countUp.reset]);
   // …and starting a solo session while in a room asks the user to leave it
   // first (bumping leaveSignal makes RoomsLive exit the active room).
   const [leaveSignal, setLeaveSignal] = useState(0);
@@ -326,7 +347,7 @@ export default function App() {
         if (row) setTasks((prev) => [...prev, row]);
       });
     } else {
-      setTasks((prev) => [...prev, { id: crypto.randomUUID(), title, tag, done: false, poms: 0, est: 2, sort_order: nextOrder }]);
+      setTasks((prev) => prev.length >= GUEST_TASK_LIMIT ? prev : [...prev, { id: crypto.randomUUID(), title, tag, done: false, poms: 0, est: 2, sort_order: nextOrder }]);
     }
   }, [session?.user.id, tasks]);
 
@@ -379,6 +400,13 @@ export default function App() {
   const removeTask = useCallback((id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     if (session?.user.id) deleteTask(id);
+  }, [session?.user.id]);
+
+  const editTask = useCallback((id: string, title: string) => {
+    const nextTitle = title.trim();
+    if (!nextTitle) return;
+    setTasks((prev) => prev.map((task) => task.id === id ? { ...task, title: nextTitle } : task));
+    if (session?.user.id) updateTask(id, { title: nextTitle });
   }, [session?.user.id]);
 
   // Tasks generated server-side by /api/generate-tasks are already persisted —
@@ -463,6 +491,7 @@ export default function App() {
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
               embed={embed} playEmbed={playEmbed} guardSolo={guardSolo}
+              countUp={countUp} onCompleteCountUp={completeCountUp}
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               pipSupported={pipSupported} pipActive={!!pipWindow}
@@ -470,9 +499,10 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
-              addTask={addTask} toggleTask={toggleTask} removeTask={removeTask}
+              addTask={addTask} editTask={editTask} toggleTask={toggleTask} removeTask={removeTask}
               reorderTask={reorderTask} onFocusTask={focusTask}
               session={session} onSignIn={onSignIn} tasksLoaded={tasksLoaded}
+              guestLimit={GUEST_TASK_LIMIT}
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout}
               onBuyCredits={() => setView("premium")} />
           )}
@@ -490,8 +520,9 @@ export default function App() {
               onNeedUsername={openFriends} onOpenFriends={openFriends}
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
               soundAuto={soundAuto} onInRoom={handleInRoom} leaveSignal={leaveSignal}
+              completionSoundEnabled={alerts.soundEnabled}
               pipSupported={pipSupported} pipWindow={pipWindow}
-              onPopOut={() => openPip({ width: 340, height: 620 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
+              onPopOut={() => openPip({ width: 255, height: 465 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           </div>
           {view === "premium" && (
@@ -511,7 +542,7 @@ export default function App() {
         onExit={() => setImmersive(false)}
         controls={
           <>
-            <button onClick={() => { if (!timer.running) { if (!guardSolo()) return; unlockAudio(); } (timer.running ? timer.pause : timer.start)(); }}
+            <button onClick={() => { if (!timer.running) { if (!guardSolo()) return; countUp.reset(); unlockAudio(); } (timer.running ? timer.pause : timer.start)(); }}
               className="flex h-12 items-center justify-center gap-2 rounded-2xl px-8 font-semibold text-white shadow-glow transition active:scale-[0.98]"
               style={{ background: timer.phase === "focus" ? theme.ring : theme.rest }} aria-label={timer.running ? "Pause" : "Resume"}>
               {timer.running ? <><Pause size={20} fill="currentColor" /> Pause</> : <><Play size={20} fill="currentColor" /> Resume</>}
@@ -560,7 +591,7 @@ export default function App() {
           taskTitle={tasks.find((t) => t.id === activeTask)?.title}
           controls={
             <>
-              <button onClick={() => (timer.running ? timer.pause() : timer.start())}
+              <button onClick={() => { if (timer.running) timer.pause(); else { countUp.reset(); timer.start(); } }}
                 className="flex h-11 items-center justify-center gap-2 rounded-2xl px-6 text-sm font-semibold text-white shadow-glow transition active:scale-[0.98]"
                 style={{ background: timer.phase === "focus" ? theme.ring : theme.rest }} aria-label={timer.running ? "Pause" : "Resume"}>
                 {timer.running ? <><Pause size={18} fill="currentColor" /> Pause</> : <><Play size={18} fill="currentColor" /> Resume</>}
@@ -753,26 +784,25 @@ function ExamCountdownBar({ examDate, examName, setExam }: any) {
 }
 
 function NotificationToggle({ alerts }: any) {
-  if (alerts.permission === "unsupported") return null;
+  const soundToggle = (
+    <button role="switch" aria-checked={alerts.soundEnabled} onClick={() => alerts.setSoundEnabled(!alerts.soundEnabled)}
+      className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+      {alerts.soundEnabled ? <Volume2 size={13} /> : <BellOff size={13} />} Completion sound {alerts.soundEnabled ? "on" : "off"}
+    </button>
+  );
+  if (alerts.permission === "unsupported") return soundToggle;
   if (alerts.permission === "granted") {
     return (
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Bell size={13} /> Notifications on
-      </span>
+      <><span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Bell size={13} /> Notifications on</span>{soundToggle}</>
     );
   }
   if (alerts.permission === "denied") {
     return (
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <BellOff size={13} /> Notifications blocked in browser settings
-      </span>
+      <><span className="flex items-center gap-1.5 text-xs text-muted-foreground"><BellOff size={13} /> Notifications blocked in browser settings</span>{soundToggle}</>
     );
   }
   return (
-    <button onClick={alerts.requestPermission}
-      className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-      <Bell size={13} /> Enable notifications
-    </button>
+    <><button onClick={alerts.requestPermission} className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground"><Bell size={13} /> Enable notifications</button>{soundToggle}</>
   );
 }
 
@@ -806,7 +836,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, countUp, onCompleteCountUp }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -861,7 +891,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 onClick={() => {
                   // Unlock audio inside the tap itself: iOS refuses to start
                   // sound from the effect that fires after this handler.
-                  if (!timer.running) { if (!guardSolo?.()) return; unlockAudio(); enterFocus?.(); } // Start also drops into focus mode
+                  if (!timer.running) { if (!guardSolo?.()) return; countUp.reset(); unlockAudio(); enterFocus?.(); } // Start also drops into focus mode
                   (timer.running ? timer.pause : timer.start)();
                 }}
                 className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]"
@@ -893,6 +923,30 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               <NotificationToggle alerts={alerts} />
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8" aria-labelledby="count-up-title">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 id="count-up-title" className="font-display text-xl font-semibold">Count-up timer</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Stopwatch mode{task ? <> · linked to <span className="text-foreground">{task.title}</span> ({task.tag})</> : " · select a task above to link this session"}.
+            </p>
+          </div>
+          <TimeDisplay value={fmt(countUp.elapsedSeconds)} className="font-display text-5xl font-medium tracking-tight" />
+        </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button onClick={() => {
+            if (!countUp.running) { if (!guardSolo?.()) return; timer.reset(); unlockAudio(); }
+            (countUp.running ? countUp.pause : countUp.start)();
+          }} className="flex h-12 min-w-32 items-center justify-center gap-2 rounded-2xl px-6 font-semibold text-white shadow-glow transition active:scale-[0.98]" style={{ background: ring }} aria-label={countUp.running ? "Pause count-up timer" : countUp.elapsedSeconds > 0 ? "Resume count-up timer" : "Start count-up timer"}>
+            {countUp.running ? <><Pause size={19} fill="currentColor" /> Pause</> : <><Play size={19} fill="currentColor" /> {countUp.elapsedSeconds > 0 ? "Resume" : "Start"}</>}
+          </button>
+          <button onClick={onCompleteCountUp} disabled={countUp.elapsedSeconds <= 0}
+            className="h-12 rounded-2xl border border-primary/40 bg-primary/10 px-5 text-sm font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50">Stop & save</button>
+          <button onClick={countUp.reset} disabled={countUp.elapsedSeconds <= 0}
+            className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label="Reset count-up timer"><RotateCcw size={18} /></button>
         </div>
       </section>
 
@@ -1269,7 +1323,7 @@ function TagPill({ tag }: { tag: string }) {
 
 type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
@@ -1386,7 +1440,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
 
   const add = () => {
     const chosenTag = showCustom ? (customTag ?? "").trim().slice(0, 24) : selectedTag;
-    if (!draft.trim() || !chosenTag) return;
+    if (!draft.trim() || !chosenTag || (!session && tasks.length >= guestLimit)) return;
     addTask(draft.trim(), chosenTag);
     setDraft("");
     if (showCustom) { setTag(chosenTag); setCustomTag(null); }
@@ -1417,7 +1471,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
       )}
       {!session && (
         <div className="mt-4">
-          <SignInPrompt onSignIn={onSignIn} message="Sign in to save your tasks across devices." />
+          <SignInPrompt onSignIn={onSignIn} message={`Guest tasks stay on this device (${tasks.length}/${guestLimit}). Sign in to sync across devices.`} />
         </div>
       )}
       {session && (
@@ -1451,8 +1505,9 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
             <option value="__new__">＋ New subject…</option>
           </select>
         )}
-        <button onClick={add} aria-label="Add task" className="grid w-12 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95"><Plus size={20} /></button>
+        <button onClick={add} disabled={!session && tasks.length >= guestLimit} aria-label="Add task" className="grid w-12 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={20} /></button>
       </div>
+      {!session && tasks.length >= guestLimit && <p role="status" className="mt-2 text-sm text-muted-foreground">You reached the 5-task guest limit. Sign in to create and sync more tasks.</p>}
 
       {session && !tasksLoaded && (
         <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">
@@ -1519,6 +1574,13 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, toggleTask, remo
                             <Play size={13} />
                           </button>
                         )}
+                        <button onClick={() => {
+                          const next = window.prompt("Edit task", t.title);
+                          if (next !== null) editTask(t.id, next);
+                        }} aria-label={`Edit ${t.title}`}
+                          className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
+                          <Pencil size={13} />
+                        </button>
                         <span className="w-8 text-center font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
                         <button onClick={() => removeTask(t.id)} aria-label={`Delete ${t.title}`}
                           className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:text-destructive">
@@ -1643,7 +1705,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         {session ? (
           <DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
         ) : (
-          <SignInPrompt onSignIn={onSignIn} message="Sign in to track your streak, goals, and achievements." />
+          <><DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} /><div className="mt-3"><SignInPrompt onSignIn={onSignIn} message="This device is tracking your current guest activity. Sign in for long-term history and syncing." /></div></>
         )}
       </div>
 
