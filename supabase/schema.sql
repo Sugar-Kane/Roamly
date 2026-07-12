@@ -1,9 +1,12 @@
 -- Roamly Focus — Supabase schema
 --
--- Snapshot of the live database (Supabase project "Roamly"), captured
--- 2026-07-02. Includes the original Phase 1 tables plus the social layer
--- (usernames, friends, study rooms, room chat, notifications) and the
--- security hardening applied via the advisor recommendations.
+-- Snapshot of the live database (Supabase project "Roamly"). The first section
+-- is the 2026-07-02 capture: the original Phase 1 tables plus the social layer
+-- (usernames, friends, study rooms, room chat, notifications) and the security
+-- hardening applied via the advisor recommendations. The section at the end
+-- folds in releases 2–6 from supabase/migrations/ (entitlements + credit ledger,
+-- study insights, private rooms + stat-sharing + private voice, and the review
+-- hardening), so this file alone recreates the current schema.
 --
 -- Running this file once on a fresh Supabase project recreates the schema:
 -- Dashboard → SQL Editor → New query.
@@ -1164,3 +1167,969 @@ begin
   values (auth.uid(), 'set_premium', p_user, case when p_premium then 'granted' else 'revoked' end);
 end;
 $$;
+
+
+-- ============================================================
+-- Releases 2–6, folded in from supabase/migrations/ (timestamp
+-- order). This section is a reconstruction from the migration
+-- files, not a fresh pg_dump — verify against `supabase db dump`
+-- if the live DB has had changes applied outside these files.
+-- ============================================================
+
+
+-- ======== folded from 20260712193216_release_2_entitlements.sql ========
+
+-- Release 2: centralized Premium entitlements and immutable credit ledger.
+-- New tables are intentionally service-only. Browser clients read effective
+-- entitlement state through get_my_premium_entitlement(), never by selecting
+-- protected billing rows directly.
+
+create table public.premium_entitlements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  source text not null check (source in ('subscription', 'trial', 'credit_purchase', 'admin')),
+  status text not null default 'active' check (status in ('active', 'revoked')),
+  starts_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  external_ref text,
+  created_by uuid references auth.users(id) on delete set null,
+  note text check (note is null or char_length(note) <= 500),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (expires_at > starts_at)
+);
+
+create unique index premium_entitlements_source_ref_uidx
+  on public.premium_entitlements(source, external_ref)
+  where external_ref is not null;
+create unique index premium_entitlements_one_trial_uidx
+  on public.premium_entitlements(user_id)
+  where source = 'trial';
+create index premium_entitlements_user_active_idx
+  on public.premium_entitlements(user_id, expires_at desc)
+  where status = 'active';
+create index premium_entitlements_created_by_idx
+  on public.premium_entitlements(created_by)
+  where created_by is not null;
+
+alter table public.premium_entitlements enable row level security;
+revoke all on table public.premium_entitlements from public, anon, authenticated;
+grant select, insert, update on table public.premium_entitlements to service_role;
+
+create table public.credit_ledger (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  amount int not null check (amount <> 0),
+  reason text not null check (reason in ('purchase', 'consume', 'refund', 'admin_adjustment')),
+  external_ref text,
+  stripe_event_id text,
+  created_by uuid references auth.users(id) on delete set null,
+  note text check (note is null or char_length(note) <= 500),
+  created_at timestamptz not null default now()
+);
+
+create unique index credit_ledger_external_ref_uidx
+  on public.credit_ledger(external_ref)
+  where external_ref is not null;
+create unique index credit_ledger_stripe_event_uidx
+  on public.credit_ledger(stripe_event_id)
+  where stripe_event_id is not null;
+create index credit_ledger_user_created_idx
+  on public.credit_ledger(user_id, created_at desc);
+create index credit_ledger_created_by_idx
+  on public.credit_ledger(created_by)
+  where created_by is not null;
+
+alter table public.credit_ledger enable row level security;
+revoke all on table public.credit_ledger from public, anon, authenticated;
+grant select, insert on table public.credit_ledger to service_role;
+
+create or replace function public.has_active_premium(p_user uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = ''
+as $$
+  select exists (
+    select 1
+      from public.premium_entitlements e
+     where e.user_id = p_user
+       and e.status = 'active'
+       and e.starts_at <= now()
+       and e.expires_at > now()
+  );
+$$;
+
+revoke execute on function public.has_active_premium(uuid) from public, anon, authenticated;
+grant execute on function public.has_active_premium(uuid) to service_role;
+
+create or replace function public.has_my_active_premium()
+returns boolean
+language sql
+security definer
+stable
+set search_path = ''
+as $$
+  select public.has_active_premium((select auth.uid()));
+$$;
+
+revoke execute on function public.has_my_active_premium() from public, anon;
+grant execute on function public.has_my_active_premium() to authenticated;
+
+create or replace function public.get_my_premium_entitlement()
+returns table (is_premium boolean, source text, expires_at timestamptz)
+language sql
+security definer
+stable
+set search_path = ''
+as $$
+  with best as (
+    select e.source, e.expires_at
+      from public.premium_entitlements e
+     where e.user_id = (select auth.uid())
+       and e.status = 'active'
+       and e.starts_at <= now()
+       and e.expires_at > now()
+     order by e.expires_at desc
+     limit 1
+  )
+  select exists(select 1 from best), best.source, best.expires_at
+    from (select 1) seed
+    left join best on true;
+$$;
+
+revoke execute on function public.get_my_premium_entitlement() from public, anon;
+grant execute on function public.get_my_premium_entitlement() to authenticated;
+
+create or replace function public.start_trial_if_eligible(p_user uuid)
+returns timestamptz
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_expires timestamptz;
+begin
+  insert into public.premium_entitlements(user_id, source, expires_at, external_ref)
+  values (p_user, 'trial', now() + interval '30 days', 'trial:' || p_user::text)
+  on conflict do nothing
+  returning expires_at into v_expires;
+
+  if v_expires is null then
+    select e.expires_at into v_expires
+      from public.premium_entitlements e
+     where e.user_id = p_user and e.source = 'trial';
+  end if;
+
+  update public.profiles
+     set is_premium = public.has_active_premium(p_user), updated_at = now()
+   where id = p_user;
+  return v_expires;
+end;
+$$;
+
+revoke execute on function public.start_trial_if_eligible(uuid) from public, anon, authenticated;
+grant execute on function public.start_trial_if_eligible(uuid) to service_role;
+
+create or replace function public.process_stripe_credit_event(
+  p_event_id text,
+  p_event_type text,
+  p_user uuid,
+  p_credits int,
+  p_premium_days int,
+  p_external_ref text
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_inserted int;
+  v_promo_expires timestamptz;
+begin
+  if p_credits <= 0 or p_premium_days <= 0 then
+    raise exception 'invalid_credit_event';
+  end if;
+
+  insert into public.stripe_events(id, type)
+  values (p_event_id, p_event_type)
+  on conflict (id) do nothing;
+  get diagnostics v_inserted = row_count;
+  if v_inserted = 0 then return 'duplicate'; end if;
+
+  insert into public.credit_ledger(user_id, amount, reason, external_ref, stripe_event_id)
+  values (p_user, p_credits, 'purchase', p_external_ref, p_event_id);
+
+  update public.profiles
+     set ai_credits = ai_credits + p_credits,
+         updated_at = now()
+   where id = p_user;
+  if not found then raise exception 'profile_not_found'; end if;
+
+  select greatest(coalesce(max(e.expires_at), now()), now()) + make_interval(days => p_premium_days)
+    into v_promo_expires
+    from public.premium_entitlements e
+   where e.user_id = p_user
+     and e.source = 'credit_purchase'
+     and e.status = 'active'
+     and e.expires_at > now();
+
+  insert into public.premium_entitlements(user_id, source, starts_at, expires_at, external_ref)
+  values (p_user, 'credit_purchase', now(), v_promo_expires, p_external_ref)
+  on conflict (source, external_ref) where external_ref is not null
+  do update set
+    expires_at = greatest(public.premium_entitlements.expires_at, excluded.expires_at),
+    status = 'active',
+    updated_at = now();
+
+  update public.profiles
+     set is_premium = public.has_active_premium(p_user), updated_at = now()
+   where id = p_user;
+  return 'processed';
+end;
+$$;
+
+revoke execute on function public.process_stripe_credit_event(text, text, uuid, int, int, text) from public, anon, authenticated;
+grant execute on function public.process_stripe_credit_event(text, text, uuid, int, int, text) to service_role;
+
+create or replace function public.process_stripe_subscription_event(
+  p_event_id text,
+  p_event_type text,
+  p_user uuid,
+  p_subscription text,
+  p_status text,
+  p_period_end timestamptz,
+  p_price_id text
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_inserted int;
+  v_active boolean := p_status in ('active', 'trialing');
+begin
+  insert into public.stripe_events(id, type)
+  values (p_event_id, p_event_type)
+  on conflict (id) do nothing;
+  get diagnostics v_inserted = row_count;
+  if v_inserted = 0 then return 'duplicate'; end if;
+
+  insert into public.premium_entitlements(user_id, source, status, starts_at, expires_at, external_ref, note)
+  values (
+    p_user,
+    'subscription',
+    case when v_active then 'active' else 'revoked' end,
+    now(),
+    greatest(coalesce(p_period_end, now()), now() + interval '1 second'),
+    p_subscription,
+    case when p_price_id is null then null else 'price:' || p_price_id end
+  )
+  on conflict (source, external_ref) where external_ref is not null
+  do update set
+    status = excluded.status,
+    expires_at = greatest(public.premium_entitlements.expires_at, excluded.expires_at),
+    note = excluded.note,
+    updated_at = now();
+
+  update public.profiles
+     set stripe_subscription_id = p_subscription,
+         is_premium = public.has_active_premium(p_user),
+         updated_at = now()
+   where id = p_user;
+  if not found then raise exception 'profile_not_found'; end if;
+  return 'processed';
+end;
+$$;
+
+revoke execute on function public.process_stripe_subscription_event(text, text, uuid, text, text, timestamptz, text) from public, anon, authenticated;
+grant execute on function public.process_stripe_subscription_event(text, text, uuid, text, text, timestamptz, text) to service_role;
+
+create or replace function public.admin_grant_premium(p_user uuid, p_months int, p_reason text default null)
+returns timestamptz
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_admin uuid := (select auth.uid());
+  v_expires timestamptz;
+begin
+  if not public.is_admin() then raise exception 'not_admin'; end if;
+  if p_months not in (1, 12) then raise exception 'invalid_grant_duration'; end if;
+
+  select greatest(coalesce(max(e.expires_at), now()), now()) + make_interval(months => p_months)
+    into v_expires
+    from public.premium_entitlements e
+   where e.user_id = p_user and e.source = 'admin' and e.status = 'active' and e.expires_at > now();
+
+  insert into public.premium_entitlements(user_id, source, expires_at, created_by, note)
+  values (p_user, 'admin', v_expires, v_admin, nullif(left(trim(p_reason), 500), ''));
+
+  update public.profiles set is_premium = true, updated_at = now() where id = p_user;
+  insert into public.admin_audit(admin_id, action, target, detail)
+  values (v_admin, 'premium_grant', p_user, p_months::text || ' months; expires ' || v_expires::text);
+  return v_expires;
+end;
+$$;
+
+revoke execute on function public.admin_grant_premium(uuid, int, text) from public, anon;
+grant execute on function public.admin_grant_premium(uuid, int, text) to authenticated;
+
+-- Retire the legacy boolean toggle. Dated grants above are auditable and do
+-- not interfere with paid subscriptions, trials, or credit promotions.
+revoke execute on function public.admin_set_premium(uuid, boolean) from authenticated;
+
+-- Record every purchased-credit spend/refund in the immutable ledger while
+-- maintaining profiles.ai_credits as the fast cached balance used by the UI.
+create or replace function public.consume_ai_credit(p_user uuid)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_left int;
+begin
+  update public.profiles
+     set ai_credits = ai_credits - 1, updated_at = now()
+   where id = p_user and ai_credits > 0
+  returning ai_credits into v_left;
+  if v_left is null then return 'no_credits'; end if;
+  insert into public.credit_ledger(user_id, amount, reason)
+  values (p_user, -1, 'consume');
+  return 'ok';
+end;
+$$;
+
+revoke execute on function public.consume_ai_credit(uuid) from public, anon, authenticated;
+grant execute on function public.consume_ai_credit(uuid) to service_role;
+
+create or replace function public.add_ai_credits(p_user uuid, p_credits int)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if p_credits <= 0 then raise exception 'invalid_credit_refund'; end if;
+  update public.profiles
+     set ai_credits = ai_credits + p_credits, updated_at = now()
+   where id = p_user;
+  if not found then raise exception 'profile_not_found'; end if;
+  insert into public.credit_ledger(user_id, amount, reason, note)
+  values (p_user, p_credits, 'refund', 'Automated upload-processing refund');
+end;
+$$;
+
+revoke execute on function public.add_ai_credits(uuid, int) from public, anon, authenticated;
+grant execute on function public.add_ai_credits(uuid, int) to service_role;
+
+drop policy if exists rooms_insert_own on public.rooms;
+create policy rooms_insert_own on public.rooms
+for insert to authenticated
+with check (
+  (select auth.uid()) = host_id
+  and is_system = false
+  and (select public.has_my_active_premium())
+  and (select count(*) from public.rooms r where r.host_id = (select auth.uid()) and r.is_system = false) < 3
+);
+
+-- Preserve current manually comped accounts as non-expiring-in-practice
+-- legacy grants. These rows can later be replaced with explicit dated grants.
+insert into public.premium_entitlements(user_id, source, expires_at, external_ref, note)
+select p.id, 'admin', now() + interval '10 years', 'legacy-profile:' || p.id::text, 'Migrated from profiles.is_premium'
+  from public.profiles p
+ where p.is_premium = true
+on conflict do nothing;
+
+
+-- ======== folded from 20260712195255_admin_revoke_premium.sql ========
+
+-- Restore the admin portal's ability to revoke Premium access. This only
+-- changes Roamly entitlements; it does not cancel an external Stripe plan.
+create or replace function public.admin_revoke_premium(p_user uuid, p_reason text default null)
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_admin uuid := (select auth.uid());
+  v_revoked int;
+begin
+  if not public.is_admin() then raise exception 'not_admin'; end if;
+  if p_user is null then raise exception 'invalid_user'; end if;
+
+  update public.premium_entitlements
+     set status = 'revoked',
+         note = coalesce(nullif(left(trim(p_reason), 500), ''), note),
+         updated_at = now()
+   where user_id = p_user
+     and status = 'active'
+     and starts_at <= now()
+     and expires_at > now();
+  get diagnostics v_revoked = row_count;
+
+  update public.profiles
+     set is_premium = public.has_active_premium(p_user),
+         updated_at = now()
+   where id = p_user;
+  if not found then raise exception 'profile_not_found'; end if;
+
+  insert into public.admin_audit(admin_id, action, target, detail)
+  values (
+    v_admin,
+    'premium_revoke',
+    p_user,
+    v_revoked::text || ' active entitlement(s) revoked' ||
+      case when nullif(trim(p_reason), '') is null then '' else '; ' || left(trim(p_reason), 500) end
+  );
+
+  return v_revoked;
+end;
+$$;
+
+revoke execute on function public.admin_revoke_premium(uuid, text) from public, anon;
+grant execute on function public.admin_revoke_premium(uuid, text) to authenticated;
+
+
+-- ======== folded from 20260712195902_release_3_study_insights.sql ========
+
+-- Release 3: detailed study events and explicit planned sessions.
+-- The existing focus_sessions daily totals remain the source for streaks and
+-- historical totals. New events add task/category dimensions going forward.
+
+create table public.study_session_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  task_id uuid references public.tasks(id) on delete set null,
+  task_title text check (task_title is null or char_length(task_title) <= 500),
+  category text not null default 'Uncategorized' check (char_length(category) between 1 and 80),
+  minutes int not null check (minutes between 1 and 1440),
+  session_kind text not null check (session_kind in ('countdown', 'count_up', 'room')),
+  completed_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index study_session_events_user_completed_idx
+  on public.study_session_events(user_id, completed_at desc);
+create index study_session_events_task_idx
+  on public.study_session_events(task_id) where task_id is not null;
+
+alter table public.study_session_events enable row level security;
+grant select, insert on table public.study_session_events to authenticated;
+create policy "study_events_select_own" on public.study_session_events
+  for select to authenticated using ((select auth.uid()) = user_id);
+create policy "study_events_insert_own" on public.study_session_events
+  for insert to authenticated with check ((select auth.uid()) = user_id);
+-- The application writes through record_focus_session() so the daily aggregate
+-- and detailed event are committed together.
+
+create table public.planned_study_sessions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  task_id uuid references public.tasks(id) on delete set null,
+  task_title text check (task_title is null or char_length(task_title) <= 500),
+  category text not null default 'Uncategorized' check (char_length(category) between 1 and 80),
+  scheduled_for timestamptz not null,
+  expected_minutes int not null default 25 check (expected_minutes between 5 and 480),
+  status text not null default 'planned' check (status in ('planned', 'completed', 'missed')),
+  missed_reason text check (missed_reason is null or missed_reason in ('Traveling', 'Sick', 'Too vague', 'Bad timing', 'Too tired', 'Schedule conflict', 'Forgot', 'Lost motivation', 'Too difficult', 'Other')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (status = 'missed' or missed_reason is null)
+);
+
+create index planned_study_sessions_user_schedule_idx
+  on public.planned_study_sessions(user_id, scheduled_for desc);
+create index planned_study_sessions_task_idx
+  on public.planned_study_sessions(task_id) where task_id is not null;
+
+alter table public.planned_study_sessions enable row level security;
+grant select, insert, update, delete on table public.planned_study_sessions to authenticated;
+create policy "planned_sessions_select_own" on public.planned_study_sessions
+  for select to authenticated using ((select auth.uid()) = user_id);
+create policy "planned_sessions_insert_own" on public.planned_study_sessions
+  for insert to authenticated with check ((select auth.uid()) = user_id);
+create policy "planned_sessions_update_own" on public.planned_study_sessions
+  for update to authenticated using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);
+create policy "planned_sessions_delete_own" on public.planned_study_sessions
+  for delete to authenticated using ((select auth.uid()) = user_id);
+
+create or replace function public.record_focus_session(
+  p_date date,
+  p_minutes int,
+  p_task uuid default null,
+  p_task_title text default null,
+  p_category text default 'Uncategorized',
+  p_kind text default 'countdown'
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_user uuid := (select auth.uid());
+  v_event uuid;
+  v_category text := coalesce(nullif(left(trim(p_category), 80), ''), 'Uncategorized');
+begin
+  if v_user is null then raise exception 'not_authenticated'; end if;
+  if p_minutes not between 1 and 1440 then raise exception 'invalid_minutes'; end if;
+  if p_kind not in ('countdown', 'count_up', 'room') then raise exception 'invalid_session_kind'; end if;
+  if p_task is not null and not exists (
+    select 1 from public.tasks t where t.id = p_task and t.user_id = v_user
+  ) then raise exception 'invalid_task'; end if;
+
+  insert into public.focus_sessions(user_id, date, minutes)
+  values (v_user, p_date, p_minutes)
+  on conflict (user_id, date) do update
+    set minutes = public.focus_sessions.minutes + excluded.minutes, updated_at = now();
+
+  insert into public.study_session_events(user_id, task_id, task_title, category, minutes, session_kind)
+  values (v_user, p_task, nullif(left(trim(p_task_title), 500), ''), v_category, p_minutes, p_kind)
+  returning id into v_event;
+  return v_event;
+end;
+$$;
+
+revoke execute on function public.record_focus_session(date, int, uuid, text, text, text) from public, anon;
+grant execute on function public.record_focus_session(date, int, uuid, text, text, text) to authenticated;
+
+
+-- ======== folded from 20260712203515_release_5_social_privacy.sql ========
+
+-- Release 5: database-enforced room privacy and analytics-sharing consent.
+
+alter table public.rooms add column visibility text not null default 'public'
+  check (visibility in ('public', 'private'));
+alter table public.rooms add column invite_code text;
+create unique index rooms_invite_code_uidx on public.rooms(invite_code) where invite_code is not null;
+
+create table public.room_access (
+  room_id uuid not null references public.rooms(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  role text not null check (role in ('host', 'invited', 'public')),
+  invited_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (room_id, user_id)
+);
+create index room_access_user_idx on public.room_access(user_id, created_at desc);
+alter table public.room_access enable row level security;
+grant select on public.room_access to authenticated;
+create policy "room_access_select_own" on public.room_access for select to authenticated
+  using ((select auth.uid()) = user_id);
+
+create or replace function public.can_access_room(p_room uuid)
+returns boolean language sql security definer stable set search_path = '' as $$
+  select exists (
+    select 1 from public.rooms r
+    where r.id = p_room and (
+      r.is_system or r.visibility = 'public' or r.host_id = (select auth.uid()) or
+      exists (select 1 from public.room_access a where a.room_id = r.id and a.user_id = (select auth.uid()))
+    )
+  );
+$$;
+revoke execute on function public.can_access_room(uuid) from public, anon;
+grant execute on function public.can_access_room(uuid) to authenticated;
+
+create or replace function public.prepare_room_access()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.visibility = 'private' and new.invite_code is null then
+    new.invite_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10));
+  elsif new.visibility = 'public' then
+    new.invite_code := null;
+  end if;
+  return new;
+end;
+$$;
+create trigger rooms_prepare_access before insert on public.rooms
+  for each row execute function public.prepare_room_access();
+
+create or replace function public.add_room_host_access()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.host_id is not null then
+    insert into public.room_access(room_id, user_id, role, invited_by)
+    values (new.id, new.host_id, 'host', new.host_id) on conflict do nothing;
+  end if;
+  return new;
+end;
+$$;
+create trigger rooms_add_host_access after insert on public.rooms
+  for each row execute function public.add_room_host_access();
+
+insert into public.room_access(room_id, user_id, role, invited_by)
+select id, host_id, 'host', host_id from public.rooms where host_id is not null
+on conflict do nothing;
+
+drop policy if exists "rooms_select_all" on public.rooms;
+create policy "rooms_select_accessible" on public.rooms for select to authenticated
+  using ((select public.can_access_room(id)));
+
+drop policy if exists "heartbeats_insert_own" on public.room_heartbeats;
+create policy "heartbeats_insert_accessible" on public.room_heartbeats for insert to authenticated
+  with check ((select auth.uid()) = user_id and (select public.can_access_room(room_id)));
+drop policy if exists "heartbeats_update_own" on public.room_heartbeats;
+create policy "heartbeats_update_accessible" on public.room_heartbeats for update to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id and (select public.can_access_room(room_id)));
+
+drop policy if exists "room_messages_insert_own" on public.room_messages;
+create policy "room_messages_insert_accessible" on public.room_messages for insert to authenticated
+  with check ((select auth.uid()) = user_id and (select public.can_access_room(room_id)));
+drop policy if exists "room_messages_select_participants" on public.room_messages;
+create policy "room_messages_select_accessible" on public.room_messages for select to authenticated
+  using ((select public.can_access_room(room_id)) and (
+    user_id = (select auth.uid()) or
+    exists (select 1 from public.rooms r where r.id = room_id and (r.is_system or r.host_id = (select auth.uid()))) or
+    exists (select 1 from public.room_heartbeats h where h.room_id = room_id and h.user_id = (select auth.uid()))
+  ));
+
+create or replace function public.join_room(p_room uuid, p_code text default null)
+returns setof public.rooms language plpgsql security definer set search_path = '' as $$
+declare v_room public.rooms;
+begin
+  if (select auth.uid()) is null then raise exception 'not_signed_in'; end if;
+  select * into v_room from public.rooms where id = p_room;
+  if not found then raise exception 'room_not_found'; end if;
+  if not (v_room.is_system or v_room.visibility = 'public' or v_room.host_id = (select auth.uid()) or
+    exists(select 1 from public.room_access a where a.room_id=p_room and a.user_id=(select auth.uid())) or
+    (p_code is not null and upper(trim(p_code)) = v_room.invite_code)) then
+    raise exception 'room_access_denied';
+  end if;
+  insert into public.room_access(room_id,user_id,role)
+  values (p_room,(select auth.uid()),case when v_room.visibility='public' or v_room.is_system then 'public' else 'invited' end)
+  on conflict (room_id,user_id) do nothing;
+  return next v_room;
+end;
+$$;
+revoke execute on function public.join_room(uuid, text) from public, anon;
+grant execute on function public.join_room(uuid, text) to authenticated;
+
+create or replace function public.join_room_by_code(p_code text)
+returns setof public.rooms language plpgsql security definer set search_path = '' as $$
+declare v_id uuid;
+begin
+  select id into v_id from public.rooms where invite_code = upper(trim(p_code)) and visibility='private';
+  if v_id is null then raise exception 'invalid_invite_code'; end if;
+  return query select * from public.join_room(v_id, p_code);
+end;
+$$;
+revoke execute on function public.join_room_by_code(text) from public, anon;
+grant execute on function public.join_room_by_code(text) to authenticated;
+
+-- Room presence channels are private and use the same database authorization.
+create policy "room_presence_read" on realtime.messages for select to authenticated using (
+  extension = 'presence' and (select realtime.topic()) ~ '^room:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and
+  (select public.can_access_room(split_part((select realtime.topic()), ':', 2)::uuid))
+);
+create policy "room_presence_write" on realtime.messages for insert to authenticated with check (
+  extension = 'presence' and (select realtime.topic()) ~ '^room:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' and
+  (select public.can_access_room(split_part((select realtime.topic()), ':', 2)::uuid))
+);
+
+create or replace function public.invite_to_room(p_room uuid, p_user uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if (select auth.uid()) is null then raise exception 'not_signed_in'; end if;
+  if not exists(select 1 from public.rooms where id=p_room and host_id=(select auth.uid()) and is_system=false) then raise exception 'not_room_host'; end if;
+  if not exists(select 1 from public.friendships where status='accepted' and
+    ((requester=(select auth.uid()) and addressee=p_user) or (requester=p_user and addressee=(select auth.uid())))) then raise exception 'not_friends'; end if;
+  insert into public.room_access(room_id,user_id,role,invited_by)
+  values(p_room,p_user,'invited',(select auth.uid()))
+  on conflict(room_id,user_id) do update set role='invited', invited_by=excluded.invited_by;
+  insert into public.notifications(user_id,actor_id,kind,room_id)
+  values(p_user,(select auth.uid()),'room_invite',p_room);
+end;
+$$;
+
+-- Statistics sharing is separate from friendship and starts with no rows.
+create table public.stat_comparison_permissions (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  viewer_id uuid not null references auth.users(id) on delete cascade,
+  status text not null default 'pending' check (status in ('pending','approved')),
+  requested_by uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key(owner_id,viewer_id),
+  check(owner_id <> viewer_id)
+);
+create index stat_permissions_viewer_idx on public.stat_comparison_permissions(viewer_id,updated_at desc);
+alter table public.stat_comparison_permissions enable row level security;
+grant select on public.stat_comparison_permissions to authenticated;
+create policy "stat_permissions_parties_read" on public.stat_comparison_permissions for select to authenticated
+  using ((select auth.uid()) in (owner_id,viewer_id));
+
+alter table public.notifications drop constraint if exists notifications_kind_check;
+alter table public.notifications add constraint notifications_kind_check check
+  (kind in ('friend_request','friend_accepted','room_invite','room_created','room_joined','stats_request','stats_approved'));
+
+create or replace function public.request_stat_comparison(p_friend uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not exists(select 1 from public.friendships where status='accepted' and
+    ((requester=(select auth.uid()) and addressee=p_friend) or (requester=p_friend and addressee=(select auth.uid())))) then raise exception 'not_friends'; end if;
+  insert into public.stat_comparison_permissions(owner_id,viewer_id,status,requested_by)
+  values(p_friend,(select auth.uid()),'pending',(select auth.uid()))
+  on conflict(owner_id,viewer_id) do update set status='pending',requested_by=excluded.requested_by,updated_at=now();
+  insert into public.notifications(user_id,actor_id,kind) values(p_friend,(select auth.uid()),'stats_request');
+end;
+$$;
+
+create or replace function public.respond_stat_comparison(p_viewer uuid, p_approve boolean)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if p_approve then
+    update public.stat_comparison_permissions set status='approved',updated_at=now()
+    where owner_id=(select auth.uid()) and viewer_id=p_viewer and status='pending';
+    if not found then raise exception 'request_not_found'; end if;
+    insert into public.notifications(user_id,actor_id,kind) values(p_viewer,(select auth.uid()),'stats_approved');
+  else
+    delete from public.stat_comparison_permissions where owner_id=(select auth.uid()) and viewer_id=p_viewer and status='pending';
+    if not found then raise exception 'request_not_found'; end if;
+  end if;
+end;
+$$;
+
+create or replace function public.revoke_stat_comparison(p_friend uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.stat_comparison_permissions
+  where (owner_id=(select auth.uid()) and viewer_id=p_friend) or (owner_id=p_friend and viewer_id=(select auth.uid()));
+end;
+$$;
+
+create or replace function public.get_friend_comparison(p_friend uuid)
+returns table(focus_minutes bigint,session_count bigint,weekly_consistency bigint,achievements int,level int,category_minutes jsonb)
+language sql security definer stable set search_path = '' as $$
+  with allowed as (
+    select 1 where exists(select 1 from public.stat_comparison_permissions p
+      where p.owner_id=p_friend and p.viewer_id=(select auth.uid()) and p.status='approved')
+    and exists(select 1 from public.friendships f where f.status='accepted' and
+      ((f.requester=(select auth.uid()) and f.addressee=p_friend) or (f.requester=p_friend and f.addressee=(select auth.uid()))))
+  ), totals as (
+    select coalesce(sum(minutes),0)::bigint focus_minutes,
+      count(*) filter(where minutes>0)::bigint active_days,
+      count(*) filter(where date>=current_date-6 and minutes>0)::bigint weekly_consistency
+    from public.focus_sessions,allowed where user_id=p_friend
+  ), events as (
+    select count(*)::bigint session_count from public.study_session_events,allowed where user_id=p_friend
+  ), cats as (
+    select coalesce(jsonb_object_agg(category,total),'{}'::jsonb) category_minutes from (
+      select category,sum(minutes)::bigint total from public.study_session_events,allowed where user_id=p_friend group by category
+    ) q
+  )
+  select t.focus_minutes,e.session_count,t.weekly_consistency,
+    ((t.focus_minutes>0)::int+(t.focus_minutes>=600)::int+(t.focus_minutes>=1500)::int+(t.active_days>=7)::int) achievements,
+    greatest(1,floor(t.focus_minutes/600.0)::int+1),c.category_minutes
+  from totals t cross join events e cross join cats c where exists(select 1 from allowed);
+$$;
+
+revoke execute on function public.request_stat_comparison(uuid) from public,anon;
+revoke execute on function public.respond_stat_comparison(uuid,boolean) from public,anon;
+revoke execute on function public.revoke_stat_comparison(uuid) from public,anon;
+revoke execute on function public.get_friend_comparison(uuid) from public,anon;
+grant execute on function public.request_stat_comparison(uuid) to authenticated;
+grant execute on function public.respond_stat_comparison(uuid,boolean) to authenticated;
+grant execute on function public.revoke_stat_comparison(uuid) to authenticated;
+grant execute on function public.get_friend_comparison(uuid) to authenticated;
+
+revoke execute on function public.invite_to_room(uuid,uuid) from public,anon;
+grant execute on function public.invite_to_room(uuid,uuid) to authenticated;
+
+
+-- ======== folded from 20260712204156_release_5_private_voice.sql ========
+
+create policy "room_voice_read"
+on realtime.messages
+for select
+to authenticated
+using (
+  extension in ('presence', 'broadcast')
+  and (select realtime.topic()) ~ '^room-voice:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and (select public.can_access_room(split_part((select realtime.topic()), ':', 2)::uuid))
+);
+
+create policy "room_voice_write"
+on realtime.messages
+for insert
+to authenticated
+with check (
+  extension in ('presence', 'broadcast')
+  and (select realtime.topic()) ~ '^room-voice:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and (select public.can_access_room(split_part((select realtime.topic()), ':', 2)::uuid))
+);
+
+
+-- ======== folded from 20260712205500_release_5_trigger_hardening.sql ========
+
+-- Trigger functions must never be exposed as callable API RPCs.
+revoke execute on function public.prepare_room_access() from public, anon, authenticated;
+revoke execute on function public.add_room_host_access() from public, anon, authenticated;
+
+
+-- ======== folded from 20260712210000_release_6_review_hardening.sql ========
+
+-- Release 6: review hardening.
+--   1. Reconcile profiles.is_premium after time-based trials/promos lapse.
+--   2. Authorize the private room-voice realtime channel.
+--   3. Guard the subscription state machine against out-of-order Stripe events.
+--   4. Restrict host room updates to the `music` column only.
+-- Safe to run more than once.
+
+-- ============ 1. Premium flag reconciler ============
+-- Subscriptions get an is_premium flip from the Stripe webhook when they lapse,
+-- but trials (30d) and credit promos (3/7d) expire purely by wall-clock with no
+-- event — so the cached profiles.is_premium column drifts true forever. A small
+-- periodic job recomputes the cached flag from live entitlement state.
+create or replace function public.reconcile_premium_flags()
+returns int
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_count int;
+begin
+  with fixed as (
+    update public.profiles p
+       set is_premium = public.has_active_premium(p.id), updated_at = now()
+     where p.is_premium is distinct from public.has_active_premium(p.id)
+    returning 1
+  )
+  select count(*) into v_count from fixed;
+  return v_count;
+end;
+$$;
+
+revoke execute on function public.reconcile_premium_flags() from public, anon, authenticated;
+grant execute on function public.reconcile_premium_flags() to service_role;
+
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('reconcile-premium-flags', '*/15 * * * *', 'select public.reconcile_premium_flags()');
+    raise notice 'pg_cron: reconcile-premium-flags scheduled every 15 minutes.';
+  else
+    raise notice 'pg_cron not enabled — enable it, then re-run this file so lapsed trials/promos reset is_premium.';
+  end if;
+end;
+$$;
+
+-- ============ 2. room-voice realtime authorization ============
+-- The voice channel `room-voice:<uuid>` is opened with { private: true } and
+-- uses both presence and broadcast, but release 5 only added realtime.messages
+-- policies for the `room:<uuid>` presence topic. Without a matching policy this
+-- private topic is either unusable or (if broadcast auth is not enforced)
+-- subscribable by users who cannot access the room. Gate it with the same
+-- can_access_room() check used everywhere else. Written as plain top-level DDL
+-- to match the release-5 room-presence policies (same realtime.messages table).
+drop policy if exists "room_voice_read" on realtime.messages;
+create policy "room_voice_read" on realtime.messages for select to authenticated using (
+  extension in ('presence', 'broadcast')
+  and (select realtime.topic()) ~ '^room-voice:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and (select public.can_access_room(split_part((select realtime.topic()), ':', 2)::uuid))
+);
+drop policy if exists "room_voice_write" on realtime.messages;
+create policy "room_voice_write" on realtime.messages for insert to authenticated with check (
+  extension in ('presence', 'broadcast')
+  and (select realtime.topic()) ~ '^room-voice:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  and (select public.can_access_room(split_part((select realtime.topic()), ':', 2)::uuid))
+);
+
+-- ============ 3. Out-of-order Stripe subscription events ============
+-- Idempotency was per-event-id only, and the upsert overwrote `status`
+-- unconditionally — so a delayed `customer.subscription.updated` (active) landing
+-- after `customer.subscription.deleted` (revoked) would re-grant premium. Track
+-- the source event's timestamp and only apply status/note from an event at least
+-- as new as the last one applied.
+alter table public.premium_entitlements add column if not exists last_event_at timestamptz;
+
+drop function if exists public.process_stripe_subscription_event(text, text, uuid, text, text, timestamptz, text);
+
+create or replace function public.process_stripe_subscription_event(
+  p_event_id text,
+  p_event_type text,
+  p_user uuid,
+  p_subscription text,
+  p_status text,
+  p_period_end timestamptz,
+  p_price_id text,
+  p_event_created timestamptz default null
+)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_inserted int;
+  v_active boolean := p_status in ('active', 'trialing');
+begin
+  insert into public.stripe_events(id, type)
+  values (p_event_id, p_event_type)
+  on conflict (id) do nothing;
+  get diagnostics v_inserted = row_count;
+  if v_inserted = 0 then return 'duplicate'; end if;
+
+  insert into public.premium_entitlements(user_id, source, status, starts_at, expires_at, external_ref, note, last_event_at)
+  values (
+    p_user,
+    'subscription',
+    case when v_active then 'active' else 'revoked' end,
+    now(),
+    greatest(coalesce(p_period_end, now()), now() + interval '1 second'),
+    p_subscription,
+    case when p_price_id is null then null else 'price:' || p_price_id end,
+    p_event_created
+  )
+  on conflict (source, external_ref) where external_ref is not null
+  do update set
+    status = case
+      when public.premium_entitlements.last_event_at is null
+        or excluded.last_event_at is null
+        or excluded.last_event_at >= public.premium_entitlements.last_event_at
+      then excluded.status
+      else public.premium_entitlements.status
+    end,
+    note = case
+      when public.premium_entitlements.last_event_at is null
+        or excluded.last_event_at is null
+        or excluded.last_event_at >= public.premium_entitlements.last_event_at
+      then excluded.note
+      else public.premium_entitlements.note
+    end,
+    expires_at = greatest(public.premium_entitlements.expires_at, excluded.expires_at),
+    last_event_at = greatest(
+      coalesce(public.premium_entitlements.last_event_at, excluded.last_event_at),
+      coalesce(excluded.last_event_at, public.premium_entitlements.last_event_at)
+    ),
+    updated_at = now();
+
+  update public.profiles
+     set stripe_subscription_id = p_subscription,
+         is_premium = public.has_active_premium(p_user),
+         updated_at = now()
+   where id = p_user;
+  if not found then raise exception 'profile_not_found'; end if;
+  return 'processed';
+end;
+$$;
+
+revoke execute on function public.process_stripe_subscription_event(text, text, uuid, text, text, timestamptz, text, timestamptz) from public, anon, authenticated;
+grant execute on function public.process_stripe_subscription_event(text, text, uuid, text, text, timestamptz, text, timestamptz) to service_role;
+
+-- ============ 4. Restrict host room updates to `music` ============
+-- rooms_update_host lets a host update their own room, but the default
+-- table-wide UPDATE grant let them rewrite started_at (reshuffling everyone's
+-- shared timer), visibility, invite_code, or cap. The client only ever sends
+-- `music`, so scope the column privilege to match.
+revoke update on public.rooms from authenticated;
+grant update (music) on public.rooms to authenticated;
