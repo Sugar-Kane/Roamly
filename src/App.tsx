@@ -173,22 +173,30 @@ export default function App() {
     return Number.isNaN(v) ? 0.5 : v;
   });
   const [soundPlaying, setSoundPlaying] = useState(false);
-  // Bumped whenever a built-in sound is chosen; MusicPanel watches it and
-  // unmounts any playing Spotify/Apple embed — the mirror of embedTakeover,
-  // so the two music sources can never play over each other.
-  const [embedEpoch, setEmbedEpoch] = useState(0);
+  // The ONE Spotify/Apple embed, held at App level and rendered in a
+  // persistent mini-dock — so streaming music keeps playing across tab
+  // switches instead of dying when a panel unmounts.
+  const [embed, setEmbed] = useState<{ service: "spotify" | "apple"; src: string; height: number; label: string } | null>(null);
+  const playEmbed = (t: { service: "spotify" | "apple"; src: string; height: number; label: string }) => {
+    // Streaming takes over — silence and deselect the built-in focus sound.
+    track("embed_play");
+    stopFocusSound();
+    setSoundPlaying(false);
+    setFocusSound(null);
+    savePref("roamly-focus-sound", "off");
+    setEmbed(t);
+  };
 
   const sounds = {
     sound: focusSound,
     auto: soundAuto,
     volume: soundVolume,
     playing: soundPlaying,
-    embedEpoch,
     choose: (id: FocusSoundId) => {
       unlockAudio(); // synchronous, inside the tap — required by iOS
       track("music_play", id);
       savePref("roamly-focus-sound", id);
-      setEmbedEpoch((e) => e + 1); // silence any streaming embed
+      setEmbed(null); // built-in chosen — close the streaming mini-dock
       if (focusSound === id && soundPlaying) { stopFocusSound(); setSoundPlaying(false); return; }
       setFocusSound(id);
       startFocusSound(id, soundVolume);
@@ -209,16 +217,6 @@ export default function App() {
       savePref("roamly-sound-vol", String(v));
       setFocusVolume(v);
     },
-    // Called when the user starts a Spotify/Apple embed: stop and DESELECT the
-    // built-in sound so the timer won't layer it over their streaming music.
-    // Picking any sound chip re-selects as usual.
-    embedTakeover: () => {
-      track("embed_play");
-      stopFocusSound();
-      setSoundPlaying(false);
-      setFocusSound(null);
-      savePref("roamly-focus-sound", "off");
-    },
   };
 
   // While the user is inside a study room, the room owns the audio engine (its
@@ -228,7 +226,23 @@ export default function App() {
   // `roomActive` mirrors the ref as state so the personal pop-out timer yields
   // the single PiP window to the room's own pop-out while a room is open.
   const [roomActive, setRoomActive] = useState(false);
-  const handleInRoom = useCallback((v: boolean) => { inRoomRef.current = v; setRoomActive(v); }, []);
+  // One timer at a time: joining a room stops any running solo session…
+  const timerRef = useRef(timer);
+  timerRef.current = timer;
+  const handleInRoom = useCallback((v: boolean) => {
+    inRoomRef.current = v;
+    setRoomActive(v);
+    if (v) { timerRef.current.reset(); setImmersive(false); }
+  }, []);
+  // …and starting a solo session while in a room asks the user to leave it
+  // first (bumping leaveSignal makes RoomsLive exit the active room).
+  const [leaveSignal, setLeaveSignal] = useState(0);
+  const guardSolo = useCallback(() => {
+    if (!inRoomRef.current) return true;
+    if (!window.confirm("You're in a group study room. Leave the room and start your solo timer?")) return false;
+    setLeaveSignal((s) => s + 1);
+    return true;
+  }, []);
 
   // Sound follows the timer: plays during a running focus block, fades out for
   // breaks and pauses. Lives here (not in the panel) so it keeps working when
@@ -448,6 +462,7 @@ export default function App() {
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
+              embed={embed} playEmbed={playEmbed} guardSolo={guardSolo}
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               pipSupported={pipSupported} pipActive={!!pipWindow}
@@ -466,15 +481,19 @@ export default function App() {
               streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
               session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks} />
           )}
-          {view === "rooms" && (
+          {/* Rooms stay MOUNTED (just hidden) on other tabs: leaving the tab no
+              longer kicks you out of a room — presence, the shared timer, room
+              music, chat, and the pop-out keep running while you work on Tasks
+              or anywhere else. */}
+          <div className={view === "rooms" ? undefined : "hidden"}>
             <RoomsLive session={session} profile={profile} isPremium={isPremium} gateThen={gateThen} onSignIn={onSignIn}
               onNeedUsername={openFriends} onOpenFriends={openFriends}
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
-              soundAuto={soundAuto} onInRoom={handleInRoom}
+              soundAuto={soundAuto} onInRoom={handleInRoom} leaveSignal={leaveSignal}
               pipSupported={pipSupported} pipWindow={pipWindow}
               onPopOut={() => openPip({ width: 340, height: 620 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
-          )}
+          </div>
           {view === "premium" && (
             <PremiumView isPremium={isPremium} session={session} profile={profile} onSubscribe={startCheckout}
               checkoutLoading={checkoutLoading} checkoutError={checkoutError} />
@@ -492,7 +511,7 @@ export default function App() {
         onExit={() => setImmersive(false)}
         controls={
           <>
-            <button onClick={() => { if (!timer.running) unlockAudio(); (timer.running ? timer.pause : timer.start)(); }}
+            <button onClick={() => { if (!timer.running) { if (!guardSolo()) return; unlockAudio(); } (timer.running ? timer.pause : timer.start)(); }}
               className="flex h-12 items-center justify-center gap-2 rounded-2xl px-8 font-semibold text-white shadow-glow transition active:scale-[0.98]"
               style={{ background: timer.phase === "focus" ? theme.ring : theme.rest }} aria-label={timer.running ? "Pause" : "Resume"}>
               {timer.running ? <><Pause size={20} fill="currentColor" /> Pause</> : <><Play size={20} fill="currentColor" /> Resume</>}
@@ -510,9 +529,26 @@ export default function App() {
           <div className="space-y-4">
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} stopSignal={sounds.embedEpoch} />
+            <MusicPanel isPremium={isPremium} gateThen={gateThen} embed={embed} onPlay={playEmbed} />
           </div>
         } />
+      {/* The one persistent streaming player: lives at App root so Spotify /
+          Apple Music keeps playing across tab switches, focus mode, and the
+          pop-out timer. Closing it (or picking a built-in sound) stops it. */}
+      {embed && (
+        <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[90] overflow-hidden rounded-2xl border border-border bg-card shadow-xl sm:left-auto sm:right-4 sm:w-96">
+          <div className="flex items-center justify-between px-3 py-1.5">
+            <span className="truncate text-[11px] font-medium text-muted-foreground">
+              {embed.service === "spotify" ? "Spotify" : "Apple Music"} · {embed.label}
+            </span>
+            <button onClick={() => setEmbed(null)} aria-label="Close music player"
+              className="ml-2 shrink-0 text-muted-foreground transition hover:text-foreground"><X size={14} /></button>
+          </div>
+          <iframe key={embed.src} src={embed.src} width="100%" height={Math.min(embed.height, 152)}
+            style={{ border: "none" }} title="Music player"
+            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
+        </div>
+      )}
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
           App (not FocusView) so it survives tab switches and shares the one live
           `timer` object. Yields to the room's own pop-out while a room is open. */}
@@ -770,7 +806,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -825,7 +861,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 onClick={() => {
                   // Unlock audio inside the tap itself: iOS refuses to start
                   // sound from the effect that fires after this handler.
-                  if (!timer.running) { unlockAudio(); enterFocus?.(); } // Start also drops into focus mode
+                  if (!timer.running) { if (!guardSolo?.()) return; unlockAudio(); enterFocus?.(); } // Start also drops into focus mode
                   (timer.running ? timer.pause : timer.start)();
                 }}
                 className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]"
@@ -862,7 +898,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel isPremium={isPremium} gateThen={gateThen} onEmbedPlay={sounds.embedTakeover} stopSignal={sounds.embedEpoch} />
+      <MusicPanel isPremium={isPremium} gateThen={gateThen} embed={embed} onPlay={playEmbed} />
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
@@ -1104,80 +1140,48 @@ function FocusSoundsPanel({ sounds }: any) {
   );
 }
 
-function MusicPanel({ isPremium, gateThen, onEmbedPlay, stopSignal }: any) {
+// Controller for the ONE persistent streaming player (the mini-dock App
+// renders at the root). Selecting a preset or pasting a link hands the target
+// up to App via onPlay — the iframe itself lives in the dock, so it keeps
+// playing across tab switches and pop-out timers instead of dying when this
+// panel unmounts.
+function MusicPanel({ isPremium, gateThen, embed, onPlay }: any) {
   const [service, setService] = useState<"spotify" | "apple">("spotify");
-
-  const [spotifySelectedId, setSpotifySelectedId] = useState<string | null>(null);
   const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
   const [spotifyCustomError, setSpotifyCustomError] = useState(false);
-  const [spotifyCustomTarget, setSpotifyCustomTarget] = useState<{ type: SpotifyEmbedType; id: string } | null>(null);
-
-  const [appleSelectedId, setAppleSelectedId] = useState<string | null>(null);
   const [appleCustomUrl, setAppleCustomUrl] = useState("");
   const [appleCustomError, setAppleCustomError] = useState(false);
-  const [appleCustomTarget, setAppleCustomTarget] = useState<{ type: AppleMusicEmbedType; path: string } | null>(null);
 
-  // Choosing a built-in focus sound bumps stopSignal (App). Deselect any
-  // playing embed — unmounting the iframe is the only reliable way to stop a
-  // cross-origin Spotify/Apple player. Skips the initial mount.
-  const stopSeen = useRef(stopSignal);
+  const playSpotify = (target: { type: SpotifyEmbedType; id: string }, label: string) =>
+    onPlay({ service: "spotify", src: toSpotifyEmbedSrc(target), height: embedHeight(target.type), label });
+  const playApple = (target: { type: AppleMusicEmbedType; path: string }, label: string) =>
+    onPlay({ service: "apple", src: toAppleEmbedSrc(target), height: appleEmbedHeight(target.type), label });
+
+  // "Players already up": premium users get the dock preloaded with the first
+  // playlist on first visit (paused until they press play inside it).
+  const preloaded = useRef(false);
   useEffect(() => {
-    if (stopSignal === stopSeen.current) return;
-    stopSeen.current = stopSignal;
-    setSpotifySelectedId(null);
-    setSpotifyCustomTarget(null);
-    setAppleSelectedId(null);
-    setAppleCustomTarget(null);
-  }, [stopSignal]);
-
-  const spotifyPreset = spotifySelectedId ? SPOTIFY_PRESETS.find((p) => p.id === spotifySelectedId) ?? null : null;
-  const spotifyTarget = spotifyCustomTarget ?? (spotifyPreset ? { type: spotifyPreset.type, id: spotifyPreset.spotifyId } : null);
-
-  const applePreset = appleSelectedId ? APPLE_MUSIC_PRESETS.find((p) => p.id === appleSelectedId) ?? null : null;
-  const appleTarget = appleCustomTarget ?? (applePreset ? { type: applePreset.type, path: applePreset.path } : null);
-
-  const selectSpotifyPreset = (id: string) => {
-    setSpotifySelectedId(id);
-    setSpotifyCustomTarget(null);
-    setSpotifyCustomUrl("");
-    setSpotifyCustomError(false);
-    onEmbedPlay?.(); // streaming takes over — silence the built-in focus sound
-  };
+    if (preloaded.current || !isPremium || embed) return;
+    preloaded.current = true;
+    const p = SPOTIFY_PRESETS[0];
+    if (p) playSpotify({ type: p.type, id: p.spotifyId }, p.name);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPremium]);
 
   const applySpotifyUrl = (value: string) => {
     setSpotifyCustomUrl(value);
     if (!value.trim()) { setSpotifyCustomError(false); return; }
     const parsed = parseSpotifyUrl(value);
-    if (parsed) {
-      setSpotifySelectedId(null);
-      setSpotifyCustomTarget(parsed);
-      setSpotifyCustomError(false);
-      onEmbedPlay?.();
-    } else {
-      setSpotifyCustomError(true);
-    }
-  };
-
-  const selectApplePreset = (id: string) => {
-    setAppleSelectedId(id);
-    setAppleCustomTarget(null);
-    setAppleCustomUrl("");
-    setAppleCustomError(false);
-    onEmbedPlay?.();
+    if (parsed) { setSpotifyCustomError(false); playSpotify(parsed, "Your Spotify pick"); }
+    else setSpotifyCustomError(true);
   };
 
   const applyAppleUrl = (value: string) => {
     setAppleCustomUrl(value);
     if (!value.trim()) { setAppleCustomError(false); return; }
     const parsed = parseAppleMusicUrl(value);
-    if (parsed) {
-      setAppleSelectedId(null);
-      setAppleCustomTarget(parsed);
-      setAppleCustomError(false);
-      onEmbedPlay?.();
-    } else {
-      setAppleCustomError(true);
-    }
+    if (parsed) { setAppleCustomError(false); playApple(parsed, "Your Apple Music pick"); }
+    else setAppleCustomError(true);
   };
 
   return (
@@ -1202,99 +1206,47 @@ function MusicPanel({ isPremium, gateThen, onEmbedPlay, stopSignal }: any) {
           </button>
         </div>
 
-        {service === "spotify" ? (
-          <>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {SPOTIFY_PRESETS.map((p) => {
-                const active = !spotifyCustomTarget && spotifySelectedId === p.id;
-                return (
-                  <button key={p.id} onClick={() => selectSpotifyPreset(p.id)}
-                    className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{p.name}</span>
-                      {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-                    </div>
-                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
-                  </button>
-                );
-              })}
-            </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {(service === "spotify" ? SPOTIFY_PRESETS : APPLE_MUSIC_PRESETS).map((p: any) => {
+            const src = service === "spotify"
+              ? toSpotifyEmbedSrc({ type: p.type, id: p.spotifyId })
+              : toAppleEmbedSrc({ type: p.type, path: p.path });
+            const active = embed?.src === src;
+            return (
+              <button key={p.id}
+                onClick={() => (service === "spotify" ? playSpotify({ type: p.type, id: p.spotifyId }, p.name) : playApple({ type: p.type, path: p.path }, p.name))}
+                className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{p.name}</span>
+                  {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+                </div>
+                <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
+              </button>
+            );
+          })}
+        </div>
 
-            <div className="mt-4">
-              <label htmlFor="spotify-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                Or paste a Spotify link
-              </label>
-              <input id="spotify-url" type="text" value={spotifyCustomUrl}
-                onChange={(e) => applySpotifyUrl(e.target.value)}
-                placeholder="https://open.spotify.com/playlist/..."
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-              {spotifyCustomError && (
-                <p className="mt-1.5 text-[11px] text-destructive">
-                  Couldn't read that link — paste a track, playlist, album, artist, episode, or show URL from Spotify.
-                </p>
-              )}
-            </div>
+        <div className="mt-4">
+          <label htmlFor={`${service}-url`} className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+            Or paste a {service === "spotify" ? "Spotify" : "Apple Music"} link
+          </label>
+          <input id={`${service}-url`} type="text"
+            value={service === "spotify" ? spotifyCustomUrl : appleCustomUrl}
+            onChange={(e) => (service === "spotify" ? applySpotifyUrl(e.target.value) : applyAppleUrl(e.target.value))}
+            placeholder={service === "spotify" ? "https://open.spotify.com/playlist/..." : "https://music.apple.com/us/playlist/..."}
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+          {(service === "spotify" ? spotifyCustomError : appleCustomError) && (
+            <p className="mt-1.5 text-[11px] text-destructive">
+              Couldn't read that link — paste a track, playlist, album, or artist URL.
+            </p>
+          )}
+        </div>
 
-            <div className="mt-4 overflow-hidden rounded-xl">
-              {spotifyTarget ? (
-                <iframe key={`spotify-${spotifyTarget.type}-${spotifyTarget.id}`} src={toSpotifyEmbedSrc(spotifyTarget)} width="100%" height={embedHeight(spotifyTarget.type)}
-                  className="w-full" style={{ border: "none" }}
-                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                  loading="lazy" title="Spotify player" />
-              ) : (
-                <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                  Pick a preset or paste a link to start playing.
-                </p>
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {APPLE_MUSIC_PRESETS.map((p) => {
-                const active = !appleCustomTarget && appleSelectedId === p.id;
-                return (
-                  <button key={p.id} onClick={() => selectApplePreset(p.id)}
-                    className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{p.name}</span>
-                      {active && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
-                    </div>
-                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.hint}</p>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-4">
-              <label htmlFor="apple-music-url" className="mb-1.5 block font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                Or paste an Apple Music link
-              </label>
-              <input id="apple-music-url" type="text" value={appleCustomUrl}
-                onChange={(e) => applyAppleUrl(e.target.value)}
-                placeholder="https://music.apple.com/us/playlist/..."
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-              {appleCustomError && (
-                <p className="mt-1.5 text-[11px] text-destructive">
-                  Couldn't read that link — paste an album, playlist, song, artist, or station URL from Apple Music.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-4 overflow-hidden rounded-xl">
-              {appleTarget ? (
-                <iframe key={`apple-${appleTarget.type}-${appleTarget.path}`} src={toAppleEmbedSrc(appleTarget)} width="100%" height={appleEmbedHeight(appleTarget.type)}
-                  className="w-full" style={{ border: "none" }}
-                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                  loading="lazy" title="Apple Music player" />
-              ) : (
-                <p className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-                  Pick a preset or paste a link to start playing.
-                </p>
-              )}
-            </div>
-          </>
-        )}
+        <p className="mt-4 rounded-xl border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+          {embed
+            ? "Playing in the mini-player at the bottom of your screen — it keeps going while you switch tabs or pop out the timer."
+            : "Pick a playlist — it opens in a mini-player that follows you across every tab."}
+        </p>
       </div>
 
       {!isPremium && (

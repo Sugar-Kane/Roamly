@@ -25,8 +25,16 @@ import type { Session } from "@supabase/supabase-js";
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
+    // Tick aligned to wall-clock second boundaries so every participant's
+    // display flips at (nearly) the same instant — free-running 1s intervals
+    // start at arbitrary offsets, which made the host's timer read up to a
+    // second behind other members'.
+    let interval: number | undefined;
+    const align = window.setTimeout(() => {
+      setNow(Date.now());
+      interval = window.setInterval(() => setNow(Date.now()), 1000);
+    }, 1000 - (Date.now() % 1000));
+    return () => { clearTimeout(align); if (interval) clearInterval(interval); };
   }, []);
   return now;
 }
@@ -52,6 +60,9 @@ type RoomsLiveProps = {
   // room (so the personal-timer sound effect doesn't fight it).
   soundAuto: boolean;
   onInRoom: (inRoom: boolean) => void;
+  // Bumped by App when the user confirms starting a solo timer while in a
+  // room — the lobby leaves the active room so only one timer runs at a time.
+  leaveSignal: number;
   // Picture-in-Picture: pop the shared room timer into a floating window. The
   // single window is owned by App; these let a room drive/close it.
   pipSupported: boolean;
@@ -133,7 +144,7 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
+function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, onInRoom, leaveSignal, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [active, setActive] = useState<LiveRoom | null>(null);
   const [occupancy, setOccupancy] = useState<Map<string, number>>(new Map());
@@ -145,6 +156,16 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   const now = useNow();
 
   const reload = useCallback(() => { fetchRooms().then(setRooms); }, []);
+
+  // App bumps leaveSignal when the user confirms starting a solo timer while
+  // inside a room — leave it so only one timer runs at a time.
+  const leaveSeen = useRef(leaveSignal);
+  useEffect(() => {
+    if (leaveSignal === leaveSeen.current) return;
+    leaveSeen.current = leaveSignal;
+    setActive(null);
+    reload();
+  }, [leaveSignal, reload]);
   useEffect(() => { reload(); }, [reload]);
 
   // Accepted friends' user ids — used to surface friends' rooms at the top.
