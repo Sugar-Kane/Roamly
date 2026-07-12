@@ -72,10 +72,10 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
 
   const revoke = async (u: AdminUser) => {
     const label = u.display_name || u.username || u.email || "this user";
-    if (!window.confirm(`Revoke all current Premium access for ${label}? This does not cancel Stripe billing.`)) return;
+    if (!window.confirm(`Cancel any active Stripe subscription and revoke all current Premium access for ${label}? Cancellation is immediate and does not automatically refund prior charges.`)) return;
     setBusyId(`${u.id}:revoke`);
     setError(null);
-    const result = await adminRevokePremium(u.id, "Revoked from Roamly admin portal");
+    const result = await adminRevokePremium(u.id);
     setBusyId(null);
     if (result.error) { setError(result.error); return; }
     setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: false } : r)));

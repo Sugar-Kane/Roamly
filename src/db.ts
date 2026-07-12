@@ -55,13 +55,21 @@ export async function adminGrantPremium(userId: string, months: 1 | 12, reason?:
   return { error: "Couldn't grant Premium — try again." };
 }
 
-export async function adminRevokePremium(userId: string, reason?: string): Promise<{ revoked?: number; error?: string }> {
+export async function adminRevokePremium(userId: string): Promise<{ revoked?: number; billingCanceled?: boolean; error?: string }> {
   if (!supabase) return { error: "Not available right now." };
-  const { data, error } = await supabase.rpc("admin_revoke_premium", { p_user: userId, p_reason: reason?.trim() || null });
-  if (!error) return { revoked: Number(data ?? 0) };
-  if (error.message.includes("not_admin")) return { error: "You don't have admin access." };
-  console.warn("[Roamly] adminRevokePremium failed", error.message);
-  return { error: "Couldn't revoke Premium — try again." };
+  const { data: auth } = await supabase.auth.getSession();
+  const token = auth.session?.access_token;
+  if (!token) return { error: "Your session expired. Sign in again." };
+  try {
+    const response = await fetch("/api/admin-revoke-premium", {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ userId }),
+    });
+    const result = await response.json() as { revoked?: number; billingCanceled?: boolean; error?: string };
+    if (!response.ok) return { error: result.error || "Couldn't revoke Premium." };
+    return result;
+  } catch {
+    return { error: "Couldn't reach billing administration — try again." };
+  }
 }
 
 // ---- Admin analytics + feedback ----
