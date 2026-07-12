@@ -6,19 +6,21 @@ import { createClient } from "@supabase/supabase-js";
 // Price objects are needed; the existing STRIPE_PRICE_ID stays for the
 // subscription alone.
 const CREDIT_PACKS = {
-  small: { credits: 10, cents: 300, name: "10 AI upload credits" },
-  large: { credits: 25, cents: 500, name: "25 AI upload credits" },
+  small: { credits: 2, cents: 100, premiumDays: 3, name: "2 Roamly upload credits" },
+  large: { credits: 5, cents: 300, premiumDays: 7, name: "5 Roamly upload credits" },
 } as const;
 type PackId = keyof typeof CREDIT_PACKS;
+type PlanId = "monthly" | "annual";
 
 export async function POST(request: Request): Promise<Response> {
   const stripeSecret = process.env.STRIPE_SECRET_KEY;
-  const priceId = process.env.STRIPE_PRICE_ID;
+  const monthlyPriceId = process.env.STRIPE_MONTHLY_PRICE_ID ?? process.env.STRIPE_PRICE_ID;
+  const annualPriceId = process.env.STRIPE_ANNUAL_PRICE_ID;
   const appUrl = process.env.APP_URL;
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!stripeSecret || !priceId || !appUrl || !supabaseUrl || !serviceRoleKey) {
+  if (!stripeSecret || !monthlyPriceId || !appUrl || !supabaseUrl || !serviceRoleKey) {
     return new Response(JSON.stringify({ error: "Payments are not configured yet." }), {
       status: 503,
       headers: { "content-type": "application/json" },
@@ -50,8 +52,9 @@ export async function POST(request: Request): Promise<Response> {
   // credit-pack purchase. No body (or no pack) → the subscription flow.
   let pack: (typeof CREDIT_PACKS)[PackId] | null = null;
   let packId: PackId | null = null;
+  let planId: PlanId = "monthly";
   try {
-    const body = (await request.json()) as { pack?: string };
+    const body = (await request.json()) as { pack?: string; plan?: string };
     if (body?.pack) {
       if (!(body.pack in CREDIT_PACKS)) {
         return new Response(JSON.stringify({ error: "Unknown credit pack." }), {
@@ -62,7 +65,24 @@ export async function POST(request: Request): Promise<Response> {
       packId = body.pack as PackId;
       pack = CREDIT_PACKS[packId];
     }
+    if (body?.plan) {
+      if (body.plan !== "monthly" && body.plan !== "annual") {
+        return new Response(JSON.stringify({ error: "Unknown subscription plan." }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      planId = body.plan;
+    }
   } catch { /* no JSON body — subscription flow */ }
+
+  const subscriptionPriceId = planId === "annual" ? annualPriceId : monthlyPriceId;
+  if (!pack && !subscriptionPriceId) {
+    return new Response(JSON.stringify({ error: "That subscription plan is not configured yet." }), {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const { data: profileRow, error: profileError } = await admin
     .from("profiles")
@@ -105,17 +125,22 @@ export async function POST(request: Request): Promise<Response> {
           success_url: `${appUrl}/?checkout=success`,
           cancel_url: `${appUrl}/?checkout=cancelled`,
           // The webhook grants exactly metadata.credits — never a client value.
-          metadata: { supabase_user_id: user.id, credits: String(pack.credits) },
+          metadata: {
+            supabase_user_id: user.id,
+            pack_id: packId!,
+            credits: String(pack.credits),
+            premium_days: String(pack.premiumDays),
+          },
         }
       : {
           mode: "subscription",
           customer: customerId,
-          line_items: [{ price: priceId, quantity: 1 }],
+          line_items: [{ price: subscriptionPriceId!, quantity: 1 }],
           success_url: `${appUrl}/?checkout=success`,
           cancel_url: `${appUrl}/?checkout=cancelled`,
-          metadata: { supabase_user_id: user.id },
+          metadata: { supabase_user_id: user.id, plan: planId },
         },
-    { idempotencyKey: `roamly-${pack ? `credits-${packId}` : "checkout"}-${user.id}-${Math.floor(Date.now() / 60_000)}` }
+    { idempotencyKey: `roamly-${pack ? `credits-${packId}` : `subscription-${planId}`}-${user.id}-${Math.floor(Date.now() / 60_000)}` }
   );
 
   return new Response(JSON.stringify({ url: checkoutSession.url }), {

@@ -17,7 +17,7 @@ Browser (React 19 + Vite SPA, src/)
 - **Authorization lives in Postgres Row-Level Security** (`supabase/schema.sql`). The browser talks to the database directly with the public anon key; RLS is the entire permission layer. Server functions use the service-role key (bypasses RLS) and re-check ownership themselves.
 - **Room timers are wall-clock math** — a room's phase is derived from time since `started_at` (`room_phase()` in SQL, `roomPhaseAt` in `src/rooms.ts`), so no server ticks and every participant computes the identical countdown. Four always-on community rooms; Premium users can host up to 3 rooms (RLS-enforced), auto-reaped ~1 min after emptying (pg_cron sweep + heartbeats).
 - **Premium** is a Stripe subscription. `profiles.is_premium` is flipped **only** by the webhook; column-level grants stop clients from self-upgrading.
-- **AI uploads** (PDF/images/Word/PowerPoint/text) go to Supabase Storage (`study-uploads`, per-user folders), then `api/generate-tasks` has Claude extract a task list. Quotas: free 3/month, premium 30/month, plus a global monthly circuit-breaker bounding total spend.
+- **AI uploads** (PDF/images/Word/PowerPoint/text) go to Supabase Storage (`study-uploads`, per-user folders), then `api/generate-tasks` has Claude extract a task list. Quotas: free 3/month, premium 10/month, plus a global monthly circuit-breaker bounding total spend.
 
 ## Repo layout
 

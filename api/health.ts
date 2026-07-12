@@ -7,6 +7,8 @@ export async function GET(): Promise<Response> {
     "SUPABASE_SERVICE_ROLE_KEY",
     "STRIPE_SECRET_KEY",
     "STRIPE_PRICE_ID",
+    "STRIPE_MONTHLY_PRICE_ID",
+    "STRIPE_ANNUAL_PRICE_ID",
     "STRIPE_WEBHOOK_SECRET",
     "ANTHROPIC_API_KEY",
     "APP_URL",

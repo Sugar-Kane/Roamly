@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Crown, Search, ExternalLink, Trash2 } from "lucide-react";
 import {
-  adminSearchUsers, adminSetPremium, sendInvite,
+  adminSearchUsers, adminGrantPremium, sendInvite,
   adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, adminListErrors,
   adminUserActivity, adminFeedbackAction,
   type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity,
@@ -61,13 +61,13 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     setSearched(true);
   };
 
-  const toggle = async (u: AdminUser) => {
-    setBusyId(u.id);
+  const grant = async (u: AdminUser, months: 1 | 12) => {
+    setBusyId(`${u.id}:${months}`);
     setError(null);
-    const err = await adminSetPremium(u.id, !u.is_premium);
+    const result = await adminGrantPremium(u.id, months, "Granted from Roamly admin portal");
     setBusyId(null);
-    if (err) { setError(err); return; }
-    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: !r.is_premium } : r)));
+    if (result.error) { setError(result.error); return; }
+    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: true } : r)));
   };
 
   const [tab, setTab] = useState<"usage" | "feedback" | "errors" | "users">("usage");
@@ -163,10 +163,16 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
                 <Crown size={11} /> Premium
               </span>
             )}
-            <button onClick={() => toggle(u)} disabled={busyId === u.id}
-              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition active:scale-95 disabled:opacity-50 ${u.is_premium ? "border border-border bg-card text-muted-foreground hover:border-destructive/50 hover:text-destructive" : "gradient-primary text-white shadow-glow"}`}>
-              {busyId === u.id ? "…" : u.is_premium ? "Remove" : "Grant Premium"}
-            </button>
+            <div className="flex shrink-0 gap-1">
+              <button onClick={() => grant(u, 1)} disabled={busyId !== null}
+                className="rounded-full border border-primary/50 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20 disabled:opacity-50">
+                {busyId === `${u.id}:1` ? "…" : "+1 month"}
+              </button>
+              <button onClick={() => grant(u, 12)} disabled={busyId !== null}
+                className="rounded-full gradient-primary px-2.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
+                {busyId === `${u.id}:12` ? "…" : "+1 year"}
+              </button>
+            </div>
           </div>
         ))}
       </div>

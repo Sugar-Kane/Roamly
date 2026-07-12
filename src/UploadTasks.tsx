@@ -5,14 +5,14 @@ import { InfoTip } from "./FocusMode";
 
 export const FREE_MONTHLY_UPLOAD_QUOTA = 3;
 // Mirrors PREMIUM_MONTHLY_QUOTA in api/generate-tasks.ts.
-export const PREMIUM_MONTHLY_UPLOAD_QUOTA = 30;
+export const PREMIUM_MONTHLY_UPLOAD_QUOTA = 10;
 // Mirrors MAX_UPLOAD_BYTES in api/generate-tasks.ts (the server re-checks, so
 // this is UX, not the safeguard) — bounds a worst-case PDF's AI cost.
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const FILE_TOO_LARGE_MSG = "That file is over 12 MB — split big decks into parts and upload them separately.";
 
 const CREDITS_EXPLAINER =
-  "Every month you get free AI uploads (3 free, 30 with Premium). Credits are extra uploads you buy once on the Premium page — they never expire and are used automatically after your monthly allowance runs out.";
+  "Every month you get free AI uploads (3 free, 10 with Premium). Credits are extra uploads you buy once on the Premium page — they never expire and are used automatically after your monthly allowance runs out.";
 
 // Keep in sync with ALLOWED_MEDIA_TYPES in api/generate-tasks.ts. Some
 // platforms report an empty MIME for .md/.csv, so the extension map below is

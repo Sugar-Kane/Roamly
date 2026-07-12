@@ -173,6 +173,21 @@ test("no horizontal overflow on any tab", async ({ page }) => {
   }
 });
 
+test("Release 2 pricing and credit packages render", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Select timer" }).click();
+  await page.getByRole("button", { name: /PANCE Drill/ }).click();
+  await page.getByRole("button", { name: /buy AI upload credits/i }).click();
+  await expect(page.getByText("$3", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("$30", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose monthly" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose annual" })).toBeVisible();
+  await expect(page.getByText("2 uploads", { exact: true })).toBeVisible();
+  await expect(page.getByText("5 uploads", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Includes 3 days Premium/)).toBeVisible();
+  await expect(page.getByText(/Includes 7 days Premium/)).toBeVisible();
+});
+
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
   for (const width of [320, 375, 390, 430, 768, 1280]) {

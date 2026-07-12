@@ -28,7 +28,7 @@ const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12MB — bounds a worst-case PDF's
 const FREE_MONTHLY_QUOTA = 3;
 // Premium is capped too — "unlimited" uploads would be an open tab on the
 // Anthropic bill. Generous for real studying, hostile to abuse.
-const PREMIUM_MONTHLY_QUOTA = 30;
+const PREMIUM_MONTHLY_QUOTA = 10;
 // App-wide monthly ceiling across ALL users — the circuit breaker that bounds
 // the total Anthropic bill no matter how many accounts exist. Raise as the
 // user base grows (2000 ≈ $100 typical / ~2-4x headroom for 100 premium users).
@@ -119,7 +119,8 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const period = currentPeriod();
-  const isPremium = profileRow.is_premium as boolean;
+  const { data: effectivePremium, error: entitlementError } = await admin.rpc("has_active_premium", { p_user: user.id });
+  const isPremium = entitlementError ? profileRow.is_premium as boolean : effectivePremium === true;
   const usedThisPeriod = profileRow.ai_uploads_period === period ? (profileRow.ai_uploads_count as number) : 0;
   const quota = isPremium ? PREMIUM_MONTHLY_QUOTA : FREE_MONTHLY_QUOTA;
 

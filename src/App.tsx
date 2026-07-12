@@ -9,7 +9,7 @@ import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc,
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, type Profile } from "./db";
+import { fetchProfile, startPremiumTrial, updateGoalAndExam, logFocusMinutes, fetchRecentSessions, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { loadPref, savePref } from "./storage";
@@ -113,7 +113,14 @@ export default function App() {
     }
     // Don't flash the demo SEED_TASKS at a signed-in user while theirs load.
     setTasksLoaded(false);
-    fetchProfile(userId).then(setProfile);
+    void (async () => {
+      let nextProfile = await fetchProfile(userId);
+      if (session?.user.email_confirmed_at && !nextProfile?.is_premium) {
+        const trialReady = await startPremiumTrial();
+        if (trialReady) nextProfile = await fetchProfile(userId);
+      }
+      setProfile(nextProfile);
+    })();
     fetchRecentSessions(userId).then(setSessions);
     fetchTasks(userId).then((rows) => {
       setTasks(rows);
@@ -138,7 +145,7 @@ export default function App() {
     const channel = client
       .channel(`profile-${session.user.id}`)
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${session.user.id}` },
-        (payload) => setProfile(payload.new as Profile))
+        () => { void fetchProfile(session.user.id).then(setProfile); })
       .subscribe();
     return () => { client.removeChannel(channel); };
   }, [session?.user.id]);
@@ -402,6 +409,16 @@ export default function App() {
     if (session?.user.id) deleteTask(id);
   }, [session?.user.id]);
 
+  // Expiring trials/promotions/admin grants are re-evaluated at their exact
+  // boundary even if the user leaves the app open for days.
+  useEffect(() => {
+    if (!session?.user.id || !profile?.premium_expires_at) return;
+    const delay = new Date(profile.premium_expires_at).getTime() - Date.now();
+    if (delay <= 0) { void fetchProfile(session.user.id).then(setProfile); return; }
+    const timeout = window.setTimeout(() => { void fetchProfile(session.user.id).then(setProfile); }, Math.min(delay + 1000, 2_147_000_000));
+    return () => window.clearTimeout(timeout);
+  }, [session?.user.id, profile?.premium_expires_at]);
+
   const editTask = useCallback((id: string, title: string) => {
     const nextTitle = title.trim();
     if (!nextTitle) return;
@@ -416,12 +433,14 @@ export default function App() {
     setTasks((prev) => [...prev, ...rows]);
   }, []);
 
-  // No pack → the $6/mo subscription; pack "small"/"large" → a one-time
-  // AI-upload credit pack (prices live server-side only).
-  const startCheckout = useCallback(async (packArg?: "small" | "large") => {
+  // Subscription plans and one-time AI-upload credit packs are selected
+  // server-side so price IDs never come from the browser.
+  const startCheckout = useCallback(async (choiceArg?: "small" | "large" | "monthly" | "annual") => {
     // Sanitize: this is also wired directly as an onClick handler, where the
     // click event would arrive as the first argument.
-    const pack = packArg === "small" || packArg === "large" ? packArg : undefined;
+    const choice = ["small", "large", "monthly", "annual"].includes(choiceArg as string) ? choiceArg : "monthly";
+    const pack = choice === "small" || choice === "large" ? choice : undefined;
+    const plan = choice === "annual" ? "annual" : "monthly";
     if (!session) { setShowAuth(true); return; }
     setCheckoutError(null);
     setCheckoutLoading(true);
@@ -431,8 +450,8 @@ export default function App() {
       if (!token) { setCheckoutLoading(false); setShowAuth(true); return; }
       const res = await fetch("/api/create-checkout-session", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, ...(pack ? { "content-type": "application/json" } : {}) },
-        ...(pack ? { body: JSON.stringify({ pack }) } : {}),
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(pack ? { pack } : { plan }),
       });
       if (!res.ok) { setCheckoutError("Payments aren't set up yet — check back soon."); setCheckoutLoading(false); return; }
       const { url } = await res.json();
@@ -1802,13 +1821,13 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   // A comped/admin-granted Premium account never went through Stripe checkout,
   // so it has no customer to open the billing portal for. Only offer "Manage
   // subscription" when there's an actual Stripe customer behind the account.
-  const hasStripeCustomer = !!profile?.stripe_customer_id;
-  const perks = ["30 AI note uploads a month (~1 a day)", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
+  const hasStripeSubscription = !!profile?.stripe_subscription_id;
+  const perks = ["10 AI note uploads each month", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
   // [feature, free, premium] — strings render as text, booleans as ✓/—.
   const compare: [string, string | boolean, string | boolean][] = [
-    ["Price", "$0", "$6 / month"],
-    ["AI note uploads", "3 a month", "30 a month"],
+    ["Price", "$0", "$3 monthly or $30 yearly"],
+    ["AI note uploads", "3 a month", "10 a month"],
     ["Extra upload credits", "Buy anytime", "Buy anytime"],
     ["Timer methods", "Core methods", "+ PANCE Drill & Marathon"],
     ["Study rooms", "Join any room", "Join + host up to 3"],
@@ -1869,7 +1888,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
       {isPremium && (
         <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
           <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active — thanks for supporting Roamly.</p>
-          {hasStripeCustomer ? (
+          {hasStripeSubscription ? (
             <>
               <p className="mt-1 text-xs text-muted-foreground">Manage billing below: update your card, see invoices, or cancel. If you cancel (or a payment stops), your account automatically returns to the free tier at the end of the paid period.</p>
               <button onClick={openPortal} disabled={portalLoading}
@@ -1879,16 +1898,26 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
               {portalError && <p className="mt-2 text-xs text-destructive">{portalError}</p>}
             </>
           ) : (
-            <p className="mt-1 text-xs text-muted-foreground">Premium was granted to this account directly, so there's no paid Stripe subscription to manage here — you keep all Premium features at no charge.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Premium comes from {profile?.premium_source === "trial" ? "your 30-day trial" : profile?.premium_source === "credit_purchase" ? "a credit purchase" : "an account grant"}.
+              {profile?.premium_expires_at ? ` Access lasts through ${new Date(profile.premium_expires_at).toLocaleDateString()}.` : ""}
+            </p>
           )}
         </div>
       )}
       {!isPremium && (
         <div className="mt-6 overflow-hidden rounded-3xl gradient-accent p-px shadow-glow">
           <div className="rounded-3xl bg-card/95 p-7 backdrop-blur">
-            <div className="flex items-baseline gap-2">
-              <span className="font-display text-4xl font-bold">$6</span>
-              <span className="text-muted-foreground">/ month</span>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-border bg-card/70 p-4">
+                <div className="flex items-baseline gap-2"><span className="font-display text-3xl font-bold">$3</span><span className="text-muted-foreground">/ month</span></div>
+                <button onClick={() => onSubscribe("monthly")} disabled={checkoutLoading} className="mt-3 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">Choose monthly</button>
+              </div>
+              <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4">
+                <div className="flex items-baseline gap-2"><span className="font-display text-3xl font-bold">$30</span><span className="text-muted-foreground">/ year</span></div>
+                <p className="mt-0.5 text-xs text-primary">Save $6 annually</p>
+                <button onClick={() => onSubscribe("annual")} disabled={checkoutLoading} className="mt-3 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">Choose annual</button>
+              </div>
             </div>
             <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
               {perks.map((p) => (
@@ -1897,12 +1926,8 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
                 </div>
               ))}
             </div>
-            <button onClick={onSubscribe} disabled={checkoutLoading}
-              className="mt-6 w-full rounded-full gradient-primary py-3 font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
-              {session ? (checkoutLoading ? "Redirecting…" : "Subscribe with Stripe") : "Sign in to subscribe"}
-            </button>
             {checkoutError && <p className="mt-2 text-center text-xs text-destructive">{checkoutError}</p>}
-            <p className="mt-2 text-center text-xs text-muted-foreground">Billed monthly via Stripe. Cancel anytime.</p>
+            <p className="mt-2 text-center text-xs text-muted-foreground">Secure billing via Stripe. Cancel anytime. New verified accounts receive a 30-day no-card trial.</p>
           </div>
         </div>
       )}
@@ -1914,19 +1939,20 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Extra AI note uploads you buy once. They never expire and are used automatically after your monthly allowance
-          ({isPremium ? "30 with Premium" : "3 free"}) runs out.
+          ({isPremium ? "10 with Premium" : "3 free"}) runs out.
           {session && <span className="font-medium text-foreground"> You have {credits} credit{credits === 1 ? "" : "s"}.</span>}
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
-            { id: "small" as const, credits: 10, price: "$3" },
-            { id: "large" as const, credits: 25, price: "$5" },
+            { id: "small" as const, credits: 2, price: "$1", premium: "3 days Premium" },
+            { id: "large" as const, credits: 5, price: "$3", premium: "7 days Premium" },
           ].map((p) => (
             <div key={p.id} className="rounded-2xl border border-border bg-card/70 p-4">
               <div className="flex items-baseline justify-between">
                 <span className="text-sm font-semibold">{p.credits} uploads</span>
                 <span className="font-display text-xl font-bold">{p.price}</span>
               </div>
+              <p className="mt-1 text-xs text-muted-foreground">Includes {p.premium}; never shortens an existing entitlement.</p>
               <button onClick={() => onSubscribe(p.id)} disabled={checkoutLoading}
                 className="mt-3 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20 active:scale-95 disabled:opacity-60">
                 {session ? (checkoutLoading ? "Redirecting…" : "Buy with Stripe") : "Sign in to buy"}
@@ -2005,7 +2031,7 @@ function Upsell({ onClose, onUpgrade, onBuyCredits }: { onClose: () => void; onU
       cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
         <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary shadow-glow"><Crown className="text-white" /></div>
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
-        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 30 AI note uploads a month, and hosting your own study rooms.</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 10 AI note uploads a month, and hosting your own study rooms.</p>
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Try Premium free</button>
         {onBuyCredits && (
           <button onClick={onBuyCredits} className="mt-2 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20">

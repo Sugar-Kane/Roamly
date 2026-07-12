@@ -19,6 +19,8 @@ export type Profile = {
   // Purchased AI-upload credits (never expire; used after the monthly
   // allowance). Optional so the client tolerates the pre-migration schema.
   ai_credits?: number;
+  premium_source?: string | null;
+  premium_expires_at?: string | null;
 };
 
 export type FocusSessionRow = { date: string; minutes: number };
@@ -43,13 +45,13 @@ export async function adminSearchUsers(query: string): Promise<AdminUser[]> {
   return (data ?? []) as AdminUser[];
 }
 
-export async function adminSetPremium(userId: string, premium: boolean): Promise<string | null> {
-  if (!supabase) return "Not available right now.";
-  const { error } = await supabase.rpc("admin_set_premium", { p_user: userId, p_premium: premium });
-  if (!error) return null;
-  if (error.message.includes("not_admin")) return "You don't have admin access.";
-  console.warn("[Roamly] adminSetPremium failed", error.message);
-  return "Couldn't update that account — try again.";
+export async function adminGrantPremium(userId: string, months: 1 | 12, reason?: string): Promise<{ expiresAt?: string; error?: string }> {
+  if (!supabase) return { error: "Not available right now." };
+  const { data, error } = await supabase.rpc("admin_grant_premium", { p_user: userId, p_months: months, p_reason: reason?.trim() || null });
+  if (!error) return { expiresAt: data as string };
+  if (error.message.includes("not_admin")) return { error: "You don't have admin access." };
+  console.warn("[Roamly] adminGrantPremium failed", error.message);
+  return { error: "Couldn't grant Premium — try again." };
 }
 
 // ---- Admin analytics + feedback ----
@@ -206,7 +208,28 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (error) { console.warn("[Roamly] fetchProfile failed", error.message); return null; }
-  return data as Profile;
+  const profile = data as Profile;
+  const { data: entitlement, error: entitlementError } = await supabase.rpc("get_my_premium_entitlement");
+  if (!entitlementError) {
+    const row = (entitlement as Array<{ is_premium: boolean; source: string | null; expires_at: string | null }> | null)?.[0];
+    if (row) {
+      profile.is_premium = row.is_premium;
+      profile.premium_source = row.source;
+      profile.premium_expires_at = row.expires_at;
+    }
+  }
+  return profile;
+}
+
+export async function startPremiumTrial(): Promise<boolean> {
+  const token = await getAccessToken();
+  if (!token) return false;
+  try {
+    const response = await fetch("/api/start-trial", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 // NOTE the explicit .eq(id) filter: without it this update silently fails
