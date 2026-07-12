@@ -24,6 +24,8 @@ const ALLOWED_MEDIA_TYPES = [
 type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 const MAX_TEXT_CHARS = 60_000; // keep worst-case Claude input (and cost) bounded
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12MB — bounds a worst-case PDF's Claude cost
+const MAX_PDF_PAGES = 50;
+const MIN_USABLE_PDF_CHARS = 80;
 
 const FREE_MONTHLY_QUOTA = 3;
 // Premium is capped too — "unlimited" uploads would be an open tab on the
@@ -64,6 +66,28 @@ function currentPeriod(): string {
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+}
+
+export async function extractNativePdfText(data: Uint8Array): Promise<{ text: string; pages: number; usable: boolean }> {
+  const { getDocument } = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const loading = getDocument({ data, useWorkerFetch: false, useSystemFonts: true });
+  const pdf = await loading.promise;
+  try {
+    if (pdf.numPages > MAX_PDF_PAGES) throw new Error(`pdf_page_limit:${pdf.numPages}`);
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const text = content.items.map((item) => ("str" in item ? item.str : "")).join(" ").replace(/\s+/g, " ").trim();
+      if (text) pages.push(`Page ${pageNumber}: ${text}`);
+    }
+    const text = pages.join("\n").slice(0, MAX_TEXT_CHARS);
+    const meaningful = (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
+    const uniqueWords = new Set(text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).size;
+    return { text, pages: pdf.numPages, usable: meaningful >= MIN_USABLE_PDF_CHARS && uniqueWords >= 10 };
+  } finally {
+    await loading.destroy();
+  }
 }
 
 export async function POST(request: Request): Promise<Response> {
@@ -108,6 +132,7 @@ export async function POST(request: Request): Promise<Response> {
     return jsonResponse({ error: "Unsupported file type — upload a PDF, photo, Word/PowerPoint file, or plain text." }, 400);
   }
   const validatedMediaType = mediaType as MediaType;
+  const discardUpload = async () => { await admin.storage.from(STORAGE_BUCKET).remove([storagePath]); };
 
   const { data: profileRow, error: profileError } = await admin
     .from("profiles")
@@ -115,6 +140,7 @@ export async function POST(request: Request): Promise<Response> {
     .eq("id", user.id)
     .single();
   if (profileError || !profileRow) {
+    await discardUpload();
     return jsonResponse({ error: "Could not load profile" }, 500);
   }
 
@@ -141,6 +167,19 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  // One upload consumes one monthly slot or one purchased credit. Internal
+  // native-extraction/OCR retries never reserve again, and any terminal failure
+  // refunds the same pool that paid for the attempt.
+  const refundUpload = async () => {
+    if (usedCredit) {
+      await admin.rpc("add_ai_credits", { p_user: user.id, p_credits: 1 });
+    } else if (atomicReserve) {
+      await admin.rpc("refund_ai_upload", { p_user: user.id, p_period: period });
+    } else {
+      await admin.from("profiles").update({ ai_uploads_count: usedThisPeriod, ai_uploads_period: period }).eq("id", user.id);
+    }
+  };
+
   // Reserve a quota slot BEFORE the Claude call (refunded on failure below).
   // reserve_ai_upload checks-and-increments in one row-locked statement, so
   // parallel requests can't race past the per-user cap or the app-wide spend
@@ -160,11 +199,13 @@ export async function POST(request: Request): Promise<Response> {
     if (reserveError) {
       const missing = reserveError.message.includes("does not exist") || reserveError.message.includes("find the function");
       if (!missing) {
+        await discardUpload();
         return jsonResponse({ error: "Couldn't check your upload quota — try again." }, 500);
       }
       // Migration not applied yet — legacy (non-atomic) reservation path.
       atomicReserve = false;
       if (usedThisPeriod >= quota) {
+        await discardUpload();
         return jsonResponse({ error: "quota_exceeded" }, 403);
       }
       const { data: totals } = await admin
@@ -173,6 +214,7 @@ export async function POST(request: Request): Promise<Response> {
         .eq("ai_uploads_period", period);
       const globalUsed = (totals ?? []).reduce((sum, r) => sum + ((r.ai_uploads_count as number) ?? 0), 0);
       if (globalUsed >= GLOBAL_MONTHLY_UPLOAD_CAP) {
+        await discardUpload();
         return jsonResponse({ error: "ai_at_capacity" }, 503);
       }
       await admin
@@ -183,10 +225,12 @@ export async function POST(request: Request): Promise<Response> {
       // Monthly allowance spent — fall back to purchased credits.
       const { data: creditOutcome, error: creditError } = await admin.rpc("consume_ai_credit", { p_user: user.id });
       if (creditError || creditOutcome !== "ok") {
+        await discardUpload();
         return jsonResponse({ error: "quota_exceeded" }, 403);
       }
       usedCredit = true;
     } else if (outcome === "ai_at_capacity") {
+      await discardUpload();
       return jsonResponse({ error: "ai_at_capacity" }, 503);
     }
   }
@@ -198,6 +242,8 @@ export async function POST(request: Request): Promise<Response> {
     .from(STORAGE_BUCKET)
     .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
   if (signError || !signed) {
+    await refundUpload();
+    await discardUpload();
     return jsonResponse({ error: "Couldn't read the uploaded file — try again." }, 500);
   }
 
@@ -223,16 +269,32 @@ export async function POST(request: Request): Promise<Response> {
 
   let tasks: { title: string; tag: string; est: number }[] = [];
   let claudeError: Response | null = null;
+  let processingMode: "native_text" | "ocr_image" | "ocr_pdf" = "native_text";
   try {
-    // PDFs and images go to Claude by URL; Office/text files are extracted to
-    // plain text here first (Claude's document block only accepts PDFs).
+    // PDFs attempt native extraction first. Image-only PDFs and image uploads
+    // use Claude vision as the OCR fallback.
     let fileBlock:
       | { type: "document"; source: { type: "url"; url: string } }
       | { type: "image"; source: { type: "url"; url: string } }
       | { type: "text"; text: string };
     if (validatedMediaType === "application/pdf") {
-      fileBlock = { type: "document", source: { type: "url", url: signed.signedUrl } };
+      const resp = await fetch(signed.signedUrl, { signal: AbortSignal.timeout(15_000) });
+      if (!resp.ok) throw new Error(`file fetch failed (${resp.status})`);
+      let native: { text: string; pages: number; usable: boolean } | null = null;
+      try {
+        native = await extractNativePdfText(new Uint8Array(await resp.arrayBuffer()));
+      } catch (error) {
+        if (String(error).includes("pdf_page_limit:")) throw error;
+        apiLog("generate-tasks", "pdf_native_extract_failed_using_ocr", { user: user.id });
+      }
+      if (native?.usable) {
+        fileBlock = { type: "text", text: `Study material extracted natively from a ${native.pages}-page PDF:\n\n${native.text}` };
+      } else {
+        processingMode = "ocr_pdf";
+        fileBlock = { type: "document", source: { type: "url", url: signed.signedUrl } };
+      }
     } else if (validatedMediaType.startsWith("image/")) {
+      processingMode = "ocr_image";
       fileBlock = { type: "image", source: { type: "url", url: signed.signedUrl } };
     } else {
       const resp = await fetch(signed.signedUrl, { signal: AbortSignal.timeout(15_000) });
@@ -281,7 +343,7 @@ export async function POST(request: Request): Promise<Response> {
       messages: [
         {
           role: "user",
-          content: [fileBlock, { type: "text" as const, text: "Extract study tasks from this material." }],
+          content: [fileBlock, { type: "text" as const, text: processingMode === "native_text" ? "Extract study tasks from this material." : "Read the visible text carefully, accounting for page or camera rotation when possible, then extract study tasks. Treat handwriting as best-effort and do not invent unreadable content." }],
         },
       ],
       output_config: { format: { type: "json_schema", schema: TASKS_SCHEMA } },
@@ -300,7 +362,8 @@ export async function POST(request: Request): Promise<Response> {
       }));
   } catch (err) {
     apiLog("generate-tasks", "claude_failed", { user: user.id, mediaType: validatedMediaType, error: String(err).slice(0, 200) });
-    claudeError = jsonResponse({ error: "Couldn't read that file — try a clearer copy or a different format." }, 502);
+    const tooManyPages = String(err).includes("pdf_page_limit:");
+    claudeError = jsonResponse({ error: tooManyPages ? `That PDF has more than ${MAX_PDF_PAGES} pages — split it into smaller sections and try again.` : processingMode === "native_text" ? "Couldn't read that file — try a clearer copy or a different format." : "OCR couldn't read enough usable text — rotate or retake the image in brighter light, or upload a clearer scan." }, tooManyPages ? 413 : 502);
   }
 
   // Best-effort cleanup now that Claude has (or hasn't) read the file — we don't
@@ -319,17 +382,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (claudeError) {
-    // Refund whichever pool paid for this — the user got nothing for it.
-    if (usedCredit) {
-      await admin.rpc("add_ai_credits", { p_user: user.id, p_credits: 1 });
-    } else if (atomicReserve) {
-      await admin.rpc("refund_ai_upload", { p_user: user.id, p_period: period });
-    } else {
-      await admin
-        .from("profiles")
-        .update({ ai_uploads_count: usedThisPeriod, ai_uploads_period: period })
-        .eq("id", user.id);
-    }
+    await refundUpload();
     return claudeError;
   }
 
@@ -346,9 +399,10 @@ export async function POST(request: Request): Promise<Response> {
   const { data: inserted, error: insertError } = ins;
   if (insertError || !inserted) {
     apiLog("generate-tasks", "insert_failed", { user: user.id, error: insertError?.message?.slice(0, 200) });
+    await refundUpload();
     return jsonResponse({ error: "Generated tasks but couldn't save them — try again." }, 500);
   }
 
-  apiLog("generate-tasks", "ok", { user: user.id, mediaType: validatedMediaType, tasks: inserted.length, atomicReserve });
-  return jsonResponse({ tasks: inserted }, 200);
+  apiLog("generate-tasks", "ok", { user: user.id, mediaType: validatedMediaType, processingMode, tasks: inserted.length, atomicReserve });
+  return jsonResponse({ tasks: inserted, processingMode }, 200);
 }

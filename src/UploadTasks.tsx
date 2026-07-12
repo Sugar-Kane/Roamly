@@ -47,6 +47,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);
   const [doneCount, setDoneCount] = useState(0);
+  const [processingMode, setProcessingMode] = useState<"native_text" | "ocr_image" | "ocr_pdf" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const creep = useRef<number | null>(null);
@@ -68,6 +69,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
   const handleFile = async (file: File | null) => {
     if (!file) return;
     setError(null);
+    setProcessingMode(null);
     setQuotaExceeded(false);
     const mediaType = mediaTypeOf(file);
     if (!mediaType) {
@@ -123,6 +125,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       }
       setProgress(100);
       setDoneCount(result.tasks.length);
+      setProcessingMode(result.processingMode ?? null);
       setStage("done");
       onImported(result.tasks);
     } catch {
@@ -185,7 +188,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
         <span className="text-sm font-medium">Upload notes, slides, or a photo</span>
         <button onClick={() => { setOpen(false); setStage("idle"); setProgress(0); }} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">PDF, Word, PowerPoint, text, or photos — up to 12 MB.</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">PDF, Word, PowerPoint, text, screenshots, or photos — up to 12 MB. Scans use OCR automatically; handwriting is best effort.</p>
       {stage !== "done" && (
         <input type="file" accept={ACCEPT} disabled={loading}
           onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
@@ -198,8 +201,8 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
           </div>
           <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
             {stage === "uploading" && "Uploading your file…"}
-            {stage === "reading" && "AI is reading your file and writing tasks…"}
-            {stage === "done" && <><Check size={13} className="text-roamly-green" /> Done — {doneCount} task{doneCount === 1 ? "" : "s"} added to your list.</>}
+            {stage === "reading" && "Reading text and using OCR only if needed…"}
+            {stage === "done" && <><Check size={13} className="text-roamly-green" /> Done — {doneCount} task{doneCount === 1 ? "" : "s"} added{processingMode === "ocr_pdf" || processingMode === "ocr_image" ? " using OCR" : ""}.</>}
           </p>
           {stage === "done" && (
             <button onClick={() => { setStage("idle"); setProgress(0); }} className="mt-1.5 text-xs text-primary underline-offset-2 hover:underline">
