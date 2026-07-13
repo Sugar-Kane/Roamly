@@ -32,6 +32,7 @@ import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions,
 import { loadGuestStudyEvents, loadGuestStudyPlans, newStudyEvent, saveGuestStudyEvents, saveGuestStudyPlans, type MissedReason, type PlannedStudySession, type StudyEvent } from "./release3";
 import { StudyInsights } from "./StudyInsights";
 import { HealthyBreakActivities } from "./HealthyBreakActivities";
+import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
 
 export type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
@@ -52,6 +53,7 @@ export default function App() {
   // profile menu's "App tour" row reopen it on demand.
   const [showTutorial, setShowTutorial] = useState(() => loadPref("roamly-tutorial-seen") !== "1");
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showAd, setShowAd] = useState(false);
 
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -563,6 +565,7 @@ export default function App() {
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
               embed={embed} playEmbed={playEmbed} guardSolo={guardSolo}
+              onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
@@ -632,6 +635,8 @@ export default function App() {
           // FocusMode `music` slot gave them.
           <div className="space-y-4">
             <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
+            <AdBreakPrompt active={timer.phase !== "focus" && !isPremium}
+              onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)} />
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
             <MusicPanel isPremium={isPremium} gateThen={gateThen} embed={embed} onPlay={playEmbed} />
@@ -693,6 +698,9 @@ export default function App() {
       {showTutorial && !needsPassword && <Tutorial setView={setView} onClose={() => setShowTutorial(false)} />}
       {showFeedback && session && (
         <FeedbackModal userId={session.user.id} page={view} onClose={() => setShowFeedback(false)} />
+      )}
+      {showAd && session && (
+        <AdSubmitModal userId={session.user.id} onClose={() => setShowAd(false)} />
       )}
     </div>
   );
@@ -910,7 +918,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, countUp, onCompleteCountUp }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1001,6 +1009,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       </section>
 
       <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-main-${timer.phase}-${timer.completedFocus}`} />
+      <AdBreakPrompt active={timer.phase !== "focus" && !isPremium} onAdvertise={onAdvertise} onGoPremium={onGoPremium} />
 
       <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8" aria-labelledby="count-up-title">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">

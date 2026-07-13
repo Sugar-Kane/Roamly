@@ -120,6 +120,55 @@ export async function adminListFeedback(limit = 50): Promise<FeedbackRow[]> {
   return (data ?? []) as FeedbackRow[];
 }
 
+// ---- Ad submissions (advertiser interest from the break-time prompt) ----
+export type AdType = "tiktok" | "reel" | "business_video" | "image_billboard";
+export type AdPlan = "image_weekly" | "short_video_weekly" | "business_video_weekly";
+export type AdStatus = "new" | "reviewing" | "approved" | "rejected" | "live" | "ended";
+
+export type AdSubmissionRow = {
+  id: string; email: string | null; username: string | null;
+  ad_type: AdType; business_name: string; target_url: string; contact_email: string;
+  plan: AdPlan; note: string | null; status: AdStatus; created_at: string; updated_at: string;
+};
+
+// Insert an advertiser submission (RLS: insert-own). Returns { id } or { error }.
+export async function submitAdSubmission(userId: string, fields: {
+  ad_type: AdType; business_name: string; target_url: string;
+  contact_email: string; plan: AdPlan; note?: string | null;
+}): Promise<{ id?: string; error?: string }> {
+  if (!supabase) return { error: "Ad submissions aren't available right now." };
+  const { data, error } = await supabase
+    .from("ad_submissions")
+    .insert({ user_id: userId, ...fields })
+    .select("id")
+    .single();
+  if (!error) return { id: (data as { id: string }).id };
+  if (error.message.includes("does not exist")) return { error: "Ad submissions aren't set up yet — check back soon." };
+  console.warn("[Roamly] submitAdSubmission failed", error.message);
+  return { error: "Couldn't send that — try again." };
+}
+
+export async function adminListAdSubmissions(limit = 100): Promise<AdSubmissionRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_list_ad_submissions", { p_limit: limit });
+  if (error) { console.warn("[Roamly] adminListAdSubmissions failed", error.message); return []; }
+  return (data ?? []) as AdSubmissionRow[];
+}
+
+export async function adminSetAdSubmissionStatus(id: string, status: AdStatus): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { error } = await supabase.rpc("admin_set_ad_submission_status", { p_id: id, p_status: status });
+  if (error) { console.warn("[Roamly] adminSetAdSubmissionStatus failed", error.message); return { error: "Couldn't update the status." }; }
+  return {};
+}
+
+export async function adminDeleteAdSubmission(id: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { error } = await supabase.rpc("admin_delete_ad_submission", { p_id: id });
+  if (error) { console.warn("[Roamly] adminDeleteAdSubmission failed", error.message); return { error: "Couldn't delete that." }; }
+  return {};
+}
+
 export async function adminUserActivity(query: string, limit = 200): Promise<UserActivityRow[]> {
   if (!supabase) return [];
   const { data, error } = await supabase.rpc("admin_user_activity", { p_query: query, p_limit: limit });

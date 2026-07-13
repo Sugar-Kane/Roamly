@@ -7,8 +7,10 @@ import {
   adminSearchUsers, adminGrantPremium, adminRevokePremium, sendInvite,
   adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, adminListErrors,
   adminUserActivity, adminFeedbackAction,
+  adminListAdSubmissions, adminSetAdSubmissionStatus, adminDeleteAdSubmission,
   type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity,
   type FeedbackRow, type ErrorRow, type UserActivityRow,
+  type AdSubmissionRow, type AdStatus,
 } from "./db";
 
 // "3m ago" / "2h ago" / "Apr 5" — compact relative time for activity/ticket rows.
@@ -81,7 +83,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: false } : r)));
   };
 
-  const [tab, setTab] = useState<"usage" | "feedback" | "errors" | "users">("usage");
+  const [tab, setTab] = useState<"usage" | "feedback" | "ads" | "errors" | "users">("usage");
 
   // Show the full roster by default when the Users tab opens; the search box
   // then filters it (and a cleared box restores the full list).
@@ -107,7 +109,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
       <p className="mt-1 text-sm text-muted-foreground">Usage, feedback, errors, invites, and Premium.</p>
 
       <div className="mt-4 flex flex-wrap gap-1.5">
-        {([["usage", "Usage"], ["feedback", "Feedback"], ["errors", "Errors"], ["users", "Users"]] as const).map(([id, label]) => (
+        {([["usage", "Usage"], ["feedback", "Feedback"], ["ads", "Ads"], ["errors", "Errors"], ["users", "Users"]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} aria-pressed={tab === id}
             className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${tab === id ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
             {label}
@@ -117,6 +119,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
 
       {tab === "usage" && <AdminUsage />}
       {tab === "feedback" && <AdminFeedback />}
+      {tab === "ads" && <AdminAds />}
       {tab === "errors" && <AdminErrors />}
 
       {tab === "users" && <>
@@ -442,6 +445,75 @@ function AdminFeedback() {
             onDelete={(id) => setRows((prev) => prev.filter((r) => r.id !== id))} />
         ))}
       </div>
+    </div>
+  );
+}
+
+const AD_STATUS_OPTIONS: AdStatus[] = ["new", "reviewing", "approved", "rejected", "live", "ended"];
+const AD_TYPE_LABEL: Record<string, string> = {
+  tiktok: "TikTok", reel: "Reel", business_video: "Business video", image_billboard: "Image billboard",
+};
+const AD_PLAN_LABEL: Record<string, string> = {
+  image_weekly: "Image $19/wk", short_video_weekly: "Short video $39/wk", business_video_weekly: "Business video $59/wk",
+};
+
+// Advertiser submissions from the break-time prompt. Admins triage status and
+// reach out at the contact email (payment/creative are handled off-platform).
+function AdminAds() {
+  const [rows, setRows] = useState<AdSubmissionRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => { adminListAdSubmissions(100).then((r) => { setRows(r); setLoaded(true); }); }, []);
+
+  const setStatus = async (id: string, status: AdStatus) => {
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
+    await adminSetAdSubmissionStatus(id, status);
+  };
+  const remove = async (id: string) => {
+    if (!window.confirm("Delete this ad submission?")) return;
+    const res = await adminDeleteAdSubmission(id);
+    if (!res.error) setRows((prev) => prev.filter((r) => r.id !== id));
+  };
+
+  return (
+    <div className="mt-5 space-y-2">
+      {!loaded && <p className="text-sm text-muted-foreground">Loading ad submissions…</p>}
+      {loaded && rows.length === 0 && (
+        <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
+          No ad submissions yet. Non-premium users can submit one from the break-time “Advertise on Roamly” prompt.
+        </p>
+      )}
+      {rows.map((a) => (
+        <div key={a.id} className="rounded-2xl border border-border bg-card/70 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="font-semibold">{a.business_name}</p>
+              <p className="text-xs text-muted-foreground">
+                {AD_TYPE_LABEL[a.ad_type] ?? a.ad_type} · {AD_PLAN_LABEL[a.plan] ?? a.plan} · {relTime(a.created_at)}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <select value={a.status} onChange={(e) => setStatus(a.id, e.target.value as AdStatus)}
+                className="rounded-lg border border-border bg-card px-2 py-1 text-xs">
+                {AD_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <button onClick={() => remove(a.id)} aria-label="Delete submission"
+                className="grid h-7 w-7 place-items-center rounded-lg border border-border text-muted-foreground transition hover:border-destructive/40 hover:text-destructive">
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <a href={a.target_url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-primary hover:underline">
+              <ExternalLink size={12} /> Creative link
+            </a>
+            <span className="text-muted-foreground">Contact: {a.contact_email}</span>
+            {(a.email || a.username) && <span className="text-muted-foreground">By: {a.username ?? a.email}</span>}
+          </div>
+          {a.note && <p className="mt-2 rounded-lg border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground">{a.note}</p>}
+        </div>
+      ))}
     </div>
   );
 }
