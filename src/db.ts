@@ -1,6 +1,6 @@
 import { supabase } from "./supabaseClient";
 import type { Task } from "./data";
-import type { MissedReason, PlannedStudySession, StudyEvent } from "./release3";
+import type { MissedReason, PlannedStudyDraft, PlannedStudySession, StudyEvent } from "./release3";
 
 export type Profile = {
   id: string;
@@ -344,17 +344,29 @@ export async function fetchPlannedStudySessions(userId: string): Promise<Planned
   return (data ?? []) as PlannedStudySession[];
 }
 
-export async function createPlannedStudySession(userId: string, row: Pick<PlannedStudySession, "task_id" | "task_title" | "category" | "scheduled_for" | "expected_minutes">): Promise<PlannedStudySession | null> {
+export async function createPlannedStudySession(userId: string, row: PlannedStudyDraft): Promise<PlannedStudySession | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.from("planned_study_sessions").insert({ ...row, user_id: userId }).select("*").single();
   if (error) { console.warn("[Roamly] createPlannedStudySession failed", error.message); return null; }
   return data as PlannedStudySession;
 }
 
-export async function updatePlannedStudySession(id: string, fields: { status?: PlannedStudySession["status"]; missed_reason?: MissedReason | null }): Promise<boolean> {
+export type PlannedStudyUpdate = Partial<PlannedStudyDraft> & {
+  status?: PlannedStudySession["status"];
+  missed_reason?: MissedReason | null;
+};
+
+export async function updatePlannedStudySession(id: string, fields: PlannedStudyUpdate): Promise<boolean> {
   if (!supabase) return false;
   const { error } = await supabase.from("planned_study_sessions").update({ ...fields, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) { console.warn("[Roamly] updatePlannedStudySession failed", error.message); return false; }
+  return true;
+}
+
+export async function deletePlannedStudySession(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("planned_study_sessions").delete().eq("id", id);
+  if (error) { console.warn("[Roamly] deletePlannedStudySession failed", error.message); return false; }
   return true;
 }
 
