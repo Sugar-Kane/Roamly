@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2 } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
@@ -9,7 +9,7 @@ import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc,
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, type PlannedStudyUpdate, type Profile } from "./db";
+import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { loadPref, savePref } from "./storage";
@@ -62,6 +62,7 @@ export default function App() {
   const [sessions, setSessions] = useState<FocusSession[]>(loadGuestSessions);
   const [studyEvents, setStudyEvents] = useState<StudyEvent[]>(loadGuestStudyEvents);
   const [plannedSessions, setPlannedSessions] = useState<PlannedStudySession[]>([]);
+  const [examSchedules, setExamSchedules] = useState<ExamSchedule[]>([]);
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
@@ -75,7 +76,6 @@ export default function App() {
 
   const isPremium = profile?.is_premium ?? false;
   const dailyGoal = profile?.daily_goal_minutes ?? 120;
-  const examDate = profile?.exam_date ?? null;
   const streak = useMemo(() => computeStreak(sessions), [sessions]);
   const todayMinutes = useMemo(() => minutesToday(sessions), [sessions]);
 
@@ -117,6 +117,7 @@ export default function App() {
       setSessions(loadGuestSessions());
       setStudyEvents(loadGuestStudyEvents());
       setPlannedSessions([]);
+      setExamSchedules([]);
       setTasks(guestTasks);
       setActiveTask(guestTasks[0]?.id ?? null);
       setTasksLoaded(true);
@@ -145,16 +146,18 @@ export default function App() {
       if (cancelled) return;
       setProfile(nextProfile);
 
-      const [recent, events, planned, taskRows] = await Promise.all([
+      const [recent, events, planned, taskRows, exams] = await Promise.all([
         fetchRecentSessions(userId),
         fetchStudyEvents(userId),
         fetchPlannedStudySessions(userId),
         fetchTasks(userId),
+        fetchExamSchedules(userId),
       ]);
       if (cancelled) return;
       setSessions(recent);
       setStudyEvents(events);
       setPlannedSessions(planned);
+      setExamSchedules(exams);
       setTasks(taskRows);
       setActiveTask(taskRows[0]?.id ?? null);
       setTasksLoaded(true);
@@ -447,10 +450,24 @@ export default function App() {
     setProfile((p) => (p ? { ...p, daily_goal_minutes: minutes } : p));
     if (session?.user.id) updateGoalAndExam(session.user.id, { daily_goal_minutes: minutes });
   };
-  const setExam = (date: string | null, name: string | null) => {
-    setProfile((p) => (p ? { ...p, exam_date: date, exam_name: name } : p));
-    if (session?.user.id) updateGoalAndExam(session.user.id, { exam_date: date, exam_name: name });
-  };
+  const addExam = useCallback(async (name: string, date: string): Promise<boolean> => {
+    if (!session?.user.id) return false;
+    const created = await createExamSchedule(session.user.id, name, date);
+    if (!created) return false;
+    setExamSchedules((current) => [...current, created].sort((a, b) => a.exam_date.localeCompare(b.exam_date)));
+    return true;
+  }, [session?.user.id]);
+  const editExam = useCallback(async (id: string, name: string, date: string): Promise<boolean> => {
+    const updated = await updateExamSchedule(id, { name, exam_date: date });
+    if (!updated) return false;
+    setExamSchedules((current) => current.map((exam) => exam.id === id ? updated : exam).sort((a, b) => a.exam_date.localeCompare(b.exam_date)));
+    return true;
+  }, []);
+  const removeExam = useCallback(async (id: string): Promise<boolean> => {
+    if (!await deleteExamSchedule(id)) return false;
+    setExamSchedules((current) => current.filter((exam) => exam.id !== id));
+    return true;
+  }, []);
 
   // Task CRUD: optimistic local update always; when signed in, also persist to
   // Supabase (tasks table) so they survive across devices/sessions.
@@ -655,7 +672,7 @@ export default function App() {
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
-              examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
+              exams={examSchedules} addExam={addExam} editExam={editExam} removeExam={removeExam} alerts={alerts}
               embed={embed} shownEmbed={shownEmbed} playEmbed={playEmbed} guardSolo={guardSolo}
               autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow} onOpenTasks={() => setView("tasks")}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
@@ -887,81 +904,154 @@ function localTodayISO(): string {
 // The board exams PA (and med) students most often count down to. "Custom…"
 // covers everything else (shelf exams, finals, quizzes) with a free-text name.
 const EXAM_OPTIONS = [
-  "PANCE", "PANRE", "EOR (End of Rotation)",
+  "PANCE", "PANRE", "PACKRAT", "EOR (End of Rotation)",
+  "Family Medicine EOR", "Internal Medicine EOR", "Emergency Medicine EOR",
+  "General Surgery EOR", "Pediatrics EOR", "Psychiatry EOR", "Women's Health EOR",
   "USMLE Step 1", "USMLE Step 2 CK", "USMLE Step 3",
   "COMLEX Level 1", "COMLEX Level 2-CE", "COMLEX Level 3",
-  "MCAT",
+  "MCAT", "NCLEX-RN", "NCLEX-PN", "DAT", "GRE", "LSAT", "Bar Exam", "CPA Exam",
 ];
 
-function ExamCountdownBar({ examDate, examName, setExam }: any) {
-  const [editing, setEditing] = useState(!examDate);
-  const [draft, setDraft] = useState(examDate ?? "");
-  const isListed = !examName || EXAM_OPTIONS.includes(examName);
-  const [examPick, setExamPick] = useState(() => (examName ? (isListed ? examName : "custom") : "PANCE"));
-  const [customName, setCustomName] = useState(isListed ? "" : examName ?? "");
+function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
+  exams: ExamSchedule[];
+  onCreate: (name: string, date: string) => Promise<boolean>;
+  onUpdate: (id: string, name: string, date: string) => Promise<boolean>;
+  onDelete: (id: string) => Promise<boolean>;
+}) {
+  const [editingId, setEditingId] = useState<string | "new" | null>(null);
+  const [draftDate, setDraftDate] = useState("");
+  const [examPick, setExamPick] = useState("PANCE");
+  const [customName, setCustomName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
   const todayStr = localTodayISO();
-  const isPast = !!draft && draft < todayStr;
+  const sorted = [...exams].sort((a, b) => a.exam_date.localeCompare(b.exam_date));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
 
-  const save = () => {
-    if (!draft || isPast) return; // the exam can't be in the past
-    const name = examPick === "custom" ? (customName.trim().slice(0, 60) || "exam") : examPick;
-    setExam(draft, name);
-    setEditing(false);
+  const resetDraft = () => {
+    setEditingId(null);
+    setDraftDate("");
+    setExamPick("PANCE");
+    setCustomName("");
+    setMessage(null);
+  };
+  const startNew = () => {
+    setDraftDate("");
+    setExamPick("PANCE");
+    setCustomName("");
+    setMessage(null);
+    setEditingId("new");
+  };
+  const startEdit = (exam: ExamSchedule) => {
+    const listed = EXAM_OPTIONS.includes(exam.name);
+    setDraftDate(exam.exam_date);
+    setExamPick(listed ? exam.name : "custom");
+    setCustomName(listed ? "" : exam.name);
+    setMessage(null);
+    setEditingId(exam.id);
+  };
+  const save = async () => {
+    if (!draftDate || draftDate < todayStr) return;
+    const name = examPick === "custom" ? customName.trim().slice(0, 60) : examPick;
+    if (!name) {
+      setMessage("Enter a name for this exam.");
+      return;
+    }
+    setSaving(true);
+    const saved = editingId === "new"
+      ? await onCreate(name, draftDate)
+      : editingId ? await onUpdate(editingId, name, draftDate) : false;
+    setSaving(false);
+    if (saved) resetDraft();
+    else setMessage("Couldn't save that exam. Try again.");
+  };
+  const remove = async (exam: ExamSchedule) => {
+    if (!window.confirm(`Delete ${exam.name} from your exam schedule?`)) return;
+    if (!await onDelete(exam.id)) {
+      setMessage("Couldn't delete that exam. Try again.");
+      return;
+    }
+    if (editingId === exam.id) resetDraft();
   };
 
-  if (editing) {
-    return (
-      <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
-        <div className="flex items-center gap-2">
-          <CalendarClock size={16} className="text-primary" />
-          <span className="text-sm font-medium">Set your exam date</span>
-          <InfoTip text="Pick your board exam — PANCE, EOR, USMLE, COMLEX, MCAT — or name your own. Roamly keeps a live day countdown at the top of the Focus tab: a little pressure, applied kindly." />
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <select value={examPick} onChange={(e) => setExamPick(e.target.value)} aria-label="Which exam"
-            className="rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
-            {EXAM_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}
-            <option value="custom">Custom…</option>
-          </select>
-          {examPick === "custom" && (
-            <input value={customName} onChange={(e) => setCustomName(e.target.value)} maxLength={60}
-              placeholder="Exam name (e.g. Cardio final)"
-              className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 sm:flex-none sm:w-52" />
-          )}
-          <input type="date" value={draft} min={todayStr} onChange={(e) => setDraft(e.target.value)}
-            className="rounded-xl border border-border bg-card px-3 py-1.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          {isPast && <span className="w-full text-xs text-destructive sm:w-auto">Pick today or a future date.</span>}
-          <button onClick={save} disabled={!draft || isPast}
-            className="rounded-xl gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
-            Save
-          </button>
-          {examDate && (
-            <button onClick={() => { setDraft(examDate); setEditing(false); }} className="text-xs text-muted-foreground underline">
-              Cancel
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const exam = new Date(`${examDate}T00:00:00`); // local-time parse, not UTC
-  const days = Math.ceil((exam.getTime() - today.getTime()) / 86400000);
-  const label = examName || "exam";
-
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
-      <div className="flex items-center gap-2">
-        <CalendarClock size={16} className="shrink-0 text-primary" />
-        <span className="text-sm">
-          {days > 0 && <><span className="font-display text-lg font-semibold">{days}</span> day{days === 1 ? "" : "s"} until your <span className="font-medium">{label}</span></>}
-          {days === 0 && `Your ${label} is today — good luck!`}
-          {days < 0 && `Your ${label} date has passed`}
-        </span>
+    <section className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <CalendarClock size={16} className="text-primary" /> Exam schedule
+            <InfoTip text="Track as many board exams, rotation exams, finals, or custom tests as you need. Roamly orders them by date and keeps a live countdown for each one." />
+          </h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">Keep every upcoming test and countdown together.</p>
+        </div>
+        {editingId !== "new" && (
+          <button onClick={startNew} className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow">
+            <Plus size={13} /> Add exam
+          </button>
+        )}
       </div>
-      <button onClick={() => setEditing(true)} className="shrink-0 text-xs text-muted-foreground underline">Change</button>
-    </div>
+
+      {editingId && (
+        <div className="mt-3 rounded-xl border border-border bg-background/35 p-3">
+          <p className="text-xs font-semibold">{editingId === "new" ? "Add an exam" : "Edit exam"}</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <div className="flex min-w-0 gap-2">
+              <select value={examPick} onChange={(event) => setExamPick(event.target.value)} aria-label="Which exam"
+                className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
+                {EXAM_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
+                <option value="custom">Custom…</option>
+              </select>
+              {examPick === "custom" && (
+                <input value={customName} onChange={(event) => setCustomName(event.target.value)} maxLength={60}
+                  aria-label="Custom exam name" placeholder="Exam name"
+                  className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
+              )}
+            </div>
+            <input type="date" value={draftDate} min={todayStr} onChange={(event) => setDraftDate(event.target.value)} aria-label="Exam date"
+              className="min-w-0 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            <div className="flex items-center gap-2">
+              <button onClick={save} disabled={saving || !draftDate || draftDate < todayStr || (examPick === "custom" && !customName.trim())}
+                className="rounded-xl gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
+                {saving ? "Saving…" : editingId === "new" ? "Add" : "Save"}
+              </button>
+              {(exams.length > 0 || editingId !== "new") && <button onClick={resetDraft} className="text-xs text-muted-foreground underline">Cancel</button>}
+            </div>
+          </div>
+          {draftDate && draftDate < todayStr && <p className="mt-1.5 text-xs text-destructive">Pick today or a future date.</p>}
+          {message && <p className="mt-1.5 text-xs text-destructive">{message}</p>}
+        </div>
+      )}
+      {message && !editingId && <p className="mt-2 text-xs text-destructive">{message}</p>}
+
+      {sorted.length === 0 && editingId !== "new" && <p className="mt-3 text-sm text-muted-foreground">No exams scheduled yet.</p>}
+      {sorted.length > 0 && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {sorted.map((exam, index) => {
+            const examDay = new Date(`${exam.exam_date}T00:00:00`);
+            const days = Math.ceil((examDay.getTime() - today.getTime()) / 86400000);
+            return (
+              <article key={exam.id} className={`rounded-xl border p-3 ${index === 0 && days >= 0 ? "border-primary/45 bg-primary/5" : "border-border bg-card/60"}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{exam.name}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{examDay.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-1">
+                    <button onClick={() => startEdit(exam)} aria-label={`Edit ${exam.name}`} className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"><Pencil size={13} /></button>
+                    <button onClick={() => remove(exam)} aria-label={`Delete ${exam.name}`} className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+                <p className="mt-2 text-sm">
+                  {days > 0 && <><span className="font-display text-xl font-semibold text-primary">{days}</span> day{days === 1 ? "" : "s"} remaining</>}
+                  {days === 0 && <span className="font-semibold text-primary">Today. You've got this!</span>}
+                  {days < 0 && <span className="text-muted-foreground">Exam date passed</span>}
+                </p>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1018,7 +1108,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1040,9 +1130,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       <PomodoroExplainer />
 
       {session ? (
-        <ExamCountdownBar key={`${examDate ?? "none"}|${examName ?? ""}`} examDate={examDate} examName={examName} setExam={setExam} />
+        <ExamSchedulePanel exams={exams} onCreate={addExam} onUpdate={editExam} onDelete={removeExam} />
       ) : (
-        <SignInPrompt onSignIn={onSignIn} message="Sign in to track your exam countdown." />
+        <SignInPrompt onSignIn={onSignIn} message="Sign in to track countdowns for all of your exams." />
       )}
 
       <section ref={timerRef} className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
