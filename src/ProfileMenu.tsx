@@ -5,10 +5,10 @@
 // settings work signed-out too — they're stored locally on the device.
 
 import { useEffect, useRef, useState } from "react";
-import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, MessageSquare } from "lucide-react";
+import { Camera, Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, MessageSquare, Trash2 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { loadPref } from "./storage";
-import type { Profile } from "./db";
+import { removeProfileAvatar, updateProfileAvatar, type Profile } from "./db";
 
 export type A11ySettings = {
   colorBlind: boolean;
@@ -48,12 +48,20 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSignIn, onSignOut, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
+function ProfileAvatar({ url, initials, className }: { url?: string | null; initials: string; className: string }) {
+  return <span className={`relative grid shrink-0 place-items-center overflow-hidden rounded-full gradient-primary font-semibold text-white ${className}`}>
+    {initials}
+    {url && <img key={url} src={url} alt="" className="absolute inset-0 h-full w-full object-cover" onError={(event) => { event.currentTarget.hidden = true; }} />}
+  </span>;
+}
+
+export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProfileChange, onSignIn, onSignOut, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
   session: Session | null;
   profile: Profile | null;
   isPremium: boolean;
   a11y: A11ySettings;
   setA11y: (next: A11ySettings) => void;
+  onProfileChange: (profile: Profile) => void;
   onSignIn: () => void;
   onSignOut: () => void;
   onOpenPremium: () => void;
@@ -64,7 +72,10 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSign
   onSendFeedback: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // Close on outside tap/click and on Escape.
   useEffect(() => {
@@ -87,23 +98,62 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSign
 
   const flip = (key: keyof A11ySettings) => setA11y({ ...a11y, [key]: !a11y[key] });
 
+  const chooseAvatar = async (file: File | undefined) => {
+    if (!file || !session || !profile) return;
+    setAvatarBusy(true);
+    setAvatarError(null);
+    const result = await updateProfileAvatar(session.user.id, file, profile.avatar_path);
+    setAvatarBusy(false);
+    if (!result.url) { setAvatarError(result.error ?? "Couldn't update that picture."); return; }
+    onProfileChange({ ...profile, avatar_path: result.path, avatar_url: result.url });
+  };
+
+  const removeAvatar = async () => {
+    if (!session || !profile?.avatar_url) return;
+    setAvatarBusy(true);
+    setAvatarError(null);
+    const result = await removeProfileAvatar(session.user.id, profile.avatar_path);
+    setAvatarBusy(false);
+    if (result.error) { setAvatarError(result.error); return; }
+    onProfileChange({ ...profile, avatar_path: null, avatar_url: null });
+  };
+
   return (
     <div ref={rootRef} className="relative">
       <button onClick={() => setOpen((o) => !o)} aria-label="Open profile menu" aria-expanded={open}
-        className="grid h-9 w-9 place-items-center rounded-full gradient-primary text-sm font-semibold text-white shadow-glow transition active:scale-95">
-        {session ? initials : "☺"}
+        className="rounded-full shadow-glow transition active:scale-95">
+        <ProfileAvatar url={session ? profile?.avatar_url : null} initials={session ? initials : "☺"} className="h-9 w-9 text-sm" />
       </button>
 
       {open && (
         <div className="absolute right-0 top-11 z-50 w-72 rounded-2xl border border-border bg-card p-2 shadow-xl">
           {/* Account */}
           <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full gradient-primary text-sm font-semibold text-white">{session ? initials : "☺"}</span>
+            <ProfileAvatar url={session ? profile?.avatar_url : null} initials={session ? initials : "☺"} className="h-10 w-10 text-sm" />
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold">{session ? (name ?? "Set a username") : "Not signed in"}</span>
               <span className="block truncate text-xs text-muted-foreground">{session ? email : "Sign in to sync your data"}</span>
             </span>
           </div>
+
+          {session && (
+            <div className="mb-1 rounded-xl border border-border bg-card/70 px-3 py-2.5">
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Choose profile picture"
+                onChange={(event) => { void chooseAvatar(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={avatarBusy || !profile} onClick={() => fileRef.current?.click()}
+                  className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                  <Camera size={13} /> {avatarBusy ? "Saving…" : profile?.avatar_url ? "Change photo" : "Add photo"}
+                </button>
+                {profile?.avatar_url && <button type="button" disabled={avatarBusy} onClick={() => void removeAvatar()}
+                  className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:text-destructive disabled:opacity-50">
+                  <Trash2 size={12} /> Remove
+                </button>}
+              </div>
+              <p className="mt-1.5 text-[10px] text-muted-foreground">JPG, PNG, or WebP. Maximum 5 MB.</p>
+              {avatarError && <p role="alert" className="mt-1 text-[11px] text-destructive">{avatarError}</p>}
+            </div>
+          )}
 
           {/* Plan */}
           {session && (
