@@ -1925,10 +1925,12 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
           <h2 className="text-sm font-semibold">Study history</h2>
           {!isPremium && <span className="flex items-center gap-1 text-xs text-primary"><Crown size={12} /> Premium</span>}
         </div>
+        {/* Free users get placeholder digits, not real values behind a blur —
+            a CSS-only gate leaves the numbers readable in the DOM. */}
         <div className={`mt-2 grid grid-cols-3 gap-3 ${!isPremium ? "blur-sm" : ""}`}>
-          <Stat label="Total focus" value={`${hrs}h ${totalMin60 % 60}m`} />
-          <Stat label="Active days" value={String(activeDays)} />
-          <Stat label="Best day ever" value={`${bestDayEver}m`} />
+          <Stat label="Total focus" value={isPremium ? `${hrs}h ${totalMin60 % 60}m` : "‒‒h ‒‒m"} />
+          <Stat label="Active days" value={isPremium ? String(activeDays) : "‒‒"} />
+          <Stat label="Best day ever" value={isPremium ? `${bestDayEver}m` : "‒‒m"} />
         </div>
         {!isPremium && (
           <button onClick={onUpsell} className="absolute inset-0 grid place-items-center">

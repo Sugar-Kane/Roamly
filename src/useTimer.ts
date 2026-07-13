@@ -29,14 +29,15 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
     [method]
   );
 
-  // Reset whenever the method changes.
+  // Reset whenever the method changes — including a Custom method's break or
+  // cycle values, which the editor promises will restart the current timer.
   useEffect(() => {
     setPhase("focus");
     setRemaining(method.focus * 60);
     setRunning(false);
     deadlineRef.current = null;
     setCompletedFocus(0);
-  }, [method.id, method.focus]);
+  }, [method.id, method.focus, method.short, method.long, method.cycles]);
 
   const advance = useCallback(() => {
     deadlineRef.current = null;

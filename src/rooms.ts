@@ -31,7 +31,47 @@ export type RoomPhaseInfo = {
 // repeating forever — so every participant derives the identical countdown
 // and the system rooms run continuously. Mirrors room_phase() in
 // supabase/rooms_schema.sql, which enforces break-only chat server-side.
-export function roomPhaseAt(room: LiveRoom, atMs: number = Date.now()): RoomPhaseInfo {
+// ---- Server clock sync ----
+// Room phases are wall-clock math, so a device with a skewed clock sees a
+// different countdown than everyone else — and can even have its break-time
+// chat rejected by the database's timing trigger while its own UI says the
+// break is open. Estimate the server-client offset once from HTTP Date
+// response headers (lowest-round-trip sample wins) and fold it into every
+// room-time calculation. Offsets under 1.5s are ignored: the Date header
+// only has second resolution, so tiny corrections would be noise.
+let clockOffsetMs = 0;
+let clockSyncStarted = false;
+
+export function roomNowMs(): number {
+  return Date.now() + clockOffsetMs;
+}
+
+export async function syncServerClock(): Promise<void> {
+  if (clockSyncStarted || !supabase) return;
+  clockSyncStarted = true;
+  const base = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  if (!base || !anonKey) return;
+  let best: { rtt: number; offset: number } | null = null;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const t0 = Date.now();
+      const res = await fetch(`${base}/rest/v1/`, { headers: { apikey: anonKey }, cache: "no-store" });
+      const t1 = Date.now();
+      const dateHeader = res.headers.get("date");
+      if (!dateHeader) return;
+      const serverMs = new Date(dateHeader).getTime() + 500; // header truncates to the second; use the midpoint
+      const offset = serverMs - (t0 + t1) / 2;
+      const rtt = t1 - t0;
+      if (!best || rtt < best.rtt) best = { rtt, offset };
+    } catch {
+      break; // offline — keep the local clock
+    }
+  }
+  if (best && Math.abs(best.offset) > 1500) clockOffsetMs = best.offset;
+}
+
+export function roomPhaseAt(room: LiveRoom, atMs: number = roomNowMs()): RoomPhaseInfo {
   const f = room.focus_min * 60;
   const s = room.short_min * 60;
   const l = room.long_min * 60;
