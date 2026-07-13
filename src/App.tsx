@@ -277,6 +277,19 @@ export default function App() {
     savePref("roamly-focus-sound", "off");
     setEmbed(t);
   };
+  // The dock preloads the last-used service's first preset so both streaming
+  // players are visibly available before any station is picked.
+  const defaultEmbed = useMemo(() => {
+    if (loadPref("roamly-music-service") === "apple") {
+      const p = APPLE_MUSIC_PRESETS[0] as any;
+      return { service: "apple" as const, src: toAppleEmbedSrc({ type: p.type, path: p.path }), height: appleEmbedHeight(p.type), label: p.name };
+    }
+    const p = SPOTIFY_PRESETS[0] as any;
+    return { service: "spotify" as const, src: toSpotifyEmbedSrc({ type: p.type, id: p.spotifyId }), height: embedHeight(p.type), label: p.name };
+  }, []);
+  const shownEmbed = embed ?? defaultEmbed;
+  const [dockMin, setDockMin] = useState(() => loadPref("roamly-dock-min") === "1");
+  const toggleDockMin = () => setDockMin((m) => { savePref("roamly-dock-min", m ? "0" : "1"); return !m; });
 
   const sounds = {
     sound: focusSound,
@@ -581,7 +594,7 @@ export default function App() {
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
-              embed={embed} playEmbed={playEmbed} guardSolo={guardSolo} immersive={immersive}
+              embed={embed} playEmbed={playEmbed} guardSolo={guardSolo}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
               session={session} onSignIn={onSignIn} sounds={sounds}
@@ -626,6 +639,7 @@ export default function App() {
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
+      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} />
       <FocusMode open={immersive} phase={timer.phase}
         phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
         timeText={fmt(timer.secondsLeft)} progress={timer.progress}
@@ -656,7 +670,7 @@ export default function App() {
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)} />
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel embed={embed} onPlay={playEmbed} active={true} />
+            <MusicPanel embed={embed} onPlay={playEmbed} />
           </div>
         } />
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
@@ -918,7 +932,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, immersive, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1052,7 +1066,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel embed={embed} onPlay={playEmbed} active={!immersive} />
+      <MusicPanel embed={embed} onPlay={playEmbed} />
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
@@ -1321,8 +1335,11 @@ function FocusSoundsPanel({ sounds }: any) {
 // up to App via onPlay — the iframe itself lives in the dock, so it keeps
 // playing across tab switches and pop-out timers instead of dying when this
 // panel unmounts.
-function MusicPanel({ embed, onPlay, active }: any) {
-  const [service, setService] = useState<"spotify" | "apple">("spotify");
+function MusicPanel({ embed, onPlay }: any) {
+  // Remember the service tab so the persistent dock preloads the right
+  // default station on the next visit.
+  const [service, setServiceState] = useState<"spotify" | "apple">(() => loadPref("roamly-music-service") === "apple" ? "apple" : "spotify");
+  const setService = (s: "spotify" | "apple") => { savePref("roamly-music-service", s); setServiceState(s); };
   const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
   const [spotifyCustomError, setSpotifyCustomError] = useState(false);
   const [appleCustomUrl, setAppleCustomUrl] = useState("");
@@ -1332,16 +1349,6 @@ function MusicPanel({ embed, onPlay, active }: any) {
     onPlay({ service: "spotify", src: toSpotifyEmbedSrc(target), height: embedHeight(target.type), label });
   const playApple = (target: { type: AppleMusicEmbedType; path: string }, label: string) =>
     onPlay({ service: "apple", src: toAppleEmbedSrc(target), height: appleEmbedHeight(target.type), label });
-
-  // Show a ready-to-play embedded player by default (no click needed) so users
-  // can see both Spotify and Apple Music are available without hunting for a
-  // station first. Autoplay never starts without a user gesture, so this default
-  // player doesn't hijack any built-in focus sound — it just sits there ready.
-  const first = service === "spotify" ? SPOTIFY_PRESETS[0] : APPLE_MUSIC_PRESETS[0];
-  const defaultEmbed = service === "spotify"
-    ? { service: "spotify" as const, src: toSpotifyEmbedSrc({ type: (first as any).type, id: (first as any).spotifyId }), height: embedHeight((first as any).type), label: first.name }
-    : { service: "apple" as const, src: toAppleEmbedSrc({ type: (first as any).type, path: (first as any).path }), height: appleEmbedHeight((first as any).type), label: first.name };
-  const shown = embed ?? defaultEmbed;
 
   const applySpotifyUrl = (value: string) => {
     setSpotifyCustomUrl(value);
@@ -1417,16 +1424,35 @@ function MusicPanel({ embed, onPlay, active }: any) {
         </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Tap a playlist above to load it into the player below — or paste your own link.
+          Playlists load into the mini-player at the bottom of your screen — it keeps
+          playing while you switch tabs. Minimize it there whenever it's in the way.
         </p>
+      </div>
+    </div>
+  );
+}
 
-        {active && (
-          <div className="mt-3 overflow-hidden rounded-xl border border-border">
-            <iframe key={shown.src} src={shown.src} width="100%" height={Math.min(shown.height, 152)}
-              style={{ border: "none" }} title={`${shown.service === "spotify" ? "Spotify" : "Apple Music"} player`}
-              loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
-          </div>
-        )}
+// The ONE streaming player. Mounted once at App root and never unmounted or
+// reparented — an iframe reloads (and stops the music) if it moves in the
+// DOM, so tab switches and minimizing only ever toggle CSS on this container.
+// Preloaded with a default station so both services are visibly available
+// without clicking anything (autoplay can't start without a user gesture).
+function MusicDock({ shown, minimized, onToggleMin }: any) {
+  return (
+    <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[90] overflow-hidden rounded-2xl border border-border bg-card shadow-xl sm:left-auto sm:right-4 sm:w-96">
+      <button onClick={onToggleMin} className="flex w-full items-center justify-between px-3 py-1.5 text-left"
+        aria-label={minimized ? "Expand music player" : "Minimize music player"} aria-expanded={!minimized}>
+        <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+          <Music size={12} className="shrink-0 text-primary" />
+          <span className="truncate">{shown.service === "spotify" ? "Spotify" : "Apple Music"} · {shown.label}</span>
+        </span>
+        {minimized ? <ChevronUp size={14} className="shrink-0 text-muted-foreground" /> : <ChevronDown size={14} className="shrink-0 text-muted-foreground" />}
+      </button>
+      {/* Collapsed via height, NOT unmounted — the music keeps playing. */}
+      <div className={minimized ? "h-0 overflow-hidden" : ""} aria-hidden={minimized}>
+        <iframe key={shown.src} src={shown.src} width="100%" height={Math.min(shown.height, 152)}
+          style={{ border: "none" }} title="Music player"
+          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
       </div>
     </div>
   );
