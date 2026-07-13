@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { CalendarPlus, Check, Clock3, ExternalLink, Lock, LogIn, Pencil, Trash2, Users, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CalendarPlus, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, Lock, LogIn, Pencil, Trash2, Users, X } from "lucide-react";
 import type { Task } from "./data";
 import type { FocusSession } from "./streaks";
 import { MISSED_REASONS, type MissedReason, type PlannedStudyDraft, type PlannedStudyInvite, type PlannedStudySession, type PlannedStudyTarget, type StudyEvent } from "./release3";
@@ -115,6 +115,137 @@ function toDateTimeLocal(iso: string): string {
   const d = new Date(iso);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+
+function parseDateTimeLocal(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]) - 1, day: Number(match[3]), hour: Number(match[4]), minute: Number(match[5]) };
+}
+
+function localDateTimeValue(year: number, month: number, day: number, hour: number, minute: number) {
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return \`${year}-${pad(month + 1)-${pad(day)T${pad(hour):${pad(minute)\`;
+}
+
+function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = parseDateTimeLocal(value);
+  const today = new Date();
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date(selected?.year ?? today.getFullYear(), selected?.month ?? today.getMonth(), 1));
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (selected) setVisibleMonth(new Date(selected.year, selected.month, 1));
+  }, [value]);
+
+  const commitDate = (day: number) => {
+    const base = selected ?? { hour: Math.min(23, today.getHours() + 1), minute: 0 };
+    onChange(localDateTimeValue(visibleMonth.getFullYear(), visibleMonth.getMonth(), day, base.hour, base.minute));
+  };
+  const commitTime = (hour: number, minute: number) => {
+    const base = selected ?? { year: today.getFullYear(), month: today.getMonth(), day: today.getDate() };
+    onChange(localDateTimeValue(base.year, base.month, base.day, Math.max(0, Math.min(23, hour)), Math.max(0, Math.min(59, minute))));
+  };
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const leading = new Date(year, month, 1).getDay();
+  const dayCount = new Date(year, month + 1, 0).getDate();
+  const hour24 = selected?.hour ?? Math.min(23, today.getHours() + 1);
+  const hour12 = hour24 % 12 || 12;
+  const minute = selected?.minute ?? 0;
+  const isPm = hour24 >= 12;
+  const display = selected
+    ? new Date(selected.year, selected.month, selected.day, selected.hour, selected.minute).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+    : "Choose a date and time";
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button type="button" onClick={() => setOpen((current) => !current)} aria-haspopup="dialog" aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/30">
+        <span className={selected ? "" : "text-muted-foreground"}>{display}</span>
+        <CalendarPlus size={16} className="shrink-0 text-primary" />
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Choose planned study date and time"
+          className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-3rem))] rounded-2xl border border-border bg-card p-4 text-foreground shadow-xl">
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setVisibleMonth(new Date(year, month - 1, 1))} aria-label="Previous month"
+              className="grid h-8 w-8 place-items-center rounded-full border border-border bg-background/50 text-muted-foreground transition hover:border-primary/50 hover:text-primary">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="font-display text-sm font-semibold">{visibleMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
+            <button type="button" onClick={() => setVisibleMonth(new Date(year, month + 1, 1))} aria-label="Next month"
+              className="grid h-8 w-8 place-items-center rounded-full border border-border bg-background/50 text-muted-foreground transition hover:border-primary/50 hover:text-primary">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => <span key={\`${label}-${index}\`}>{label}</span>)}
+          </div>
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {Array.from({ length: leading }, (_, index) => <span key={\`blank-${index}\`} />)}
+            {Array.from({ length: dayCount }, (_, index) => {
+              const day = index + 1;
+              const chosen = selected?.year === year && selected.month === month && selected.day === day;
+              const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
+              return <button key={day} type="button" onClick={() => commitDate(day)} aria-pressed={chosen}
+                className={\`grid h-9 place-items-center rounded-xl text-sm transition ${chosen ? "gradient-primary font-semibold text-white shadow-glow" : isToday ? "border border-primary/50 bg-primary/10 font-semibold text-primary" : "hover:bg-primary/10 hover:text-primary"}\`}>
+                {day}
+              </button>;
+            })}
+          </div>
+          <div className="mt-4 rounded-xl border border-border bg-background/40 p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground"><Clock3 size={13} /> Time</div>
+            <div className="flex items-center gap-2">
+              <input type="number" min={1} max={12} value={hour12} aria-label="Hour"
+                onChange={(event) => {
+                  const next12 = Math.max(1, Math.min(12, Number(event.target.value)));
+                  commitTime((next12 % 12) + (isPm ? 12 : 0), minute);
+                }}
+                className="min-w-0 flex-1 rounded-lg border border-border bg-card px-2 py-2 text-center text-sm outline-none focus:border-primary" />
+              <span className="font-semibold text-muted-foreground">:</span>
+              <input type="number" min={0} max={59} value={String(minute).padStart(2, "0")} aria-label="Minute"
+                onChange={(event) => commitTime(hour24, Number(event.target.value))}
+                className="min-w-0 flex-1 rounded-lg border border-border bg-card px-2 py-2 text-center text-sm outline-none focus:border-primary" />
+              <button type="button" onClick={() => commitTime(isPm ? hour24 - 12 : hour24 + 12, minute)}
+                className="rounded-lg border border-border bg-card px-3 py-2 text-sm font-semibold text-primary transition hover:border-primary/50">
+                {isPm ? "PM" : "AM"}
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="flex gap-1">
+              <button type="button" onClick={() => {
+                setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                onChange(localDateTimeValue(today.getFullYear(), today.getMonth(), today.getDate(), hour24, minute));
+              }} className="rounded-full px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10">Today</button>
+              <button type="button" onClick={() => onChange("")} className="rounded-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-background/60">Clear</button>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow">Done</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function personName(person: PublicProfile | undefined): string {
@@ -316,10 +447,10 @@ export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan
     </div>
 
     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-      <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
-        Date and time
-        <input type="datetime-local" value={when} onChange={(event) => setWhen(event.target.value)} aria-label="Planned study time" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground" />
-      </label>
+      <div className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+        <span>Date and time</span>
+        <ThemedDateTimePicker value={when} onChange={setWhen} />
+      </div>
       <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
         Plan target
         <select value={targetType} onChange={(event) => setTargetType(event.target.value as PlannedStudyTarget)} aria-label="Plan target" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
