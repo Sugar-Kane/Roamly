@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
@@ -192,8 +192,16 @@ export default function App() {
     const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
     if (current) {
       const nextPoms = current.poms + 1;
-      setTasks((prev) => prev.map((t) => (t.id === activeTask ? { ...t, poms: nextPoms } : t)));
-      if (session?.user.id) updateTask(activeTask!, { poms: nextPoms });
+      const finished = nextPoms >= current.est && !current.done;
+      setTasks((prev) => prev.map((t) => (t.id === activeTask ? { ...t, poms: nextPoms, done: finished ? true : t.done } : t)));
+      if (session?.user.id) updateTask(activeTask!, finished ? { poms: nextPoms, done: true } : { poms: nextPoms });
+      if (finished) {
+        // The task hit its session estimate — complete it and hand focus to
+        // the next open task so the following block credits somewhere real.
+        track("task_done");
+        const next = sortTasks(tasks).find((o) => !o.done && o.id !== current.id);
+        setActiveTask(next?.id ?? null);
+      }
     }
     setSessions((prev) => addSession(prev, method.focus));
     const event = newStudyEvent(method.focus, current, "countdown");
@@ -409,7 +417,7 @@ export default function App() {
         if (row) setTasks((prev) => [...prev, row]);
       });
     } else {
-      setTasks((prev) => prev.length >= GUEST_TASK_LIMIT ? prev : [...prev, { id: crypto.randomUUID(), title, tag, done: false, poms: 0, est: 2, sort_order: nextOrder }]);
+      setTasks((prev) => prev.length >= GUEST_TASK_LIMIT ? prev : [...prev, { id: crypto.randomUUID(), title, tag, done: false, poms: 0, est: 1, sort_order: nextOrder }]);
     }
   }, [session?.user.id, tasks]);
 
@@ -479,6 +487,15 @@ export default function App() {
     if (!nextTitle) return;
     setTasks((prev) => prev.map((task) => task.id === id ? { ...task, title: nextTitle } : task));
     if (session?.user.id) updateTask(id, { title: nextTitle });
+  }, [session?.user.id]);
+
+  // How many focus sessions a task is planned to take (1 = done in a single
+  // Pomodoro). Reaching the estimate auto-completes the task.
+  const setTaskEst = useCallback((id: string, est: number) => {
+    const clamped = Math.max(1, Math.min(9, Math.round(est)));
+    if (!Number.isFinite(clamped)) return;
+    setTasks((prev) => prev.map((task) => task.id === id ? { ...task, est: clamped } : task));
+    if (session?.user.id) updateTask(id, { est: clamped });
   }, [session?.user.id]);
 
   // Tasks generated server-side by /api/generate-tasks are already persisted —
@@ -574,7 +591,7 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
-              addTask={addTask} editTask={editTask} toggleTask={toggleTask} removeTask={removeTask}
+              addTask={addTask} editTask={editTask} setTaskEst={setTaskEst} toggleTask={toggleTask} removeTask={removeTask}
               reorderTask={reorderTask} onFocusTask={focusTask}
               session={session} onSignIn={onSignIn} tasksLoaded={tasksLoaded}
               guestLimit={GUEST_TASK_LIMIT}
@@ -908,6 +925,15 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
   const timerRef = useRef<HTMLElement>(null);
   const scrollToTimer = () => timerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const [showMethods, setShowMethods] = useState(false);
+  // One timer card, two modes: the classic countdown methods or the count-up
+  // stopwatch, both picked from the same "Select timer" list.
+  const [timerMode, setTimerModeState] = useState<"pomodoro" | "countup">(() => (loadPref("roamly-timer-mode") === "countup" ? "countup" : "pomodoro"));
+  const setTimerMode = (m: "pomodoro" | "countup") => { setTimerModeState(m); savePref("roamly-timer-mode", m); };
+  // "Up next" can be narrowed to one subject; the pick sticks across visits.
+  const [upNextTag, setUpNextTagState] = useState<string>(() => loadPref("roamly-upnext-tag") ?? "all");
+  const setUpNextTag = (t: string) => { setUpNextTagState(t); savePref("roamly-upnext-tag", t); };
+  const upNextTags: string[] = [...new Set<string>(tasks.filter((t: Task) => !t.done).map((t: Task) => t.tag))];
+  const activeUpNextTag = upNextTag !== "all" && !upNextTags.includes(upNextTag) ? "all" : upNextTag;
 
   return (
     <div className="space-y-8">
@@ -923,8 +949,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         <button onClick={() => setShowMethods(true)}
           className="mb-5 flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-2.5 text-sm transition hover:border-primary/40">
           <span className="flex items-center gap-2 font-medium"><Timer size={15} className="text-primary" /> Select timer</span>
-          <span className="flex items-center gap-1 text-muted-foreground">{method.name} <ChevronDown size={14} /></span>
+          <span className="flex items-center gap-1 text-muted-foreground">{timerMode === "countup" ? "Count-up" : method.name} <ChevronDown size={14} /></span>
         </button>
+        {timerMode === "pomodoro" ? (
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
           <div className="flex shrink-0 flex-col items-center lg:items-start">
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
@@ -989,34 +1016,39 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             </div>
           </div>
         </div>
+        ) : (
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
+          <div className="flex shrink-0 flex-col items-center lg:items-start">
+            <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: theme.ring }}>Count-up</span>
+            <TimeDisplay value={fmt(countUp.elapsedSeconds)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
+            <span className="mt-1 text-sm text-muted-foreground">Stopwatch — no countdown</span>
+          </div>
+
+          <div className="flex flex-1 flex-col gap-5">
+            <p className="text-sm text-muted-foreground">
+              {task
+                ? <>Time logs to <span className="text-foreground">{task.title}</span> ({task.tag}) when you stop &amp; save.</>
+                : "Select a task below to link this session — or just run the clock."}
+            </p>
+            <div className="flex items-center gap-3">
+              <button onClick={() => {
+                if (!countUp.running) { if (!guardSolo?.()) return; timer.reset(); unlockAudio(); }
+                (countUp.running ? countUp.pause : countUp.start)();
+              }} className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]" style={{ background: theme.ring }} aria-label={countUp.running ? "Pause count-up timer" : countUp.elapsedSeconds > 0 ? "Resume count-up timer" : "Start count-up timer"}>
+                {countUp.running ? <><Pause size={22} fill="currentColor" /> Pause</> : <><Play size={22} fill="currentColor" /> {countUp.elapsedSeconds > 0 ? "Resume" : "Start"}</>}
+              </button>
+              <button onClick={onCompleteCountUp} disabled={countUp.elapsedSeconds <= 0}
+                className="h-14 rounded-2xl border border-primary/40 bg-primary/10 px-5 text-sm font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50">Stop & save</button>
+              <button onClick={countUp.reset} disabled={countUp.elapsedSeconds <= 0}
+                className="grid h-14 w-14 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label="Reset count-up timer"><RotateCcw size={19} /></button>
+            </div>
+          </div>
+        </div>
+        )}
       </section>
 
       <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-main-${timer.phase}-${timer.completedFocus}`} />
       <AdBreakPrompt active={timer.phase !== "focus" && !isPremium} onAdvertise={onAdvertise} onGoPremium={onGoPremium} />
-
-      <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8" aria-labelledby="count-up-title">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 id="count-up-title" className="font-display text-xl font-semibold">Count-up timer</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Stopwatch mode{task ? <> · linked to <span className="text-foreground">{task.title}</span> ({task.tag})</> : " · select a task above to link this session"}.
-            </p>
-          </div>
-          <TimeDisplay value={fmt(countUp.elapsedSeconds)} className="font-display text-5xl font-medium tracking-tight" />
-        </div>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <button onClick={() => {
-            if (!countUp.running) { if (!guardSolo?.()) return; timer.reset(); unlockAudio(); }
-            (countUp.running ? countUp.pause : countUp.start)();
-          }} className="flex h-12 min-w-32 items-center justify-center gap-2 rounded-2xl px-6 font-semibold text-white shadow-glow transition active:scale-[0.98]" style={{ background: ring }} aria-label={countUp.running ? "Pause count-up timer" : countUp.elapsedSeconds > 0 ? "Resume count-up timer" : "Start count-up timer"}>
-            {countUp.running ? <><Pause size={19} fill="currentColor" /> Pause</> : <><Play size={19} fill="currentColor" /> {countUp.elapsedSeconds > 0 ? "Resume" : "Start"}</>}
-          </button>
-          <button onClick={onCompleteCountUp} disabled={countUp.elapsedSeconds <= 0}
-            className="h-12 rounded-2xl border border-primary/40 bg-primary/10 px-5 text-sm font-semibold text-primary transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-50">Stop & save</button>
-          <button onClick={countUp.reset} disabled={countUp.elapsedSeconds <= 0}
-            className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label="Reset count-up timer"><RotateCcw size={18} /></button>
-        </div>
-      </section>
 
       <FocusSoundsPanel sounds={sounds} />
 
@@ -1038,8 +1070,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 return (
                   <button key={m.id}
                     onClick={() => {
-                      if (locked) { gateThen(() => setMethodId(m.id)); return; }
+                      if (locked) { gateThen(() => { setMethodId(m.id); setTimerMode("pomodoro"); }); return; }
                       setMethodId(m.id);
+                      setTimerMode("pomodoro");
                       if (m.id !== "custom") setShowMethods(false);
                     }}
                     className={`relative w-full rounded-2xl border p-3 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
@@ -1053,15 +1086,36 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               })}
             </div>
             {methodId === "custom" && <CustomEditor custom={custom} setCustom={setCustom} onSave={() => { setShowMethods(false); scrollToTimer(); }} />}
+            <div className="mt-3 border-t border-border pt-3">
+              <button
+                onClick={() => { setTimerMode("countup"); setShowMethods(false); scrollToTimer(); }}
+                className={`relative w-full rounded-2xl border p-3 text-left transition ${timerMode === "countup" ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-semibold">Count-up timer</span>
+                  <Timer size={13} className="text-primary" />
+                </div>
+                <p className="mt-0.5 text-xs leading-snug text-muted-foreground">Stopwatch mode — no countdown. Time logs to your selected task when you stop &amp; save.</p>
+              </button>
+            </div>
         </Modal>
       )}
 
       <div>
         <div className="min-w-0">
           <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
+          {upNextTags.length > 1 && (
+            <div className="mb-3 flex flex-wrap gap-1.5">
+              {["all", ...upNextTags].map((tg) => (
+                <button key={tg} onClick={() => setUpNextTag(tg)}
+                  className={`rounded-full border px-3 py-1 text-xs font-medium transition ${activeUpNextTag === tg ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+                  {tg === "all" ? "All subjects" : tg}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="space-y-2">
             {/* Active task pins to the top so the "Focusing" marker is always visible here. */}
-            {sortTasks(tasks).filter((t: Task) => !t.done)
+            {sortTasks(tasks).filter((t: Task) => !t.done && (activeUpNextTag === "all" || t.tag === activeUpNextTag))
               .sort((a: Task, b: Task) => Number(b.id === activeTask) - Number(a.id === activeTask))
               .slice(0, 3).map((t: Task) => (
               <button key={t.id} onClick={() => setActiveTask(t.id)}
@@ -1077,7 +1131,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                     )}
                   </span>
                 </span>
-                <span className="font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground" title="Focus sessions done / planned">{t.poms}/{t.est} <span className="font-sans text-[10px]">sessions</span></span>
               </button>
             ))}
           </div>
@@ -1389,7 +1443,7 @@ function TagPill({ tag }: { tag: string }) {
 
 type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
@@ -1516,13 +1570,26 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, toggle
   const open = sorted.filter((t: Task) => !t.done);
   const doneTasks = sorted.filter((t: Task) => t.done);
   const groupNames: string[] = [...new Set<string>(open.map((t: Task) => t.tag))];
+  // Subject groups themselves can be reordered (▲▼ on each header); the order
+  // persists on this device. Unlisted subjects keep their natural position.
+  const [tagOrder, setTagOrder] = useState<string[]>(() => { try { return JSON.parse(loadPref("roamly-tag-order") ?? "[]") as string[]; } catch { return []; } });
+  const groupRank = (g: string) => { const i = tagOrder.indexOf(g); return i === -1 ? 1000 + groupNames.indexOf(g) : i; };
+  const orderedGroupNames = [...groupNames].sort((a, b) => groupRank(a) - groupRank(b));
+  const moveGroup = (g: string, dir: -1 | 1) => {
+    const cur = orderedGroupNames.slice();
+    const i = cur.indexOf(g); const j = i + dir;
+    if (i < 0 || j < 0 || j >= cur.length) return;
+    [cur[i], cur[j]] = [cur[j], cur[i]];
+    setTagOrder(cur);
+    savePref("roamly-tag-order", JSON.stringify(cur));
+  };
 
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Each task shows completed / estimated focus sessions, e.g. 1/3 means 1 Pomodoro done out of an estimated 3 (estimates come from the AI or default to 1). To reorder within a subject, drag the ⋮⋮ handle — or press and hold a task on touch screens." />
+        <InfoTip text="New tasks are done in 1 focus session. Bigger task? Click its 0/1 counter to say how many sessions it needs — it completes itself when it gets there (e.g. 1/3 = 1 session done of 3). Reorder within a subject by dragging the ⋮⋮ handle, and reorder whole subjects with the ▲▼ on each header." />
       </p>
       {tasks.length > 0 && (
         <div className="mt-4">
@@ -1587,15 +1654,23 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, toggle
         </p>
       )}
 
-      {(!session || tasksLoaded) && groupNames.map((g) => {
+      {(!session || tasksLoaded) && orderedGroupNames.map((g, gi) => {
         const groupTasks = open.filter((t: Task) => t.tag === g);
         const groupIds = groupTasks.map((t: Task) => t.id);
         const c = tagColor(g);
         return (
           <section key={g} className="mt-6">
-            <h2 className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              <span className="h-2 w-2 rounded-full" style={{ background: c }} /> {g} · {groupTasks.length}
-            </h2>
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                <span className="h-2 w-2 rounded-full" style={{ background: c }} /> {g} · {groupTasks.length}
+              </h2>
+              <span className="flex items-center gap-0.5">
+                <button onClick={() => moveGroup(g, -1)} disabled={gi === 0} aria-label={`Move ${g} up`}
+                  className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition hover:bg-primary/10 hover:text-primary disabled:opacity-30"><ChevronUp size={13} /></button>
+                <button onClick={() => moveGroup(g, 1)} disabled={gi === orderedGroupNames.length - 1} aria-label={`Move ${g} down`}
+                  className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition hover:bg-primary/10 hover:text-primary disabled:opacity-30"><ChevronDown size={13} /></button>
+              </span>
+            </div>
             <div className="mt-2 space-y-2">
               {groupTasks.map((t: Task, i: number) => {
                 const active = activeTask === t.id;
@@ -1647,7 +1722,16 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, toggle
                           className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
                           <Pencil size={13} />
                         </button>
-                        <span className="w-8 text-center font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+                        <button data-nodrag onClick={() => {
+                          const raw = window.prompt(`How many focus sessions does "${t.title}" need? (1–9; it auto-completes when it gets there)`, String(t.est));
+                          if (raw === null) return;
+                          const n = Number(raw);
+                          if (Number.isFinite(n) && n >= 1) setTaskEst(t.id, n);
+                        }} title="Focus sessions done / planned — click to change"
+                          className="rounded-md px-1.5 py-0.5 text-center font-mono text-xs text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
+                          aria-label={`${t.poms} of ${t.est} focus sessions done for ${t.title} — change estimate`}>
+                          {t.poms}/{t.est}
+                        </button>
                         <button onClick={() => removeTask(t.id)} aria-label={`Delete ${t.title}`}
                           className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:text-destructive">
                           <X size={15} />
@@ -2061,7 +2145,7 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask }: any) {
                     <Timer size={10} /> Focusing
                   </span>
                 )}
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">{t.poms}/{t.est}</span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground" title="Focus sessions done / planned">{t.poms}/{t.est}</span>
               </button>
             </div>
           ))}

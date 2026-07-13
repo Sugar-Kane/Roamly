@@ -55,7 +55,7 @@ export async function adminGrantPremium(userId: string, months: 1 | 12, reason?:
   return { error: "Couldn't grant Premium — try again." };
 }
 
-export async function adminRevokePremium(userId: string): Promise<{ revoked?: number; billingCanceled?: boolean; error?: string }> {
+export async function adminRevokePremium(userId: string): Promise<{ revoked?: number; billingCanceled?: boolean; stripeWarning?: string; error?: string }> {
   if (!supabase) return { error: "Not available right now." };
   const { data: auth } = await supabase.auth.getSession();
   const token = auth.session?.access_token;
@@ -64,7 +64,7 @@ export async function adminRevokePremium(userId: string): Promise<{ revoked?: nu
     const response = await fetch("/api/admin-revoke-premium", {
       method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ userId }),
     });
-    const result = await response.json() as { revoked?: number; billingCanceled?: boolean; error?: string };
+    const result = await response.json() as { revoked?: number; billingCanceled?: boolean; stripeWarning?: string; error?: string };
     if (!response.ok) return { error: result.error || "Couldn't revoke Premium." };
     return result;
   } catch {
@@ -430,7 +430,9 @@ export async function createTask(userId: string, title: string, tag: string, sor
   if (!supabase) return null;
   let res = await supabase
     .from("tasks")
-    .insert({ user_id: userId, title, tag, ...(sortOrder != null ? { sort_order: sortOrder } : {}) })
+    // est: 1 — a task is done in a single focus session unless the user says
+    // otherwise (overrides the older DB column default of 2).
+    .insert({ user_id: userId, title, tag, est: 1, ...(sortOrder != null ? { sort_order: sortOrder } : {}) })
     .select(TASK_COLUMNS)
     .single();
   // If the sort_order column hasn't been migrated in yet, retry without it —

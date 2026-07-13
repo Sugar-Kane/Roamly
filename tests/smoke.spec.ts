@@ -108,6 +108,9 @@ test("guest tasks persist and stop at five", async ({ page }) => {
 
 test("count-up timer starts, pauses, and can be reset", async ({ page }) => {
   await goHome(page);
+  // Count-up lives in the Select timer list now, below the pomodoro methods.
+  await page.getByRole("button", { name: "Select timer" }).click();
+  await page.getByRole("button", { name: /Count-up timer/ }).click();
   await page.getByRole("button", { name: "Start count-up timer" }).click();
   await page.waitForTimeout(1200);
   await page.getByRole("button", { name: "Pause count-up timer" }).click();
@@ -118,6 +121,8 @@ test("count-up timer starts, pauses, and can be reset", async ({ page }) => {
 
 test("guest count-up completion is saved to analytics", async ({ page }) => {
   await goHome(page);
+  await page.getByRole("button", { name: "Select timer" }).click();
+  await page.getByRole("button", { name: /Count-up timer/ }).click();
   await page.getByRole("button", { name: "Start count-up timer" }).click();
   await page.waitForTimeout(1100);
   page.once("dialog", (dialog) => dialog.accept());
