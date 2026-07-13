@@ -193,11 +193,13 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByText(/Includes 7 days Premium/)).toBeVisible();
 });
 
-test("Release 3 study insights and planned sessions render", async ({ page }) => {
+test("study insights stay in Analytics and planned sessions live in Tasks", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Analytics", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Study breakdown" })).toBeVisible();
   await expect(page.getByRole("button", { name: "All time" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Planned study" })).toBeVisible();
   await expect(page.getByLabel("Planned study time")).toBeVisible();
 });
