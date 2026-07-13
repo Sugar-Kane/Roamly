@@ -6,5 +6,5 @@
   "functions": {
     "api/generate-tasks.ts": { "maxDuration": 120 }
   },
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/" }]
+  "rewrites": [{ "source": "/((?!api/|assets/).*)", "destination": "/" }]
 }
