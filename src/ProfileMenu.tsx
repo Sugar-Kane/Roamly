@@ -114,7 +114,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onSign
                 <span className="min-w-0">
                   <span className="block text-sm font-medium">{isPremium ? "Premium plan" : "Free plan"}</span>
                   <span className="block truncate text-[11px] text-muted-foreground">
-                    {isPremium ? "All features unlocked — view details" : "Upgrade for music, hosting, and more"}
+                    {isPremium ? "All Premium features unlocked" : "Music is free — upgrade for hosting and more"}
                   </span>
                 </span>
               </span>

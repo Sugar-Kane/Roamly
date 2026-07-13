@@ -16,5 +16,6 @@ export async function POST(request: Request): Promise<Response> {
 
   const { data: expiresAt, error: trialError } = await admin.rpc("start_trial_if_eligible", { p_user: data.user.id });
   if (trialError) return Response.json({ error: "Trial is not available yet." }, { status: 500 });
+  if (!expiresAt) return Response.json({ error: "Trial is not available for this account." }, { status: 409 });
   return Response.json({ expires_at: expiresAt });
 }

@@ -75,7 +75,7 @@ test("a task can be added locally", async ({ page }) => {
   await page.getByPlaceholder(/Add a study task/).fill("Smoke test task");
   await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
-  await expect(page.getByText("Smoke test task")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Smoke test task\b/ })).toBeVisible();
 });
 
 test("a task can be completed locally", async ({ page }) => {
@@ -102,8 +102,8 @@ test("guest tasks persist and stop at five", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Add task", exact: true })).toBeDisabled();
   await page.reload();
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
-  await expect(page.getByText("Guest task 1")).toBeVisible();
-  await expect(page.getByText("Guest task 5")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Guest task 1\b/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Guest task 5\b/ })).toBeVisible();
 });
 
 test("count-up timer starts, pauses, and can be reset", async ({ page }) => {
@@ -193,11 +193,13 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByText(/Includes 7 days Premium/)).toBeVisible();
 });
 
-test("Release 3 study insights and planned sessions render", async ({ page }) => {
+test("study insights stay in Analytics and planned sessions live in Tasks", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Analytics", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Study breakdown" })).toBeVisible();
   await expect(page.getByRole("button", { name: "All time" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Planned study" })).toBeVisible();
   await expect(page.getByLabel("Planned study time")).toBeVisible();
 });
