@@ -26,6 +26,15 @@ export type Profile = {
 
 export type FocusSessionRow = { date: string; minutes: number };
 
+export type ExamSchedule = {
+  id: string;
+  user_id: string;
+  name: string;
+  exam_date: string;
+  created_at: string;
+  updated_at: string;
+};
+
 // ---- Admin ----
 // All three RPCs are SECURITY DEFINER and gated by is_admin() server-side, so
 // the client checks here are only for showing/hiding the admin UI — a
@@ -312,6 +321,56 @@ export async function updateGoalAndExam(userId: string, fields: { daily_goal_min
     if (Object.keys(rest).length > 0) ({ error } = await supabase.from("profiles").update(rest).eq("id", userId));
   }
   if (error) console.warn("[Roamly] updateGoalAndExam failed", error.message);
+}
+
+export async function fetchExamSchedules(userId: string): Promise<ExamSchedule[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("exam_schedules")
+    .select("id,user_id,name,exam_date,created_at,updated_at")
+    .eq("user_id", userId)
+    .order("exam_date", { ascending: true });
+  if (error) {
+    console.warn("[Roamly] fetchExamSchedules failed", error.message);
+    return [];
+  }
+  return (data ?? []) as ExamSchedule[];
+}
+
+export async function createExamSchedule(userId: string, name: string, examDate: string): Promise<ExamSchedule | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("exam_schedules")
+    .insert({ user_id: userId, name: name.trim().slice(0, 60), exam_date: examDate })
+    .select("id,user_id,name,exam_date,created_at,updated_at")
+    .single();
+  if (error) {
+    console.warn("[Roamly] createExamSchedule failed", error.message);
+    return null;
+  }
+  return data as ExamSchedule;
+}
+
+export async function updateExamSchedule(id: string, fields: { name: string; exam_date: string }): Promise<ExamSchedule | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("exam_schedules")
+    .update({ name: fields.name.trim().slice(0, 60), exam_date: fields.exam_date, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("id,user_id,name,exam_date,created_at,updated_at")
+    .single();
+  if (error) {
+    console.warn("[Roamly] updateExamSchedule failed", error.message);
+    return null;
+  }
+  return data as ExamSchedule;
+}
+
+export async function deleteExamSchedule(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("exam_schedules").delete().eq("id", id);
+  if (error) console.warn("[Roamly] deleteExamSchedule failed", error.message);
+  return !error;
 }
 
 export async function logFocusMinutes(date: string, minutes: number) {
