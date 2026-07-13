@@ -109,12 +109,13 @@ function HowRoomsWork() {
         <button onClick={dismiss} className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">Got it</button>
       </div>
       <ol className="mt-2.5 space-y-2 text-sm text-muted-foreground">
-        <li className="flex gap-2"><span className="font-semibold text-primary">1.</span> Pick a room and hit Join — the timer inside is already running, and everyone in the room shares it.</li>
+        <li className="flex gap-2"><span className="font-semibold text-primary">1.</span> With an account, pick a room and hit Join — the timer inside is already running, and everyone in the room shares it.</li>
         <li className="flex gap-2"><span className="font-semibold text-primary">2.</span> Focus together in silence. Music plays if you want it; chat stays locked so nobody can distract you.</li>
         <li className="flex gap-2"><span className="font-semibold text-primary">3.</span> When the break hits, chat and voice open — say hi, compare notes, then the next focus block starts automatically.</li>
+        <li className="flex gap-2"><span className="font-semibold text-primary">4.</span> Premium members can host public or private rooms — private ones come with an invite code, and invited friends join without one.</li>
       </ol>
       <p className="mt-2.5 text-xs text-muted-foreground">
-        Always-on rooms never stop, so there's always one to drop into. Premium members can host their own room with a custom rhythm and invite friends.
+        Always-on rooms never stop, so there's always one to drop into.
       </p>
     </div>
   );
@@ -142,7 +143,6 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
             </div>
             <div className="mt-4 flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Users size={13} /> {r.members}/{r.cap}</div>
-              <span className="rounded-full border border-border px-4 py-1.5 text-sm text-muted-foreground">Preview</span>
             </div>
           </div>
         ))}
@@ -329,7 +329,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
       <div className="flex items-end justify-between">
         <div>
           <h1 className="flex items-center gap-2 font-display text-3xl font-semibold">Study rooms
-            <InfoTip text="Every room runs one shared timer — everyone inside focuses and breaks together. The always-on rooms never stop; jump in whenever. Chat and voice unlock during breaks so focus stays quiet." />
+            <InfoTip text="With an account, pick any room and hit Join — every room runs one shared timer, so everyone focuses and breaks together. The always-on rooms never stop; jump in whenever. Chat and voice unlock during breaks. Premium members can host their own public or private rooms." />
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">Live sessions with a shared timer. Chat and voice open during breaks.</p>
         </div>
@@ -856,6 +856,13 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         cycles={room.cycles} completed={info.focusIndex - 1}
         ring={phaseColor(info.phase)}
         onExit={() => setRoomImmersive(false)}
+        controls={pipSupported ? (
+          <button onClick={() => (pipWindow ? onClosePip() : onPopOut())}
+            className="flex h-12 items-center gap-2 rounded-2xl border border-border bg-card px-5 text-sm font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+            aria-label={pipWindow ? "Close pop-out timer" : "Pop out timer"}>
+            <PictureInPicture2 size={16} /> {pipWindow ? "Close pop-out" : "Pop out"}
+          </button>
+        ) : undefined}
         music={
           <div>
             <div className="flex items-center justify-between gap-2">

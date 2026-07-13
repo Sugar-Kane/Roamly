@@ -30,7 +30,7 @@ test("first-run tutorial shows on a fresh device", async ({ browser }) => {
 
 test("navigation tabs switch views", async ({ page }) => {
   await goHome(page);
-  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Rooms" }).click();
   await expect(page.getByRole("heading", { name: "Study rooms" })).toBeVisible();
@@ -71,7 +71,7 @@ test("sign-up form rejects a weak password", async ({ page }) => {
 
 test("a task can be added locally", async ({ page }) => {
   await goHome(page);
-  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByPlaceholder(/Add a study task/).fill("Smoke test task");
   await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
@@ -80,7 +80,7 @@ test("a task can be added locally", async ({ page }) => {
 
 test("a task can be completed locally", async ({ page }) => {
   await goHome(page);
-  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await page.getByPlaceholder(/Add a study task/).fill("Complete me");
   await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
@@ -92,7 +92,7 @@ test("a task can be completed locally", async ({ page }) => {
 
 test("guest tasks persist and stop at five", async ({ page }) => {
   await goHome(page);
-  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   for (let i = 1; i <= 5; i++) {
     await page.getByPlaceholder(/Add a study task/).fill(`Guest task ${i}`);
     if (i === 1) await page.getByLabel("New subject name").fill("Guest");
@@ -101,7 +101,7 @@ test("guest tasks persist and stop at five", async ({ page }) => {
   await expect(page.getByText(/reached the 5-task guest limit/i)).toBeVisible();
   await expect(page.getByRole("button", { name: "Add task", exact: true })).toBeDisabled();
   await page.reload();
-  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByText("Guest task 1")).toBeVisible();
   await expect(page.getByText("Guest task 5")).toBeVisible();
 });
@@ -162,7 +162,7 @@ test("pop-out timer button shows when Document PiP is supported", async ({ page 
 
 test("AI upload requires sign-in when logged out", async ({ page }) => {
   await goHome(page);
-  await page.getByRole("button", { name: "Tasks" }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByText(/Guest tasks stay on this device/)).toBeVisible();
   // The upload panel (with its file-type allowlist) only renders for sessions.
   await expect(page.getByText(/Upload notes or slides/)).toHaveCount(0);
