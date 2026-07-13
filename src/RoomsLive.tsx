@@ -5,7 +5,7 @@ import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
   fetchMessages, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
-  setRoomMusic, joinRoom, joinRoomByCode,
+  setRoomMusic, joinRoom, joinRoomByCode, roomNowMs, syncServerClock,
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
@@ -25,17 +25,21 @@ import { HealthyBreakActivities } from "./HealthyBreakActivities";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 
 function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => roomNowMs());
   useEffect(() => {
+    // One-time server clock sync (no-op after the first call): corrects a
+    // skewed device clock so every participant derives the same countdown —
+    // and so break chat opens exactly when the database thinks it's open.
+    void syncServerClock();
     // Tick aligned to wall-clock second boundaries so every participant's
     // display flips at (nearly) the same instant — free-running 1s intervals
     // start at arbitrary offsets, which made the host's timer read up to a
     // second behind other members'.
     let interval: number | undefined;
     const align = window.setTimeout(() => {
-      setNow(Date.now());
-      interval = window.setInterval(() => setNow(Date.now()), 1000);
-    }, 1000 - (Date.now() % 1000));
+      setNow(roomNowMs());
+      interval = window.setInterval(() => setNow(roomNowMs()), 1000);
+    }, 1000 - (roomNowMs() % 1000));
     return () => { clearTimeout(align); if (interval) clearInterval(interval); };
   }, []);
   return now;
