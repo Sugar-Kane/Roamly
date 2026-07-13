@@ -30,7 +30,7 @@ import { FriendsModal } from "./Friends";
 import { UploadTasksPanel } from "./UploadTasks";
 import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks, clearMigratedGuestData } from "./guestData";
 import { loadGuestStudyEvents, loadGuestStudyPlans, newStudyEvent, saveGuestStudyEvents, saveGuestStudyPlans, type MissedReason, type PlannedStudySession, type StudyEvent } from "./release3";
-import { StudyInsights } from "./StudyInsights";
+import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
 import { HealthyBreakActivities } from "./HealthyBreakActivities";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
@@ -45,6 +45,8 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>(loadGuestTasks);
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [activeTask, setActiveTask] = useState<string | null>(() => loadGuestTasks()[0]?.id ?? null);
+  const [estimateReachedTask, setEstimateReachedTask] = useState<string | null>(null);
+  const [autoCompleteEstimates, setAutoCompleteEstimates] = useState(() => loadPref("roamly-auto-complete-estimates") === "1");
   const [showUpsell, setShowUpsell] = useState(false);
   // User-editable values for the Custom method (minutes).
   const [custom, setCustom] = useState({ focus: 30, short: 7, long: 20, cycles: 4 });
@@ -193,9 +195,11 @@ export default function App() {
     if (current) {
       const nextPoms = current.poms + 1;
       const finished = nextPoms >= current.est && !current.done;
-      setTasks((prev) => prev.map((t) => (t.id === activeTask ? { ...t, poms: nextPoms, done: finished ? true : t.done } : t)));
-      if (session?.user.id) updateTask(activeTask!, finished ? { poms: nextPoms, done: true } : { poms: nextPoms });
-      if (finished) {
+      const shouldComplete = finished && autoCompleteEstimates;
+      setTasks((prev) => prev.map((t) => (t.id === activeTask ? { ...t, poms: nextPoms, done: shouldComplete ? true : t.done } : t)));
+      if (session?.user.id) updateTask(activeTask!, shouldComplete ? { poms: nextPoms, done: true } : { poms: nextPoms });
+      if (finished && !shouldComplete) setEstimateReachedTask(current.id);
+      if (shouldComplete) {
         // The task hit its session estimate — complete it and hand focus to
         // the next open task so the following block credits somewhere real.
         track("task_done");
@@ -207,7 +211,7 @@ export default function App() {
     const event = newStudyEvent(method.focus, current, "countdown");
     setStudyEvents((prev) => [...prev, event]);
     if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown");
-  }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks]);
+  }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks, autoCompleteEstimates]);
 
   // Auto-flow: roll straight from focus into break (and back) like rooms do,
   // for users who don't want to press Start at every boundary. Default off —
@@ -261,7 +265,8 @@ export default function App() {
     // A saved pick for a since-removed sound (e.g. an old "rain") must not load
     // an invalid station — only honour ids still in the picker, else Melody.
     const valid = new Set<string>(FOCUS_SOUNDS.map((s) => s.id));
-    return saved && valid.has(saved) ? (saved as FocusSoundId) : "melody";
+    if (saved && valid.has(saved)) return saved as FocusSoundId;
+    return FOCUS_SOUNDS[Math.floor(Math.random() * FOCUS_SOUNDS.length)].id;
   });
   const [soundAuto, setSoundAuto] = useState(() => loadPref("roamly-sound-auto") !== "off");
   const [soundVolume, setSoundVolume] = useState(() => {
@@ -373,9 +378,11 @@ export default function App() {
     prevShouldPlay.current = shouldPlay;
     if (shouldPlay) {
       if (!focusSoundActive()) { startFocusSound(focusSound, soundVolume); setSoundPlaying(true); }
+      else setFocusVolume(soundVolume);
     } else if (focusSoundActive()) {
-      stopFocusSound();
-      setSoundPlaying(false);
+      // Keep the same performance alive but silent between phases. Rebuilding
+      // the audio graph at every focus block made music restart from the top.
+      setFocusVolume(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timer.running, timer.phase, soundAuto, focusSound]);
@@ -502,6 +509,33 @@ export default function App() {
     if (session?.user.id) updateTask(id, { done: nextDone });
   }, [tasks, session?.user.id]);
 
+  const resolveEstimateReached = useCallback((complete: boolean) => {
+    const id = estimateReachedTask;
+    if (!id) return;
+    const current = tasks.find((t) => t.id === id);
+    if (!current) { setEstimateReachedTask(null); return; }
+    if (complete) {
+      setTasks((prev) => prev.map((t) => t.id === id ? { ...t, done: true } : t));
+      if (session?.user.id) updateTask(id, { done: true });
+      const next = sortTasks(tasks).find((t) => !t.done && t.id !== id);
+      if (activeTask === id) setActiveTask(next?.id ?? null);
+      track("task_done");
+    } else {
+      const nextEstimate = Math.min(9, Math.max(current.est + 1, current.poms + 1));
+      setTasks((prev) => prev.map((t) => t.id === id ? { ...t, est: nextEstimate } : t));
+      if (session?.user.id) updateTask(id, { est: nextEstimate });
+    }
+    setEstimateReachedTask(null);
+  }, [estimateReachedTask, tasks, session?.user.id, activeTask]);
+
+  const toggleAutoCompleteEstimates = useCallback(() => {
+    setAutoCompleteEstimates((current) => {
+      const next = !current;
+      savePref("roamly-auto-complete-estimates", next ? "1" : "0");
+      return next;
+    });
+  }, []);
+
   const removeTask = useCallback((id: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     if (session?.user.id) deleteTask(id);
@@ -618,7 +652,7 @@ export default function App() {
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
-              embed={embed} playEmbed={playEmbed} guardSolo={guardSolo}
+              embed={embed} shownEmbed={shownEmbed} playEmbed={playEmbed} guardSolo={guardSolo}
               autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow} onOpenTasks={() => setView("tasks")}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
@@ -634,13 +668,15 @@ export default function App() {
               session={session} onSignIn={onSignIn} tasksLoaded={tasksLoaded}
               guestLimit={GUEST_TASK_LIMIT}
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout}
-              onBuyCredits={() => setView("premium")} />
+              onBuyCredits={() => setView("premium")}
+              autoCompleteEstimates={autoCompleteEstimates} onToggleAutoComplete={toggleAutoCompleteEstimates}
+              plannedSessions={plannedSessions} onCreatePlan={createStudyPlan} onUpdatePlan={updateStudyPlan} />
           )}
           {view === "analytics" && (
             <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
               streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
               session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
-              studyEvents={studyEvents} plannedSessions={plannedSessions} onCreatePlan={createStudyPlan} onUpdatePlan={updateStudyPlan} />
+              studyEvents={studyEvents} />
           )}
           {/* Rooms stay MOUNTED (just hidden) on other tabs: leaving the tab no
               longer kicks you out of a room — presence, the shared timer, room
@@ -664,7 +700,7 @@ export default function App() {
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
-      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} />
+      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} hidden={immersive || !!pipWindow} />
       <FocusMode open={immersive} phase={timer.phase}
         phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
         timeText={fmt(timer.secondsLeft)} progress={timer.progress}
@@ -701,12 +737,13 @@ export default function App() {
           // task list. The built-in sounds keep the same card styling the
           // FocusMode `music` slot gave them.
           <div className="space-y-4">
-            <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
             <AdBreakPrompt active={timer.phase !== "focus" && !isPremium}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)} />
-            <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
+            <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask}
+              estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached} />
+            <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} compact />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel embed={embed} onPlay={playEmbed} />
+            <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer />
           </div>
         } />
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
@@ -729,7 +766,8 @@ export default function App() {
                 className="grid h-11 w-11 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
                 aria-label="Skip"><SkipForward size={16} /></button>
             </>
-          } />,
+          }
+          extra={<StreamingPlayer shown={shownEmbed} compact />} />,
         pipWindow.document.body
       )}
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }}
@@ -976,7 +1014,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1116,7 +1154,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel embed={embed} onPlay={playEmbed} />
+      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer />
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
@@ -1398,7 +1436,7 @@ function FocusSoundsPanel({ sounds }: any) {
 // up to App via onPlay — the iframe itself lives in the dock, so it keeps
 // playing across tab switches and pop-out timers instead of dying when this
 // panel unmounts.
-function MusicPanel({ embed, onPlay }: any) {
+function MusicPanel({ embed, shown, onPlay, showPlayer = false }: any) {
   // Remember the service tab so the persistent dock preloads the right
   // default station on the next visit.
   const [service, setServiceState] = useState<"spotify" | "apple">(() => loadPref("roamly-music-service") === "apple" ? "apple" : "spotify");
@@ -1439,6 +1477,7 @@ function MusicPanel({ embed, onPlay }: any) {
       </div>
 
       <div>
+        {showPlayer && shown && <StreamingPlayer shown={shown} />}
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
           <button onClick={() => setService("spotify")}
             className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -1500,11 +1539,25 @@ function MusicPanel({ embed, onPlay }: any) {
 // DOM, so tab switches and minimizing only ever toggle CSS on this container.
 // Preloaded with a default station so both services are visibly available
 // without clicking anything (autoplay can't start without a user gesture).
-function MusicDock({ shown, minimized, onToggleMin }: any) {
+function StreamingPlayer({ shown, compact = false }: any) {
+  return (
+    <div className={`mb-3 overflow-hidden rounded-xl border border-border bg-card/70 ${compact ? "" : "shadow-sm"}`}>
+      <p className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+        <Music size={12} className="text-primary" />
+        <span className="truncate">{shown.service === "spotify" ? "Spotify" : "Apple Music"} · {shown.label}</span>
+      </p>
+      <iframe key={shown.src} src={shown.src} width="100%" height={compact ? 96 : Math.min(shown.height, 152)}
+        style={{ border: "none" }} title={`${shown.service === "spotify" ? "Spotify" : "Apple Music"} player`}
+        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
+    </div>
+  );
+}
+
+function MusicDock({ shown, minimized, onToggleMin, hidden = false }: any) {
   return (
     // z-[45]: above the bottom nav (z-40), below every modal (z-50+) — a
     // permanent fixture must never eat taps meant for an open dialog.
-    <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[45] overflow-hidden rounded-2xl border border-border bg-card shadow-xl sm:left-auto sm:right-4 sm:w-96">
+    <div className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[45] overflow-hidden rounded-2xl border border-border bg-card shadow-xl transition ${hidden ? "pointer-events-none opacity-0" : "opacity-100"} sm:left-auto sm:right-4 sm:w-96`}>
       <button onClick={onToggleMin} className="flex w-full items-center justify-between px-3 py-1.5 text-left"
         aria-label={minimized ? "Expand music player" : "Minimize music player"} aria-expanded={!minimized}>
         <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
@@ -1572,7 +1625,7 @@ function TaskEstModal({ task, onPick, onClose }: any) {
   );
 }
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit, autoCompleteEstimates, onToggleAutoComplete, plannedSessions, onCreatePlan, onUpdatePlan }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
@@ -1720,8 +1773,14 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Each task is sized in focus sessions — new ones need just 1. The counter shows progress (1/3 = 1 session done of 3); tap it to resize a bigger task, and it completes itself when the sessions are done. Finishing a focus block counts a session for whichever task you're focusing. Drag ⋮⋮ to reorder within a subject; ▲▼ moves whole subjects." />
+        <InfoTip text="Each task is sized in focus sessions. When it reaches that estimate, Roamly asks before completing it unless automatic completion is enabled below. Drag ⋮⋮ to reorder within a subject; ▲▼ moves whole subjects." />
       </p>
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/70 px-3 py-2.5">
+        <span className="min-w-0"><span className="block text-sm font-medium">Complete tasks automatically</span><span className="block text-[11px] text-muted-foreground">When on, a task is checked off as soon as it reaches its planned focus-session count.</span></span>
+        <button role="switch" aria-checked={autoCompleteEstimates} onClick={onToggleAutoComplete} className={`relative h-6 w-11 shrink-0 rounded-full transition ${autoCompleteEstimates ? "bg-primary" : "bg-border"}`}>
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${autoCompleteEstimates ? "left-[22px]" : "left-0.5"}`} />
+        </button>
+      </div>
       {tasks.length > 0 && (
         <div className="mt-4">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1750,6 +1809,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
           <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} onBuyCredits={onBuyCredits} />
         </div>
       )}
+      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} signedIn={!!session} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} />
       {/* On phones the task input takes the full row and the subject + add
           button drop to a second line; side-by-side from sm up. */}
       <div className="mt-6 flex flex-wrap gap-2">
@@ -1937,7 +1997,7 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
   );
 }
 
-function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks, studyEvents, plannedSessions, onCreatePlan, onUpdatePlan }: any) {
+function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks, studyEvents }: any) {
   // All numbers below come from the user's real focus_sessions rows
   // days, one row per day) and their real tasks — nothing is mocked.
   const byDate = new Map<string, number>((sessions as FocusSession[]).map((s) => [s.date, s.minutes]));
@@ -2010,7 +2070,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         </div>
       </div>
 
-      <StudyInsights events={studyEvents} daily={sessions} tasks={tasks} plans={plannedSessions} signedIn={!!session} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} />
+      <StudyInsights events={studyEvents} daily={sessions} />
 
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">
@@ -2090,7 +2150,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   // so it has no customer to open the billing portal for. Only offer "Manage
   // subscription" when there's an actual Stripe customer behind the account.
   const hasStripeSubscription = !!profile?.stripe_subscription_id;
-  const perks = ["10 AI note uploads each month", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods", "Spotify & Apple Music embeds"];
+  const perks = ["10 AI note uploads each month", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods"];
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
   // [feature, free, premium] — strings render as text, booleans as ✓/—.
   const compare: [string, string | boolean, string | boolean][] = [
@@ -2102,7 +2162,6 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
     ["Voice chat during breaks", false, true],
     ["Analytics", "This week", "Full history"],
     ["Themes", "Core themes", "All themes"],
-    ["Spotify & Apple Music", false, true],
   ];
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
@@ -2235,7 +2294,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
 }
 
 
-function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask }: any) {
+function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimateReachedTask, onResolveEstimate }: any) {
   // A just-completed task lingers briefly in its "done" state before dropping
   // out, so checking it off gives visible feedback instead of a vanishing row.
   const [justDone, setJustDone] = useState<string | null>(null);
@@ -2268,7 +2327,7 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask }: any) {
         <div className="mt-2 space-y-1.5">
           {open.map((t: Task) => (
             <div key={t.id}
-              className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 transition ${t.done ? "border-roamly-green/40 bg-card/60" : activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/60 hover:border-primary/40"}`}>
+              className={`flex w-full flex-wrap items-center gap-2 rounded-xl border px-3 py-2 transition ${t.id === estimateReachedTask ? "border-amber-500 bg-amber-500/10" : t.done ? "border-roamly-green/40 bg-card/60" : activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/60 hover:border-primary/40"}`}>
               <button onClick={() => complete(t)} aria-label={`Mark ${t.title} done`}
                 className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${t.done ? "border-roamly-green bg-roamly-green" : "border-muted-foreground/40 hover:border-primary"}`}>
                 {t.done && <Check size={14} className="text-white" />}
@@ -2282,6 +2341,12 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask }: any) {
                 )}
                 <span className="shrink-0 font-mono text-xs text-muted-foreground" title="Focus sessions done / planned">{t.poms}/{t.est}</span>
               </button>
+              {t.id === estimateReachedTask && (
+                <div className="w-full rounded-lg bg-card/80 p-2 text-xs">
+                  <p className="font-medium">Hey, this task was set to be completed after {t.est} session{t.est === 1 ? "" : "s"}. Do you want to complete it?</p>
+                  <div className="mt-2 flex gap-2"><button onClick={() => onResolveEstimate(true)} className="rounded-full bg-primary px-3 py-1 font-semibold text-white">Complete</button><button onClick={() => onResolveEstimate(false)} className="rounded-full border border-border px-3 py-1 text-muted-foreground">Keep open</button></div>
+                </div>
+              )}
             </div>
           ))}
         </div>
