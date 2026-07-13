@@ -126,7 +126,7 @@ function parseDateTimeLocal(value: string) {
 
 function localDateTimeValue(year: number, month: number, day: number, hour: number, minute: number) {
   const pad = (part: number) => String(part).padStart(2, "0");
-  return \`${year}-${pad(month + 1)-${pad(day)T${pad(hour):${pad(minute)\`;
+  return [year, "-", pad(month + 1), "-", pad(day), "T", pad(hour), ":", pad(minute)].join("");
 }
 
 function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
@@ -199,16 +199,16 @@ function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (v
             </button>
           </div>
           <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => <span key={\`${label}-${index}\`}>{label}</span>)}
+            {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
           </div>
           <div className="mt-1 grid grid-cols-7 gap-1">
-            {Array.from({ length: leading }, (_, index) => <span key={\`blank-${index}\`} />)}
+            {Array.from({ length: leading }, (_, index) => <span key={`blank-${index}`} />)}
             {Array.from({ length: dayCount }, (_, index) => {
               const day = index + 1;
               const chosen = selected?.year === year && selected.month === month && selected.day === day;
               const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
               return <button key={day} type="button" onClick={() => commitDate(day)} aria-pressed={chosen}
-                className={\`grid h-9 place-items-center rounded-xl text-sm transition ${chosen ? "gradient-primary font-semibold text-white shadow-glow" : isToday ? "border border-primary/50 bg-primary/10 font-semibold text-primary" : "hover:bg-primary/10 hover:text-primary"}\`}>
+                className={`grid h-9 place-items-center rounded-xl text-sm transition ${chosen ? "gradient-primary font-semibold text-white shadow-glow" : isToday ? "border border-primary/50 bg-primary/10 font-semibold text-primary" : "hover:bg-primary/10 hover:text-primary"}`}>
                 {day}
               </button>;
             })}
