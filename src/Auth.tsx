@@ -9,6 +9,9 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Set after a successful sign-up while email confirmation is pending — the
+  // modal must NOT close silently, or the user has no idea an email was sent.
+  const [confirmSentTo, setConfirmSentTo] = useState<string | null>(null);
 
   if (!supabaseEnabled || !supabase) {
     return (
@@ -33,11 +36,41 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
     }
     setError(null);
     setLoading(true);
-    const { error: authError } = mode === "signup"
-      ? await client.auth.signUp({ email, password })
-      : await client.auth.signInWithPassword({ email, password });
+    if (mode === "signup") {
+      const { data, error: authError } = await client.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: window.location.origin },
+      });
+      setLoading(false);
+      if (authError) {
+        setError(/rate limit/i.test(authError.message) || authError.status === 429
+          ? "Too many sign-up emails right now — wait a few minutes and try again."
+          : authError.message);
+        return;
+      }
+      // Supabase returns a fake user with no identities (and sends no email)
+      // when the address is already registered — surface that instead of
+      // closing the modal as if it worked.
+      if (data.user && data.user.identities?.length === 0) {
+        setError("That email is already registered — sign in instead.");
+        setMode("signin");
+        return;
+      }
+      // Email confirmation pending: no session yet. Show the check-your-inbox
+      // state; the account activates when they click the link.
+      if (!data.session) { setConfirmSentTo(email); return; }
+      onClose();
+      return;
+    }
+    const { error: authError } = await client.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (authError) { setError(authError.message); return; }
+    if (authError) {
+      setError(/email not confirmed/i.test(authError.message)
+        ? "Your email isn't verified yet — click the link in your confirmation email (check spam), then sign in."
+        : authError.message);
+      return;
+    }
     onClose();
   };
 
@@ -49,6 +82,29 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
     });
     if (authError) setError(authError.message);
   };
+
+  if (confirmSentTo) {
+    return (
+      <Modal label="Check your email" onClose={onClose}
+        cardClassName="relative w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
+        <button onClick={onClose} aria-label="Close" className="absolute right-5 top-5 text-muted-foreground"><X size={18} /></button>
+        <div className="grid place-items-center">
+          <div className="grid h-12 w-12 place-items-center rounded-full bg-primary/10 text-primary"><Mail size={22} /></div>
+        </div>
+        <h3 className="mt-3 text-center font-display text-xl font-semibold">Check your email</h3>
+        <p className="mt-2 text-center text-sm text-muted-foreground">
+          We sent a confirmation link to <span className="font-medium text-foreground">{confirmSentTo}</span>.
+          Click it to activate your account.
+        </p>
+        <p className="mt-2 rounded-xl border border-dashed border-border p-2.5 text-center text-xs text-muted-foreground">
+          Nothing there after a minute? <span className="font-medium text-foreground">Check your spam folder</span> — the sender is Roamly.
+        </p>
+        <button onClick={onClose} className="mt-4 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
+          Got it
+        </button>
+      </Modal>
+    );
+  }
 
   return (
     <Modal label={mode === "signup" ? "Create your account" : "Welcome back"} onClose={onClose}
