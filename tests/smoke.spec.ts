@@ -178,6 +178,19 @@ test("no horizontal overflow on any tab", async ({ page }) => {
   }
 });
 
+test("mobile header controls do not overlap the Roamly wordmark", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
+  for (const width of [320, 375, 390, 430]) {
+    await page.setViewportSize({ width, height: 844 });
+    await goHome(page);
+    const brandBox = await page.getByText("Roamly", { exact: true }).boundingBox();
+    const controlBox = await page.getByRole("button", { name: "Replay the app tour" }).boundingBox();
+    expect(brandBox, `wordmark missing at ${width}px`).not.toBeNull();
+    expect(controlBox, `header controls missing at ${width}px`).not.toBeNull();
+    expect(brandBox!.x + brandBox!.width, `header overlaps wordmark at ${width}px`).toBeLessThanOrEqual(controlBox!.x - 4);
+  }
+});
+
 test("Release 2 pricing and credit packages render", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Select timer" }).click();
