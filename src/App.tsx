@@ -659,6 +659,7 @@ export default function App() {
           page-end content can always scroll fully above the fixed chrome. */}
       <div className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-7 md:px-8">
         <Header isPremium={isPremium} streak={streak} session={session} profile={profile}
+          onProfileChange={setProfile}
           onSignIn={onSignIn} onSignOut={onSignOut}
           onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends} onOpenPlannedStudy={() => setView("tasks")}
           a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
@@ -844,7 +845,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -875,7 +876,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
             <LogIn size={15} /> <span className="hidden sm:inline">Sign in</span>
           </button>
         )}
-        <ProfileMenu session={session} profile={profile} isPremium={isPremium}
+        <ProfileMenu session={session} profile={profile} onProfileChange={onProfileChange} isPremium={isPremium}
           a11y={a11y} setA11y={setA11y}
           onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
           isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onReplayTutorial={onOpenTutorial} onSendFeedback={onOpenFeedback} />
