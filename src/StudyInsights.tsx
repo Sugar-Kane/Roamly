@@ -17,8 +17,16 @@ function cutoff(range: Range): number {
 }
 
 const duration = (min: number) => min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
+const longDuration = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const parts: string[] = [];
+  if (hours) parts.push(`${hours} hour${hours === 1 ? "" : "s"}`);
+  if (remainder || !hours) parts.push(`${remainder} minute${remainder === 1 ? "" : "s"}`);
+  return parts.join(" ");
+};
 
-export function StudyInsights({ events, daily }: { events: StudyEvent[]; daily: FocusSession[] }) {
+export function StudyInsights({ events, daily, plans }: { events: StudyEvent[]; daily: FocusSession[]; plans: PlannedStudySession[] }) {
   const [range, setRange] = useState<Range>("week");
   const filtered = useMemo(() => events.filter((e) => new Date(e.completed_at).getTime() >= cutoff(range)), [events, range]);
   const detailedMinutes = filtered.reduce((sum, e) => sum + e.minutes, 0);
@@ -71,11 +79,102 @@ export function StudyInsights({ events, daily }: { events: StudyEvent[]; daily: 
         <div className="flex rounded-full border border-border bg-card p-1">{(Object.keys(RANGE_LABEL) as Range[]).map((r) => <button key={r} onClick={() => setRange(r)} aria-pressed={range === r} className={`rounded-full px-3 py-1 text-xs ${range === r ? "bg-primary text-white" : "text-muted-foreground"}`}>{RANGE_LABEL[r]}</button>)}</div>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-3"><Metric label="Focus time" value={duration(total)} /><Metric label="Sessions" value={String(sessionCount)} /><Metric label="Average" value={average ? duration(average) : "—"} /></div>
-      <div className="mt-5 grid gap-5 md:grid-cols-2"><Breakdown title="By category" rows={categories} /><Breakdown title="By task" rows={taskRows} /></div>
+      <div className="mt-5 grid gap-5 md:grid-cols-2"><Breakdown title="Study time by category" rows={categories} categorySummary /><Breakdown title="Study time by task" rows={taskRows} /></div>
       <div className="mt-5 grid gap-4 md:grid-cols-3"><Trend title="Daily trend" rows={trendGroups.daily} /><Trend title="Weekly trend" rows={trendGroups.weekly} /><Trend title="Monthly trend" rows={trendGroups.monthly} /></div>
     </section>
 
+    <StudyPostMortem plans={plans} range={range} />
   </div>;
+}
+
+const REASON_GUIDANCE: Record<MissedReason, string> = {
+  Traveling: "This reflects a change in circumstances, not a lack of commitment. Plan a lighter travel option next time.",
+  Sick: "Recovery is productive too. Give yourself room to rest before scheduling the next session.",
+  "Too vague": "Make the next plan smaller and specific, such as one chapter, problem set, or task.",
+  "Bad timing": "Try moving similar sessions to a time when your energy and schedule are more reliable.",
+  "Too tired": "Try a shorter block or schedule it earlier in the day.",
+  "Schedule conflict": "Protect a different time window or leave a buffer around the next session.",
+  Forgot: "Add the event to your calendar and use a reminder before the session starts.",
+  "Lost motivation": "Shrink the first step until it feels easy to begin, then build momentum from there.",
+  "Too difficult": "Split the work into a smaller first step or plan support before starting.",
+  Other: "Review what happened and adjust one part of the next plan.",
+};
+
+function StudyPostMortem({ plans, range }: { plans: PlannedStudySession[]; range: Range }) {
+  const analysis = useMemo(() => {
+    const rangeCutoff = cutoff(range);
+    const outcomes = plans.filter((plan) => {
+      const scheduled = new Date(plan.scheduled_for).getTime();
+      return scheduled >= rangeCutoff && (plan.status === "completed" || plan.status === "missed");
+    });
+    const completed = outcomes.filter((plan) => plan.status === "completed").length;
+    const missed = outcomes.filter((plan) => plan.status === "missed");
+    const tagged = missed.filter((plan) => plan.missed_reason);
+    const reasons = new Map<MissedReason, number>();
+    const categories = new Map<string, number>();
+    for (const plan of tagged) {
+      const reason = plan.missed_reason!;
+      reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+      categories.set(plan.category || "Uncategorized", (categories.get(plan.category || "Uncategorized") ?? 0) + 1);
+    }
+    return {
+      completed,
+      missed: missed.length,
+      tagged: tagged.length,
+      completionRate: outcomes.length ? Math.round((completed / outcomes.length) * 100) : null,
+      reasons: [...reasons.entries()].sort((a, b) => b[1] - a[1]),
+      categories: [...categories.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5),
+    };
+  }, [plans, range]);
+  const topReason = analysis.reasons[0];
+  const maxReasonCount = Math.max(1, ...analysis.reasons.map(([, count]) => count));
+
+  return <section className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+    <div>
+      <h2 className="text-sm font-semibold">Study post-mortem</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">Skipped sessions are feedback, not failure. Tag what got in the way and Roamly will turn it into patterns you can use.</p>
+    </div>
+    <div className="mt-4 grid grid-cols-3 gap-3">
+      <Metric label="Follow-through" value={analysis.completionRate === null ? "—" : `${analysis.completionRate}%`} />
+      <Metric label="Completed plans" value={String(analysis.completed)} />
+      <Metric label="Tagged misses" value={String(analysis.tagged)} />
+    </div>
+    {topReason ? (
+      <div className="mt-5 grid gap-5 md:grid-cols-2">
+        <div>
+          <h3 className="text-xs font-semibold">What gets in the way</h3>
+          <div className="mt-2 space-y-2">
+            {analysis.reasons.map(([reason, count]) => (
+              <div key={reason}>
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span>{reason}</span>
+                  <span className="font-mono text-muted-foreground">{count} · {Math.round((count / analysis.tagged) * 100)}%</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-border"><div className="h-full rounded-full bg-primary" style={{ width: `${(count / maxReasonCount) * 100}%` }} /></div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h3 className="text-xs font-semibold">Pattern to try next</h3>
+          <div className="mt-2 rounded-xl bg-secondary p-3">
+            <p className="text-xs font-semibold text-foreground">Most common blocker: {topReason[0]}</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{REASON_GUIDANCE[topReason[0]]}</p>
+          </div>
+          {analysis.categories.length > 0 && <div className="mt-3">
+            <p className="text-[11px] font-medium text-muted-foreground">Tagged misses by category</p>
+            <p className="mt-1 break-words text-xs text-foreground">{analysis.categories.map(([category, count]) => `${category} (${count})`).join(" · ")}</p>
+          </div>}
+        </div>
+      </div>
+    ) : (
+      <div className="mt-4 rounded-xl bg-secondary p-3">
+        <p className="text-xs font-medium">No post-mortem pattern yet</p>
+        <p className="mt-1 text-xs text-muted-foreground">When a planned session is missed, tag why. After the first tag, your reason and a practical next step will appear here.</p>
+      </div>
+    )}
+    {analysis.missed > analysis.tagged && <p className="mt-3 text-[11px] text-muted-foreground">{analysis.missed - analysis.tagged} missed session{analysis.missed - analysis.tagged === 1 ? " has" : "s have"} no reason yet. Tagging it will make these patterns more useful.</p>}
+  </section>;
 }
 
 function calendarDetails(plan: PlannedStudySession) {
@@ -573,7 +672,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan
           {(["google", "apple", "outlook"] as const).map((provider) => <button key={provider} onClick={() => addToCalendar(plan, provider)} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40"><ExternalLink size={10} className="mr-1 inline" />{provider === "apple" ? "Apple" : provider[0].toUpperCase() + provider.slice(1)}</button>)}
           {overdue.includes(plan) && <button onClick={() => onUpdatePlan(plan.id, { status: "completed", missed_reason: null })} className="rounded-full border border-roamly-green/40 px-2.5 py-1 text-xs text-roamly-green"><Check size={11} className="inline" /> Completed</button>}
         </div>
-        {overdue.includes(plan) && <div className="mt-2 flex flex-wrap gap-1.5"><span className="text-xs text-muted-foreground">Missed?</span>{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="text-[11px] text-muted-foreground underline">Not now</button></div>}
+        {overdue.includes(plan) && <div className="mt-2 rounded-xl bg-secondary/70 p-2.5"><p className="mb-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">What got in the way?</span> Tagging this helps Roamly spot patterns. No guilt, just useful data.</p><div className="flex flex-wrap gap-1.5">{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground transition hover:border-primary/40 hover:text-primary">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="text-[11px] text-muted-foreground underline">Not now</button></div></div>}
       </div>;
     })}
     {missed.length >= 3 && commonReason && <p className="mt-3 rounded-xl bg-secondary p-3 text-xs text-muted-foreground"><Clock3 size={13} className="mr-1 inline text-primary" />Across {missed.length} tagged misses, your most common reason is <span className="font-semibold text-foreground">{commonReason[0]}</span> ({commonReason[1]}).</p>}
@@ -581,5 +680,5 @@ export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-xl bg-secondary p-3"><p className="text-[11px] text-muted-foreground">{label}</p><p className="mt-1 font-mono text-lg font-semibold">{value}</p></div>; }
-function Breakdown({ title, rows }: { title: string; rows: [string, { minutes: number; sessions: number }][] }) { return <div><h3 className="text-xs font-semibold">{title}</h3><div className="mt-2 space-y-2">{rows.length ? rows.map(([name, value]) => <div key={name} className="flex items-center justify-between gap-3 text-xs"><span className="truncate">{name}</span><span className="shrink-0 font-mono text-muted-foreground">{duration(value.minutes)} · {value.sessions} session{value.sessions === 1 ? "" : "s"}</span></div>) : <p className="text-xs text-muted-foreground">Complete a session to see this breakdown.</p>}</div></div>; }
+function Breakdown({ title, rows, categorySummary = false }: { title: string; rows: [string, { minutes: number; sessions: number }][]; categorySummary?: boolean }) { return <div><h3 className="text-xs font-semibold">{title}</h3><div className="mt-2 space-y-2">{rows.length ? rows.map(([name, value]) => <div key={name} className="rounded-lg bg-secondary/60 px-3 py-2 text-xs"><div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate font-medium">{name}</span><span className="shrink-0 font-mono text-muted-foreground">{value.sessions} session{value.sessions === 1 ? "" : "s"}</span></div><p className="mt-0.5 break-words text-[11px] text-muted-foreground">{categorySummary ? `You studied ${longDuration(value.minutes)} on ${name}.` : `${longDuration(value.minutes)} studied`}</p></div>) : <p className="text-xs text-muted-foreground">Complete a session to see this breakdown.</p>}</div></div>; }
 function Trend({ title, rows }: { title: string; rows: { label: string; minutes: number }[] }) { const max = Math.max(1, ...rows.map((r) => r.minutes)); return <div><h3 className="text-xs font-semibold">{title}</h3><div className="mt-2 space-y-1.5">{rows.length ? rows.map((row) => <div key={row.label} className="grid grid-cols-[42px_1fr_42px] items-center gap-2 text-[10px]"><span className="truncate text-muted-foreground">{row.label}</span><span className="h-1.5 overflow-hidden rounded-full bg-border"><span className="block h-full rounded-full bg-primary" style={{ width: `${Math.max(3, row.minutes / max * 100)}%` }} /></span><span className="text-right font-mono text-muted-foreground">{row.minutes}m</span></div>) : <p className="text-xs text-muted-foreground">No trend yet.</p>}</div></div>; }
