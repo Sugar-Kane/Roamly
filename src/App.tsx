@@ -9,7 +9,7 @@ import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc,
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, type Profile } from "./db";
+import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, type PlannedStudyUpdate, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { loadPref, savePref } from "./storage";
@@ -29,7 +29,7 @@ import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel } from "./UploadTasks";
 import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks, clearMigratedGuestData } from "./guestData";
-import { loadGuestStudyEvents, loadGuestStudyPlans, newStudyEvent, saveGuestStudyEvents, saveGuestStudyPlans, type MissedReason, type PlannedStudySession, type StudyEvent } from "./release3";
+import { loadGuestStudyEvents, newStudyEvent, saveGuestStudyEvents, type PlannedStudyDraft, type PlannedStudySession, type StudyEvent } from "./release3";
 import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
 import { HealthyBreakActivities } from "./HealthyBreakActivities";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
@@ -61,7 +61,7 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [sessions, setSessions] = useState<FocusSession[]>(loadGuestSessions);
   const [studyEvents, setStudyEvents] = useState<StudyEvent[]>(loadGuestStudyEvents);
-  const [plannedSessions, setPlannedSessions] = useState<PlannedStudySession[]>(loadGuestStudyPlans);
+  const [plannedSessions, setPlannedSessions] = useState<PlannedStudySession[]>([]);
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
@@ -116,7 +116,7 @@ export default function App() {
       const guestTasks = loadGuestTasks();
       setSessions(loadGuestSessions());
       setStudyEvents(loadGuestStudyEvents());
-      setPlannedSessions(loadGuestStudyPlans());
+      setPlannedSessions([]);
       setTasks(guestTasks);
       setActiveTask(guestTasks[0]?.id ?? null);
       setTasksLoaded(true);
@@ -172,7 +172,6 @@ export default function App() {
   }, [session, sessions]);
 
   useEffect(() => { if (!session) saveGuestStudyEvents(studyEvents); }, [session, studyEvents]);
-  useEffect(() => { if (!session) saveGuestStudyPlans(plannedSessions); }, [session, plannedSessions]);
 
   // Reflect a Stripe webhook's is_premium update live, without a manual refresh.
   useEffect(() => {
@@ -237,18 +236,23 @@ export default function App() {
     track("count_up_complete", String(minutes));
   }, [countUp, session?.user.id, activeTask, tasks]);
 
-  const createStudyPlan = useCallback(async (row: Pick<PlannedStudySession, "task_id" | "task_title" | "category" | "scheduled_for" | "expected_minutes">) => {
-    if (session?.user.id) {
-      const created = await createPlannedStudySession(session.user.id, row);
-      if (created) setPlannedSessions((prev) => [created, ...prev]);
-    } else {
-      setPlannedSessions((prev) => [{ ...row, id: crypto.randomUUID(), status: "planned", missed_reason: null }, ...prev]);
-    }
+  const createStudyPlan = useCallback(async (row: PlannedStudyDraft): Promise<PlannedStudySession | null> => {
+    if (!session?.user.id) return null;
+    const created = await createPlannedStudySession(session.user.id, row);
+    if (created) setPlannedSessions((prev) => [created, ...prev]);
+    return created;
   }, [session?.user.id]);
 
-  const updateStudyPlan = useCallback(async (id: string, fields: { status?: PlannedStudySession["status"]; missed_reason?: MissedReason | null }) => {
-    if (session?.user.id && !await updatePlannedStudySession(id, fields)) return;
+  const updateStudyPlan = useCallback(async (id: string, fields: PlannedStudyUpdate): Promise<boolean> => {
+    if (!session?.user.id || !await updatePlannedStudySession(id, fields)) return false;
     setPlannedSessions((prev) => prev.map((plan) => plan.id === id ? { ...plan, ...fields } : plan));
+    return true;
+  }, [session?.user.id]);
+
+  const deleteStudyPlan = useCallback(async (id: string): Promise<boolean> => {
+    if (!session?.user.id || !await deletePlannedStudySession(id)) return false;
+    setPlannedSessions((prev) => prev.filter((plan) => plan.id !== id));
+    return true;
   }, [session?.user.id]);
 
   // Picture-in-Picture: pop the timer into a small always-on-top window so it
@@ -639,7 +643,7 @@ export default function App() {
       <div className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-7 md:px-8">
         <Header isPremium={isPremium} streak={streak} session={session} profile={profile}
           onSignIn={onSignIn} onSignOut={onSignOut}
-          onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends}
+          onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends} onOpenPlannedStudy={() => setView("tasks")}
           a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
           onOpenTutorial={() => setShowTutorial(true)}
@@ -670,7 +674,7 @@ export default function App() {
               profile={profile} addImportedTasks={addImportedTasks} onSubscribe={startCheckout}
               onBuyCredits={() => setView("premium")}
               autoCompleteEstimates={autoCompleteEstimates} onToggleAutoComplete={toggleAutoCompleteEstimates}
-              plannedSessions={plannedSessions} onCreatePlan={createStudyPlan} onUpdatePlan={updateStudyPlan} />
+              plannedSessions={plannedSessions} onCreatePlan={createStudyPlan} onUpdatePlan={updateStudyPlan} onDeletePlan={deleteStudyPlan} />
           )}
           {view === "analytics" && (
             <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
@@ -823,7 +827,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -840,7 +844,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
           <HelpCircle size={15} />
         </button>
         <ThemeMenu themeId={themeId} setThemeId={setThemeId} />
-        {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} />}
+        {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} onOpenPlannedStudy={onOpenPlannedStudy} />}
         {/* Everyone who isn't premium gets a one-tap path to the plan page —
             guests land there too and hit the sign-in gate only at checkout. */}
         {!isPremium && (
@@ -1625,7 +1629,7 @@ function TaskEstModal({ task, onPick, onClose }: any) {
   );
 }
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit, autoCompleteEstimates, onToggleAutoComplete, plannedSessions, onCreatePlan, onUpdatePlan }: any) {
+function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit, autoCompleteEstimates, onToggleAutoComplete, plannedSessions, onCreatePlan, onUpdatePlan, onDeletePlan }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
@@ -1809,7 +1813,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
           <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} onBuyCredits={onBuyCredits} />
         </div>
       )}
-      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} signedIn={!!session} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} />
+      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null} onSignIn={onSignIn} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
       {/* On phones the task input takes the full row and the subject + add
           button drop to a second line; side-by-side from sm up. */}
       <div className="mt-6 flex flex-wrap gap-2">

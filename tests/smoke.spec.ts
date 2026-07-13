@@ -206,7 +206,7 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByText(/Includes 7 days Premium/)).toBeVisible();
 });
 
-test("study insights stay in Analytics and planned sessions live in Tasks", async ({ page }) => {
+test("planned study lives in Tasks and requires an account", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Analytics", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Study breakdown" })).toBeVisible();
@@ -214,7 +214,10 @@ test("study insights stay in Analytics and planned sessions live in Tasks", asyn
   await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Planned study" })).toBeVisible();
-  await expect(page.getByLabel("Planned study time")).toBeVisible();
+  await expect(page.getByText("Account required", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign in to plan" })).toBeVisible();
+  await expect(page.getByLabel("Planned study time")).toHaveCount(0);
+  await expect(page.getByLabel("Duration in minutes")).toHaveCount(0);
 });
 
 test("Release 3 break activities are optional and interactive", async ({ page }) => {

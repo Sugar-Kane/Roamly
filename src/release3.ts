@@ -13,16 +13,39 @@ export type StudyEvent = {
 export type MissedReason = "Traveling" | "Sick" | "Too vague" | "Bad timing" | "Too tired" | "Schedule conflict" | "Forgot" | "Lost motivation" | "Too difficult" | "Other";
 export const MISSED_REASONS: MissedReason[] = ["Traveling", "Sick", "Too vague", "Bad timing", "Too tired", "Schedule conflict", "Forgot", "Lost motivation", "Too difficult", "Other"];
 
+export type PlannedStudyTarget = "task" | "category";
+
 export type PlannedStudySession = {
   id: string;
   user_id?: string;
   task_id: string | null;
   task_title: string | null;
   category: string;
+  target_type: PlannedStudyTarget;
+  include_all_category_tasks: boolean;
+  included_task_ids: string[];
+  included_task_titles: string[];
   scheduled_for: string;
   expected_minutes: number;
   status: "planned" | "completed" | "missed";
   missed_reason: MissedReason | null;
+};
+
+export type PlannedStudyDraft = Pick<PlannedStudySession,
+  "task_id" | "task_title" | "category" | "target_type" |
+  "include_all_category_tasks" | "included_task_ids" | "included_task_titles" |
+  "scheduled_for" | "expected_minutes"
+>;
+
+export type PlannedStudyInvite = {
+  id: string;
+  plan_id: string;
+  inviter_id: string;
+  invitee_id: string;
+  status: "pending" | "accepted" | "declined";
+  created_at: string;
+  updated_at: string;
+  plan?: PlannedStudySession;
 };
 
 const EVENTS_KEY = "roamly-guest-study-events-v1";

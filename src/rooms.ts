@@ -1,5 +1,6 @@
 import { supabase } from "./supabaseClient";
 import type { Phase } from "./useTimer";
+import type { PlannedStudyInvite } from "./release3";
 
 export type LiveRoom = {
   id: string;
@@ -112,8 +113,9 @@ export type AppNotification = {
   id: string;
   user_id: string;
   actor_id: string | null;
-  kind: "friend_request" | "friend_accepted" | "room_invite" | "room_created" | "room_joined" | "stats_request" | "stats_approved";
+  kind: "friend_request" | "friend_accepted" | "room_invite" | "room_created" | "room_joined" | "stats_request" | "stats_approved" | "planned_study_invite";
   room_id: string | null;
+  planned_study_session_id: string | null;
   read: boolean;
   created_at: string;
 };
@@ -331,6 +333,43 @@ export async function inviteToRoom(roomId: string, userId: string): Promise<stri
   if (error.message.includes("not_friends")) return "You can only invite accepted friends.";
   console.warn("[Roamly] inviteToRoom failed", error.message);
   return "Couldn't send that invite — try again.";
+}
+
+export async function inviteFriendsToPlannedStudy(planId: string, inviterId: string, friendIds: string[]): Promise<string | null> {
+  if (!supabase || friendIds.length === 0) return null;
+  const rows = [...new Set(friendIds)].map((inviteeId) => ({
+    plan_id: planId,
+    inviter_id: inviterId,
+    invitee_id: inviteeId,
+  }));
+  const { error } = await supabase.from("planned_study_invites").insert(rows);
+  if (!error) return null;
+  console.warn("[Roamly] inviteFriendsToPlannedStudy failed", error.message);
+  return error.message.includes("duplicate")
+    ? "One or more friends were already invited."
+    : "The plan was saved, but some invitations could not be sent.";
+}
+
+export async function fetchIncomingPlannedStudyInvites(userId: string): Promise<PlannedStudyInvite[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("planned_study_invites")
+    .select("id, plan_id, inviter_id, invitee_id, status, created_at, updated_at, plan:planned_study_sessions(*)")
+    .eq("invitee_id", userId)
+    .neq("status", "declined")
+    .order("created_at", { ascending: false });
+  if (error) { console.warn("[Roamly] fetchIncomingPlannedStudyInvites failed", error.message); return []; }
+  return (data ?? []) as unknown as PlannedStudyInvite[];
+}
+
+export async function respondPlannedStudyInvite(id: string, status: "accepted" | "declined"): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase
+    .from("planned_study_invites")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) { console.warn("[Roamly] respondPlannedStudyInvite failed", error.message); return false; }
+  return true;
 }
 
 export async function setUsername(username: string): Promise<string | null> {

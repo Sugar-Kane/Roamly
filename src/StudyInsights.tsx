@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
-import { CalendarPlus, Check, Clock3, ExternalLink } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarPlus, Check, Clock3, ExternalLink, Lock, LogIn, Pencil, Trash2, Users, X } from "lucide-react";
 import type { Task } from "./data";
 import type { FocusSession } from "./streaks";
-import { MISSED_REASONS, type MissedReason, type PlannedStudySession, type StudyEvent } from "./release3";
+import { MISSED_REASONS, type MissedReason, type PlannedStudyDraft, type PlannedStudyInvite, type PlannedStudySession, type PlannedStudyTarget, type StudyEvent } from "./release3";
+import { fetchFriendships, fetchIncomingPlannedStudyInvites, getPublicProfiles, inviteFriendsToPlannedStudy, respondPlannedStudyInvite, type PublicProfile } from "./rooms";
 
 type Range = "day" | "week" | "month" | "all";
 const RANGE_LABEL: Record<Range, string> = { day: "Day", week: "Week", month: "Month", all: "All time" };
@@ -81,62 +82,365 @@ function calendarDetails(plan: PlannedStudySession) {
   const start = new Date(plan.scheduled_for);
   const end = new Date(start.getTime() + plan.expected_minutes * 60_000);
   const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-  return { title: plan.task_title || `Study: ${plan.category}`, start, end, dates: `${stamp(start)}/${stamp(end)}` };
+  const taskList = plan.included_task_titles?.length ? `\nTasks: ${plan.included_task_titles.join(", ")}` : "";
+  return {
+    title: plan.task_title || `Study: ${plan.category}`,
+    description: `Planned in Roamly Flow · ${plan.expected_minutes} minutes${taskList}`,
+    start,
+    end,
+    dates: `${stamp(start)}/${stamp(end)}`,
+  };
 }
 
 function addToCalendar(plan: PlannedStudySession, provider: "google" | "outlook" | "apple") {
   const event = calendarDetails(plan);
   if (provider === "google") {
-    window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.dates}&details=${encodeURIComponent("Planned in Roamly Flow")}`, "_blank", "noopener,noreferrer");
+    window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.dates}&details=${encodeURIComponent(event.description)}`, "_blank", "noopener,noreferrer");
     return;
   }
   if (provider === "outlook") {
-    window.open(`https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(event.title)}&startdt=${encodeURIComponent(event.start.toISOString())}&enddt=${encodeURIComponent(event.end.toISOString())}&body=${encodeURIComponent("Planned in Roamly Flow")}`, "_blank", "noopener,noreferrer");
+    window.open(`https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(event.title)}&startdt=${encodeURIComponent(event.start.toISOString())}&enddt=${encodeURIComponent(event.end.toISOString())}&body=${encodeURIComponent(event.description)}`, "_blank", "noopener,noreferrer");
     return;
   }
-  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Roamly Flow//Planned Study//EN", "BEGIN:VEVENT", `UID:${plan.id}@roamlyflow.com`, `DTSTART:${event.dates.split("/")[0]}`, `DTEND:${event.dates.split("/")[1]}`, `SUMMARY:${event.title.replace(/[\\,;]/g, "\\$&")}`, "DESCRIPTION:Planned in Roamly Flow", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Roamly Flow//Planned Study//EN", "BEGIN:VEVENT", `UID:${plan.id}@roamlyflow.com`, `DTSTART:${event.dates.split("/")[0]}`, `DTEND:${event.dates.split("/")[1]}`, `SUMMARY:${event.title.replace(/[\\,;]/g, "\\$&")}`, `DESCRIPTION:${event.description.replace(/\n/g, "\\n").replace(/[\\,;]/g, "\\$&")}`, "END:VEVENT", "END:VCALENDAR"].join("\r\n");
   const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
-  const link = document.createElement("a"); link.href = url; link.download = "roamly-study.ics"; link.click(); URL.revokeObjectURL(url);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "roamly-study.ics";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
-export function PlannedStudyPanel({ tasks, plans, signedIn, onCreatePlan, onUpdatePlan }: {
-  tasks: Task[]; plans: PlannedStudySession[]; signedIn: boolean;
-  onCreatePlan: (row: Pick<PlannedStudySession, "task_id" | "task_title" | "category" | "scheduled_for" | "expected_minutes">) => void;
-  onUpdatePlan: (id: string, fields: { status?: PlannedStudySession["status"]; missed_reason?: MissedReason | null }) => void;
+function toDateTimeLocal(iso: string): string {
+  const d = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function personName(person: PublicProfile | undefined): string {
+  return person?.display_name || person?.username || "Roamly friend";
+}
+
+type PlanUpdate = Partial<PlannedStudyDraft> & {
+  status?: PlannedStudySession["status"];
+  missed_reason?: MissedReason | null;
+};
+
+export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan, onUpdatePlan, onDeletePlan }: {
+  tasks: Task[];
+  plans: PlannedStudySession[];
+  userId: string | null;
+  onSignIn: () => void;
+  onCreatePlan: (row: PlannedStudyDraft) => Promise<PlannedStudySession | null>;
+  onUpdatePlan: (id: string, fields: PlanUpdate) => Promise<boolean>;
+  onDeletePlan: (id: string) => Promise<boolean>;
 }) {
   const [when, setWhen] = useState("");
+  const [targetType, setTargetType] = useState<PlannedStudyTarget>("task");
   const [taskId, setTaskId] = useState("");
+  const [category, setCategory] = useState("");
+  const [includeAllTasks, setIncludeAllTasks] = useState(true);
   const [minutes, setMinutes] = useState(25);
   const [dismissed, setDismissed] = useState<string[]>([]);
-  const planned = plans.filter((p) => p.status === "planned").sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime());
-  const overdue = planned.filter((p) => !dismissed.includes(p.id) && new Date(p.scheduled_for).getTime() + p.expected_minutes * 60_000 < Date.now());
-  const missed = plans.filter((p) => p.status === "missed" && p.missed_reason);
-  const reasonCounts = new Map<string, number>(); for (const p of missed) reasonCounts.set(p.missed_reason!, (reasonCounts.get(p.missed_reason!) ?? 0) + 1);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [selectedFriendIds, setSelectedFriendIds] = useState<string[]>([]);
+  const [friends, setFriends] = useState<PublicProfile[]>([]);
+  const [incomingInvites, setIncomingInvites] = useState<PlannedStudyInvite[]>([]);
+  const [inviteActors, setInviteActors] = useState<Map<string, PublicProfile>>(new Map());
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const openTasks = useMemo(() => tasks.filter((task) => !task.done), [tasks]);
+  const categories = useMemo(() => [...new Set(openTasks.map((task) => task.tag))], [openTasks]);
+  const effectiveTaskId = openTasks.some((task) => task.id === taskId) ? taskId : (openTasks[0]?.id ?? "");
+  const effectiveCategory = categories.includes(category) ? category : (categories[0] ?? "");
+  const categoryTasks = useMemo(
+    () => openTasks.filter((task) => task.tag === effectiveCategory),
+    [openTasks, effectiveCategory],
+  );
+
+  useEffect(() => {
+    if (!userId) {
+      setFriends([]);
+      setIncomingInvites([]);
+      setInviteActors(new Map());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const [friendships, invitations] = await Promise.all([
+        fetchFriendships(),
+        fetchIncomingPlannedStudyInvites(userId),
+      ]);
+      if (cancelled) return;
+      const friendIds = friendships
+        .filter((friendship) => friendship.status === "accepted")
+        .map((friendship) => friendship.requester === userId ? friendship.addressee : friendship.requester);
+      const actorIds = invitations.map((invitation) => invitation.inviter_id);
+      const profiles = await getPublicProfiles([...new Set([...friendIds, ...actorIds])]);
+      if (cancelled) return;
+      setFriends(friendIds.map((id) => profiles.get(id)).filter((profile): profile is PublicProfile => !!profile));
+      setIncomingInvites(invitations);
+      setInviteActors(profiles);
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const planned = plans
+    .filter((plan) => plan.status === "planned")
+    .sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime());
+  const overdue = planned.filter((plan) => !dismissed.includes(plan.id) && new Date(plan.scheduled_for).getTime() + plan.expected_minutes * 60_000 < Date.now());
+  const missed = plans.filter((plan) => plan.status === "missed" && plan.missed_reason);
+  const reasonCounts = new Map<string, number>();
+  for (const plan of missed) reasonCounts.set(plan.missed_reason!, (reasonCounts.get(plan.missed_reason!) ?? 0) + 1);
   const commonReason = [...reasonCounts.entries()].sort((a, b) => b[1] - a[1])[0];
-  const create = () => {
-    if (!when) return;
-    const task = tasks.find((t) => t.id === taskId);
-    onCreatePlan({ task_id: task?.id ?? null, task_title: task?.title ?? null, category: task?.tag || "Uncategorized", scheduled_for: new Date(when).toISOString(), expected_minutes: minutes });
+
+  const resetForm = () => {
     setWhen("");
+    setEditingId(null);
+    setSelectedFriendIds([]);
+    setMessage(null);
   };
-  return <section className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
-    <h2 className="flex items-center gap-1.5 text-sm font-semibold"><CalendarPlus size={15} className="text-primary" /> Planned study</h2>
-    <p className="mt-0.5 text-xs text-muted-foreground">Plan work beside your task list, then add it to Google Calendar, Apple Calendar, or Outlook.</p>
-    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_110px_auto]">
-      <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="Planned study time" className="rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-      <select value={taskId} onChange={(e) => setTaskId(e.target.value)} aria-label="Planned task" className="rounded-xl border border-border bg-card px-3 py-2 text-sm"><option value="">No task</option>{tasks.filter((t) => !t.done).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select>
-      <input type="number" min={5} max={480} value={minutes} onChange={(e) => setMinutes(Math.max(5, Math.min(480, Number(e.target.value))))} aria-label="Expected minutes" className="rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-      <button onClick={create} disabled={!when} className="rounded-xl gradient-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Plan</button>
-    </div>
-    {!signedIn && <p className="mt-2 text-[11px] text-muted-foreground">Guest plans stay on this device.</p>}
-    {planned.slice(0, 5).map((plan) => <div key={plan.id} className="mt-3 rounded-xl border border-border bg-card/70 p-3">
-      <p className="text-sm font-medium">{plan.task_title || plan.category} · {new Date(plan.scheduled_for).toLocaleString()}</p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {(["google", "apple", "outlook"] as const).map((provider) => <button key={provider} onClick={() => addToCalendar(plan, provider)} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40"><ExternalLink size={10} className="mr-1 inline" />{provider === "apple" ? "Apple" : provider[0].toUpperCase() + provider.slice(1)}</button>)}
-        {overdue.includes(plan) && <button onClick={() => onUpdatePlan(plan.id, { status: "completed", missed_reason: null })} className="rounded-full border border-roamly-green/40 px-2.5 py-1 text-xs text-roamly-green"><Check size={11} className="inline" /> Completed</button>}
+
+  const buildDraft = (): PlannedStudyDraft | null => {
+    if (!when) return null;
+    if (targetType === "task") {
+      const task = openTasks.find((row) => row.id === effectiveTaskId);
+      if (!task) return null;
+      return {
+        task_id: task.id,
+        task_title: task.title,
+        category: task.tag,
+        target_type: "task",
+        include_all_category_tasks: false,
+        included_task_ids: [task.id],
+        included_task_titles: [task.title],
+        scheduled_for: new Date(when).toISOString(),
+        expected_minutes: minutes,
+      };
+    }
+    if (!effectiveCategory) return null;
+    const attached = includeAllTasks ? categoryTasks : [];
+    return {
+      task_id: null,
+      task_title: null,
+      category: effectiveCategory,
+      target_type: "category",
+      include_all_category_tasks: includeAllTasks,
+      included_task_ids: attached.map((task) => task.id),
+      included_task_titles: attached.map((task) => task.title),
+      scheduled_for: new Date(when).toISOString(),
+      expected_minutes: minutes,
+    };
+  };
+
+  const save = async () => {
+    const draft = buildDraft();
+    if (!draft || !userId) return;
+    setSaving(true);
+    setMessage(null);
+    if (editingId) {
+      const updated = await onUpdatePlan(editingId, draft);
+      setSaving(false);
+      if (updated) resetForm();
+      else setMessage("Couldn't update that event. Try again.");
+      return;
+    }
+    const created = await onCreatePlan(draft);
+    if (!created) {
+      setSaving(false);
+      setMessage("Couldn't save that event. Try again.");
+      return;
+    }
+    const inviteError = await inviteFriendsToPlannedStudy(created.id, userId, selectedFriendIds);
+    setSaving(false);
+    setWhen("");
+    setSelectedFriendIds([]);
+    setMessage(inviteError ?? (selectedFriendIds.length ? "Event planned and invitations sent." : "Event planned."));
+  };
+
+  const beginEdit = (plan: PlannedStudySession) => {
+    setEditingId(plan.id);
+    setWhen(toDateTimeLocal(plan.scheduled_for));
+    setMinutes(plan.expected_minutes);
+    setTargetType(plan.target_type ?? (plan.task_id ? "task" : "category"));
+    setTaskId(plan.task_id ?? "");
+    setCategory(plan.category);
+    setIncludeAllTasks(plan.include_all_category_tasks ?? false);
+    setSelectedFriendIds([]);
+    setMessage("Editing this event. Existing friend invitations stay attached.");
+  };
+
+  const remove = async (id: string) => {
+    if (await onDeletePlan(id)) {
+      setDeleteConfirmId(null);
+      if (editingId === id) resetForm();
+    } else {
+      setMessage("Couldn't delete that event. Try again.");
+    }
+  };
+
+  const respondToInvite = async (id: string, status: "accepted" | "declined") => {
+    if (!await respondPlannedStudyInvite(id, status)) return;
+    setIncomingInvites((current) => status === "declined"
+      ? current.filter((invitation) => invitation.id !== id)
+      : current.map((invitation) => invitation.id === id ? { ...invitation, status } : invitation));
+  };
+
+  if (!userId) {
+    return <section className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-primary"><Lock size={15} /></span>
+        <div>
+          <h2 className="text-sm font-semibold">Planned study</h2>
+          <p className="text-[11px] font-medium text-primary">Account required</p>
+        </div>
       </div>
-      {overdue.includes(plan) && <div className="mt-2 flex flex-wrap gap-1.5"><span className="text-xs text-muted-foreground">Missed?</span>{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="text-[11px] text-muted-foreground underline">Not now</button></div>}
-    </div>)}
+      <p className="mt-2 text-xs text-muted-foreground">Sign in to plan study days, attach tasks or full categories, invite friends, and sync events across devices and calendars.</p>
+      <button onClick={onSignIn} className="mt-3 flex items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow">
+        <LogIn size={13} /> Sign in to plan
+      </button>
+    </section>;
+  }
+
+  const canSave = !!when && (targetType === "task" ? !!effectiveTaskId : !!effectiveCategory);
+
+  return <section className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold"><CalendarPlus size={15} className="text-primary" /> Planned study</h2>
+        <p className="mt-0.5 text-xs text-muted-foreground">Plan a task or a full category, invite friends, then add the event to Google, Apple, or Outlook.</p>
+      </div>
+      {editingId && <button onClick={resetForm} className="flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground"><X size={11} /> Cancel edit</button>}
+    </div>
+
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+        Date and time
+        <input type="datetime-local" value={when} onChange={(event) => setWhen(event.target.value)} aria-label="Planned study time" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground" />
+      </label>
+      <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+        Plan target
+        <select value={targetType} onChange={(event) => setTargetType(event.target.value as PlannedStudyTarget)} aria-label="Plan target" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
+          <option value="task">One task</option>
+          <option value="category">Full category</option>
+        </select>
+      </label>
+      {targetType === "task" ? (
+        <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+          Task
+          <select value={effectiveTaskId} onChange={(event) => setTaskId(event.target.value)} aria-label="Planned task" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
+            {openTasks.length === 0 && <option value="">No open tasks</option>}
+            {openTasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
+          </select>
+        </label>
+      ) : (
+        <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+          Category
+          <select value={effectiveCategory} onChange={(event) => setCategory(event.target.value)} aria-label="Planned category" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
+            {categories.length === 0 && <option value="">No categories</option>}
+            {categories.map((name) => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>
+      )}
+      <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+        Duration (minutes)
+        <span className="flex items-center rounded-xl border border-border bg-card pr-3">
+          <input type="number" min={5} max={480} value={minutes} onChange={(event) => setMinutes(Math.max(5, Math.min(480, Number(event.target.value))))} aria-label="Duration in minutes" className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-foreground outline-none" />
+          <span className="text-xs text-muted-foreground">min</span>
+        </span>
+      </label>
+    </div>
+    <p className="mt-1.5 text-[11px] text-muted-foreground">Duration sets the calendar block length and when Roamly considers the planned event overdue.</p>
+
+    {targetType === "category" && (
+      <label className="mt-3 flex items-start gap-2 rounded-xl border border-border bg-card/60 p-3">
+        <input type="checkbox" checked={includeAllTasks} onChange={(event) => setIncludeAllTasks(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+        <span className="text-xs">
+          <span className="block font-medium">Attach all {categoryTasks.length} open task{categoryTasks.length === 1 ? "" : "s"} in {effectiveCategory || "this category"}</span>
+          <span className="mt-0.5 block text-[11px] text-muted-foreground">Turn this off to plan the category without attaching individual tasks. Attached tasks are saved as a snapshot.</span>
+        </span>
+      </label>
+    )}
+
+    {!editingId && (
+      <div className="mt-3 rounded-xl border border-border bg-card/60 p-3">
+        <p className="flex items-center gap-1.5 text-xs font-medium"><Users size={13} className="text-primary" /> Invite friends</p>
+        {friends.length === 0 ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">No accepted friends yet. Add friends from your profile menu, then return here to invite them.</p>
+        ) : (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {friends.map((friend) => {
+              const checked = selectedFriendIds.includes(friend.id);
+              return <label key={friend.id} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${checked ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
+                <input type="checkbox" checked={checked} onChange={() => setSelectedFriendIds((current) => checked ? current.filter((id) => id !== friend.id) : [...current, friend.id])} className="h-3.5 w-3.5 accent-primary" />
+                {personName(friend)}
+              </label>;
+            })}
+          </div>
+        )}
+      </div>
+    )}
+
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      <button onClick={save} disabled={!canSave || saving} className="rounded-xl gradient-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        {saving ? "Saving…" : editingId ? "Save changes" : "Plan event"}
+      </button>
+      {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}
+    </div>
+
+    {incomingInvites.length > 0 && (
+      <div className="mt-5">
+        <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Invitations</h3>
+        <div className="mt-2 space-y-2">
+          {incomingInvites.map((invitation) => {
+            const plan = invitation.plan;
+            if (!plan) return null;
+            return <div key={invitation.id} className="rounded-xl border border-primary/30 bg-primary/5 p-3">
+              <p className="text-sm font-medium">{personName(inviteActors.get(invitation.inviter_id))} invited you to {plan.task_title || plan.category}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{new Date(plan.scheduled_for).toLocaleString()} · {plan.expected_minutes} min</p>
+              {plan.included_task_titles?.length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">Tasks: {plan.included_task_titles.join(", ")}</p>}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {invitation.status === "pending" ? <>
+                  <button onClick={() => respondToInvite(invitation.id, "accepted")} className="rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white">Accept</button>
+                  <button onClick={() => respondToInvite(invitation.id, "declined")} className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">Decline</button>
+                </> : <span className="rounded-full bg-roamly-green/10 px-2.5 py-1 text-xs text-roamly-green">Accepted</span>}
+                {invitation.status === "accepted" && (["google", "apple", "outlook"] as const).map((provider) => <button key={provider} onClick={() => addToCalendar(plan, provider)} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground"><ExternalLink size={10} className="mr-1 inline" />{provider === "apple" ? "Apple" : provider[0].toUpperCase() + provider.slice(1)}</button>)}
+              </div>
+            </div>;
+          })}
+        </div>
+      </div>
+    )}
+
+    {planned.slice(0, 5).map((plan) => {
+      const scope = plan.target_type === "category"
+        ? plan.include_all_category_tasks
+          ? `Full category · ${plan.included_task_titles?.length ?? 0} attached task${plan.included_task_titles?.length === 1 ? "" : "s"}`
+          : "Full category · no individual tasks attached"
+        : "Single task";
+      return <div key={plan.id} className="mt-3 rounded-xl border border-border bg-card/70 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">{plan.task_title || plan.category}</span>
+            <span className="block text-xs text-muted-foreground">{new Date(plan.scheduled_for).toLocaleString()} · {plan.expected_minutes} min</span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">{scope}</span>
+          </span>
+          <span className="flex shrink-0 gap-1">
+            <button onClick={() => beginEdit(plan)} aria-label={`Edit ${plan.task_title || plan.category}`} className="grid h-7 w-7 place-items-center rounded-full border border-border text-muted-foreground"><Pencil size={11} /></button>
+            <button onClick={() => setDeleteConfirmId(plan.id)} aria-label={`Delete ${plan.task_title || plan.category}`} className="grid h-7 w-7 place-items-center rounded-full border border-border text-muted-foreground hover:text-destructive"><Trash2 size={11} /></button>
+          </span>
+        </div>
+        {plan.included_task_titles?.length > 0 && plan.target_type === "category" && <p className="mt-1.5 text-[11px] text-muted-foreground">Tasks: {plan.included_task_titles.join(", ")}</p>}
+        {deleteConfirmId === plan.id && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-destructive/10 p-2 text-xs"><span className="text-destructive">Delete this planned event?</span><button onClick={() => remove(plan.id)} className="rounded-full bg-destructive px-3 py-1 font-semibold text-white">Delete</button><button onClick={() => setDeleteConfirmId(null)} className="rounded-full border border-border px-3 py-1 text-muted-foreground">Cancel</button></div>}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {(["google", "apple", "outlook"] as const).map((provider) => <button key={provider} onClick={() => addToCalendar(plan, provider)} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40"><ExternalLink size={10} className="mr-1 inline" />{provider === "apple" ? "Apple" : provider[0].toUpperCase() + provider.slice(1)}</button>)}
+          {overdue.includes(plan) && <button onClick={() => onUpdatePlan(plan.id, { status: "completed", missed_reason: null })} className="rounded-full border border-roamly-green/40 px-2.5 py-1 text-xs text-roamly-green"><Check size={11} className="inline" /> Completed</button>}
+        </div>
+        {overdue.includes(plan) && <div className="mt-2 flex flex-wrap gap-1.5"><span className="text-xs text-muted-foreground">Missed?</span>{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="text-[11px] text-muted-foreground underline">Not now</button></div>}
+      </div>;
+    })}
     {missed.length >= 3 && commonReason && <p className="mt-3 rounded-xl bg-secondary p-3 text-xs text-muted-foreground"><Clock3 size={13} className="mr-1 inline text-primary" />Across {missed.length} tagged misses, your most common reason is <span className="font-semibold text-foreground">{commonReason[0]}</span> ({commonReason[1]}).</p>}
   </section>;
 }
