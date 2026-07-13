@@ -163,7 +163,9 @@ function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (v
   };
   const commitTime = (hour: number, minute: number) => {
     const base = selected ?? { year: today.getFullYear(), month: today.getMonth(), day: today.getDate() };
-    onChange(localDateTimeValue(base.year, base.month, base.day, Math.max(0, Math.min(23, hour)), Math.max(0, Math.min(59, minute))));
+    const wholeHour = Number.isFinite(hour) ? Math.trunc(hour) : 0;
+    const wholeMinute = Number.isFinite(minute) ? Math.trunc(minute) : 0;
+    onChange(localDateTimeValue(base.year, base.month, base.day, Math.max(0, Math.min(23, wholeHour)), Math.max(0, Math.min(59, wholeMinute))));
   };
 
   const year = visibleMonth.getFullYear();
@@ -219,7 +221,8 @@ function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (v
             <div className="flex items-center gap-2">
               <input type="number" min={1} max={12} value={hour12} aria-label="Hour"
                 onChange={(event) => {
-                  const next12 = Math.max(1, Math.min(12, Number(event.target.value)));
+                  const typedHour = Number(event.target.value);
+                  const next12 = Number.isFinite(typedHour) ? Math.max(1, Math.min(12, Math.trunc(typedHour))) : 1;
                   commitTime((next12 % 12) + (isPm ? 12 : 0), minute);
                 }}
                 className="min-w-0 flex-1 rounded-lg border border-border bg-card px-2 py-2 text-center text-sm outline-none focus:border-primary" />
