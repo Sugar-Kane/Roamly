@@ -64,7 +64,10 @@ export function applyThemeToPip(pip: Window, theme: Theme, a11y: A11ySettings): 
       root.style.setProperty("--border", theme.vars["--foreground"]);
     }
     root.classList.toggle("a11y-reduce-motion", a11y.reduceMotion);
-    root.style.fontSize = a11y.largeText ? "112.5%" : "";
+    // The pop-out timer renders at 75% scale — all its text/spacing is rem-based,
+    // so shrinking the root font-size shrinks the whole thing proportionally.
+    // Large-text a11y still wins (scales up from that smaller base).
+    root.style.fontSize = a11y.largeText ? "112.5%" : "75%";
     pip.document.body.style.background = "hsl(var(--background))";
   } catch { /* best-effort */ }
 }
@@ -81,7 +84,7 @@ export function useDocumentPip(theme: Theme, a11y: A11ySettings) {
     let pip: Window;
     try {
       // MUST be the first await after the user gesture, or the request is denied.
-      pip = await api.requestWindow({ width: opts?.width ?? 240, height: opts?.height ?? 270 });
+      pip = await api.requestWindow({ width: opts?.width ?? 180, height: opts?.height ?? 203 });
     } catch {
       return null; // denied / unsupported / already open — no-op
     }

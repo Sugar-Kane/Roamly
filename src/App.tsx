@@ -564,7 +564,7 @@ export default function App() {
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
-              embed={embed} playEmbed={playEmbed} guardSolo={guardSolo}
+              embed={embed} playEmbed={playEmbed} guardSolo={guardSolo} immersive={immersive}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
               session={session} onSignIn={onSignIn} sounds={sounds}
@@ -598,7 +598,7 @@ export default function App() {
               soundAuto={soundAuto} onInRoom={handleInRoom} leaveSignal={leaveSignal}
               completionSoundEnabled={alerts.soundEnabled}
               pipSupported={pipSupported} pipWindow={pipWindow}
-              onPopOut={() => openPip({ width: 255, height: 465 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
+              onPopOut={() => openPip({ width: 191, height: 349 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           </div>
           {view === "premium" && (
@@ -639,26 +639,9 @@ export default function App() {
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)} />
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel isPremium={isPremium} gateThen={gateThen} embed={embed} onPlay={playEmbed} />
+            <MusicPanel embed={embed} onPlay={playEmbed} active={true} />
           </div>
         } />
-      {/* The one persistent streaming player: lives at App root so Spotify /
-          Apple Music keeps playing across tab switches, focus mode, and the
-          pop-out timer. Closing it (or picking a built-in sound) stops it. */}
-      {embed && (
-        <div className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[90] overflow-hidden rounded-2xl border border-border bg-card shadow-xl sm:left-auto sm:right-4 sm:w-96">
-          <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="truncate text-[11px] font-medium text-muted-foreground">
-              {embed.service === "spotify" ? "Spotify" : "Apple Music"} · {embed.label}
-            </span>
-            <button onClick={() => setEmbed(null)} aria-label="Close music player"
-              className="ml-2 shrink-0 text-muted-foreground transition hover:text-foreground"><X size={14} /></button>
-          </div>
-          <iframe key={embed.src} src={embed.src} width="100%" height={Math.min(embed.height, 152)}
-            style={{ border: "none" }} title="Music player"
-            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
-        </div>
-      )}
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
           App (not FocusView) so it survives tab switches and shares the one live
           `timer` object. Yields to the room's own pop-out while a room is open. */}
@@ -918,7 +901,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, immersive, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1037,7 +1020,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel isPremium={isPremium} gateThen={gateThen} embed={embed} onPlay={playEmbed} />
+      <MusicPanel embed={embed} onPlay={playEmbed} active={!immersive} />
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
@@ -1284,7 +1267,7 @@ function FocusSoundsPanel({ sounds }: any) {
 // up to App via onPlay — the iframe itself lives in the dock, so it keeps
 // playing across tab switches and pop-out timers instead of dying when this
 // panel unmounts.
-function MusicPanel({ isPremium, gateThen, embed, onPlay }: any) {
+function MusicPanel({ embed, onPlay, active }: any) {
   const [service, setService] = useState<"spotify" | "apple">("spotify");
   const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
   const [spotifyCustomError, setSpotifyCustomError] = useState(false);
@@ -1296,16 +1279,15 @@ function MusicPanel({ isPremium, gateThen, embed, onPlay }: any) {
   const playApple = (target: { type: AppleMusicEmbedType; path: string }, label: string) =>
     onPlay({ service: "apple", src: toAppleEmbedSrc(target), height: appleEmbedHeight(target.type), label });
 
-  // "Players already up": premium users get the dock preloaded with the first
-  // playlist on first visit (paused until they press play inside it).
-  const preloaded = useRef(false);
-  useEffect(() => {
-    if (preloaded.current || !isPremium || embed) return;
-    preloaded.current = true;
-    const p = SPOTIFY_PRESETS[0];
-    if (p) playSpotify({ type: p.type, id: p.spotifyId }, p.name);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPremium]);
+  // Show a ready-to-play embedded player by default (no click needed) so users
+  // can see both Spotify and Apple Music are available without hunting for a
+  // station first. Autoplay never starts without a user gesture, so this default
+  // player doesn't hijack any built-in focus sound — it just sits there ready.
+  const first = service === "spotify" ? SPOTIFY_PRESETS[0] : APPLE_MUSIC_PRESETS[0];
+  const defaultEmbed = service === "spotify"
+    ? { service: "spotify" as const, src: toSpotifyEmbedSrc({ type: (first as any).type, id: (first as any).spotifyId }), height: embedHeight((first as any).type), label: first.name }
+    : { service: "apple" as const, src: toAppleEmbedSrc({ type: (first as any).type, path: (first as any).path }), height: appleEmbedHeight((first as any).type), label: first.name };
+  const shown = embed ?? defaultEmbed;
 
   const applySpotifyUrl = (value: string) => {
     setSpotifyCustomUrl(value);
@@ -1330,10 +1312,9 @@ function MusicPanel({ isPremium, gateThen, embed, onPlay }: any) {
           <Music size={16} className="text-primary" />
           <h2 className="font-display text-lg font-semibold">Music</h2>
         </div>
-        {!isPremium && <span className="flex items-center gap-1 text-xs text-primary"><Crown size={12} /> Premium</span>}
       </div>
 
-      <div className={!isPremium ? "blur-sm" : ""}>
+      <div>
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
           <button onClick={() => setService("spotify")}
             className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -1381,18 +1362,18 @@ function MusicPanel({ isPremium, gateThen, embed, onPlay }: any) {
           )}
         </div>
 
-        <p className="mt-4 rounded-xl border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
-          {embed
-            ? "Playing in the mini-player at the bottom of your screen — it keeps going while you switch tabs or pop out the timer."
-            : "Pick a playlist — it opens in a mini-player that follows you across every tab."}
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          Tap a playlist above to load it into the player below — or paste your own link.
         </p>
-      </div>
 
-      {!isPremium && (
-        <button onClick={() => gateThen(() => {})} className="absolute inset-0 grid place-items-center rounded-2xl">
-          <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock {service === "spotify" ? "Spotify" : "Apple Music"}</span>
-        </button>
-      )}
+        {active && (
+          <div className="mt-3 overflow-hidden rounded-xl border border-border">
+            <iframe key={shown.src} src={shown.src} width="100%" height={Math.min(shown.height, 152)}
+              style={{ border: "none" }} title={`${shown.service === "spotify" ? "Spotify" : "Apple Music"} player`}
+              loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
