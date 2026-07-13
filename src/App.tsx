@@ -697,7 +697,7 @@ export default function App() {
             <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
               streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
               session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
-              studyEvents={studyEvents} />
+              studyEvents={studyEvents} plannedSessions={plannedSessions} />
           )}
           {/* Rooms stay MOUNTED (just hidden) on other tabs: leaving the tab no
               longer kicks you out of a room — presence, the shared timer, room
@@ -2091,7 +2091,7 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
   );
 }
 
-function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks, studyEvents }: any) {
+function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks, studyEvents, plannedSessions }: any) {
   // All numbers below come from the user's real focus_sessions rows
   // days, one row per day) and their real tasks — nothing is mocked.
   const byDate = new Map<string, number>((sessions as FocusSession[]).map((s) => [s.date, s.minutes]));
@@ -2164,7 +2164,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         </div>
       </div>
 
-      <StudyInsights events={studyEvents} daily={sessions} />
+      <StudyInsights events={studyEvents} daily={sessions} plans={plannedSessions} />
 
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">

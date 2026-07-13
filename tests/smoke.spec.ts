@@ -129,6 +129,10 @@ test("guest count-up completion is saved to analytics", async ({ page }) => {
   await page.getByRole("button", { name: "Stop & save" }).click();
   await page.getByRole("button", { name: "Analytics" }).click();
   await expect(page.getByText("1 / 120 min")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Study time by category" })).toBeVisible();
+  await expect(page.getByText("You studied 1 minute on Uncategorized.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Study post-mortem" })).toBeVisible();
+  await expect(page.getByText(/Skipped sessions are feedback, not failure/)).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Analytics" }).click();
   await expect(page.getByText("1 / 120 min")).toBeVisible();
