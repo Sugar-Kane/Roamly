@@ -854,7 +854,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
           </button>
         )}
         {!session && (
-          <button onClick={onSignIn} aria-label="Sign in" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-card font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground sm:flex sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs">
+          <button onClick={onSignIn} aria-label="Sign in" className="grid h-9 w-9 shrink-0 place-items-center rounded-full gradient-primary font-semibold text-white shadow-glow transition active:scale-95 sm:flex sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs">
             <LogIn size={15} /> <span className="hidden sm:inline">Sign in</span>
           </button>
         )}
@@ -871,8 +871,8 @@ function SignInPrompt({ onSignIn, message }: any) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-4">
       <span className="text-sm text-muted-foreground">{message}</span>
-      <button onClick={onSignIn} className="shrink-0 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium transition hover:border-primary/40">
-        Sign in
+      <button onClick={onSignIn} className="flex shrink-0 items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow transition active:scale-95">
+        <LogIn size={13} /> Sign in
       </button>
     </div>
   );
