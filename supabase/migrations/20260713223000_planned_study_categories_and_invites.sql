@@ -39,7 +39,7 @@ alter table public.planned_study_invites enable row level security;
 
 grant select, insert, delete on public.planned_study_invites to authenticated;
 revoke update on public.planned_study_invites from authenticated;
-grant update (status) on public.planned_study_invites to authenticated;
+grant update (status, updated_at) on public.planned_study_invites to authenticated;
 
 drop policy if exists planned_study_invites_select_participants on public.planned_study_invites;
 create policy planned_study_invites_select_participants
