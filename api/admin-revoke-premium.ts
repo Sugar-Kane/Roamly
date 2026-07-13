@@ -33,7 +33,12 @@ export async function POST(request: Request): Promise<Response> {
     .select("stripe_customer_id, stripe_subscription_id").eq("id", userId).single();
   if (profileError || !profile) return json({ error: "User not found" }, 404);
 
+  // Revoking Roamly access always proceeds; Stripe cancellation is
+  // best-effort. If Stripe can't cancel (stale/test-mode subscription id, key
+  // mode mismatch, ownership mismatch), the response carries a warning so the
+  // admin knows to check the Stripe dashboard — but access is still revoked.
   let billingCanceled = false;
+  let stripeWarning: string | null = null;
   const subscriptionId = profile.stripe_subscription_id as string | null;
   const customerId = profile.stripe_customer_id as string | null;
   if (subscriptionId) {
@@ -41,25 +46,35 @@ export async function POST(request: Request): Promise<Response> {
     try {
       const subscription = await stripe.subscriptions.retrieve(subscriptionId);
       const subscriptionCustomer = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-      if (!customerId || subscriptionCustomer !== customerId) return json({ error: "Stripe customer ownership check failed." }, 409);
-      if (subscription.status !== "canceled") {
+      if (!customerId || subscriptionCustomer !== customerId) {
+        stripeWarning = `Subscription ${subscriptionId} belongs to a different Stripe customer — it was NOT canceled. Check the Stripe dashboard.`;
+      } else if (subscription.status !== "canceled") {
         await stripe.subscriptions.cancel(subscriptionId, { invoice_now: false, prorate: false });
         billingCanceled = true;
       }
     } catch (error) {
-      const stripeError = error as { code?: string; statusCode?: number };
-      if (stripeError.code !== "resource_missing") return json({ error: "Stripe could not cancel this subscription. Access was not revoked." }, stripeError.statusCode === 429 ? 429 : 502);
-      // A stale subscription id means Stripe has nothing left to bill. Continue
-      // with the local access revoke and let the audit trail record the action.
+      const stripeError = error as { code?: string; statusCode?: number; message?: string };
+      if (stripeError.statusCode === 429) return json({ error: "Stripe is rate-limiting requests — try again in a moment. Access was not changed." }, 429);
+      if (stripeError.code !== "resource_missing") {
+        // Likely a test-mode subscription id against a live key (or vice
+        // versa), or a transient Stripe failure. Revoke access anyway.
+        stripeWarning = `Stripe could not cancel subscription ${subscriptionId} (${stripeError.message ?? "unknown error"}). If it's still active, cancel it in the Stripe dashboard.`;
+      }
+      // resource_missing: a stale subscription id — Stripe has nothing left to
+      // bill, so the local revoke below is all that's needed.
     }
   }
 
   const asAdmin = createClient(supabaseUrl, publishableKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: revoked, error: revokeError } = await asAdmin.rpc("admin_revoke_premium", {
     p_user: userId,
-    p_reason: billingCanceled ? "Stripe subscription canceled and access revoked from Roamly admin portal" : "Access revoked from Roamly admin portal; no active Stripe subscription",
+    p_reason: billingCanceled
+      ? "Stripe subscription canceled and access revoked from Roamly admin portal"
+      : stripeWarning
+        ? "Access revoked from Roamly admin portal; Stripe cancellation failed — see dashboard"
+        : "Access revoked from Roamly admin portal; no active Stripe subscription",
   });
   if (revokeError) return json({ error: "Billing was handled, but Roamly access could not be updated. Check the admin audit and Stripe dashboard." }, 500);
 
-  return json({ ok: true, billingCanceled, revoked: Number(revoked ?? 0) }, 200);
+  return json({ ok: true, billingCanceled, revoked: Number(revoked ?? 0), ...(stripeWarning ? { stripeWarning } : {}) }, 200);
 }

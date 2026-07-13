@@ -24,8 +24,12 @@ export function useCountUpTimer() {
 
   const pause = useCallback(() => {
     if (!running || startedAt.current === null) return;
-    setElapsedBeforeRun((value) => value + Math.floor((Date.now() - startedAt.current!) / 1000));
+    // Snapshot the delta NOW: the state updater runs after this handler
+    // returns, by which point startedAt.current is already null — reading the
+    // ref inside the updater added the whole Unix epoch to the elapsed time.
+    const delta = Math.floor((Date.now() - startedAt.current) / 1000);
     startedAt.current = null;
+    setElapsedBeforeRun((value) => value + delta);
     setRunning(false);
   }, [running]);
 

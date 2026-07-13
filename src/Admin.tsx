@@ -80,6 +80,9 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     const result = await adminRevokePremium(u.id);
     setBusyId(null);
     if (result.error) { setError(result.error); return; }
+    // Access is revoked even when Stripe couldn't cancel — surface the
+    // follow-up so the admin checks the Stripe dashboard.
+    if (result.stripeWarning) setError(`Roamly access revoked. ${result.stripeWarning}`);
     setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: false } : r)));
   };
 
