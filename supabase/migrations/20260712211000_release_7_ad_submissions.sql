@@ -41,7 +41,7 @@ create or replace function public.enforce_ad_submission_limit()
 returns trigger
 language plpgsql
 set search_path = ''
-as $$
+as $fn$
 begin
   if (select count(*) from public.ad_submissions s
        where s.user_id = new.user_id
@@ -50,7 +50,7 @@ begin
   end if;
   return new;
 end;
-$$;
+$fn$;
 
 drop trigger if exists ad_submissions_limit on public.ad_submissions;
 create trigger ad_submissions_limit
@@ -68,7 +68,7 @@ language sql
 security definer
 set search_path = ''
 stable
-as $$
+as $fn$
   select s.id, p.email, p.username, s.ad_type, s.business_name, s.target_url,
          s.contact_email, s.plan, s.note, s.status, s.created_at, s.updated_at
     from public.ad_submissions s
@@ -76,14 +76,14 @@ as $$
    where public.is_admin()
    order by s.created_at desc
    limit greatest(1, least(p_limit, 300));
-$$;
+$fn$;
 
 create or replace function public.admin_set_ad_submission_status(p_id uuid, p_status text)
 returns void
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $fn$
 begin
   if not public.is_admin() then
     raise exception 'not_authorized';
@@ -95,21 +95,21 @@ begin
      set status = p_status, updated_at = now()
    where id = p_id;
 end;
-$$;
+$fn$;
 
 create or replace function public.admin_delete_ad_submission(p_id uuid)
 returns void
 language plpgsql
 security definer
 set search_path = ''
-as $$
+as $fn$
 begin
   if not public.is_admin() then
     raise exception 'not_authorized';
   end if;
   delete from public.ad_submissions where id = p_id;
 end;
-$$;
+$fn$;
 
 revoke execute on function public.admin_list_ad_submissions(int) from public, anon;
 revoke execute on function public.admin_set_ad_submission_status(uuid, text) from public, anon;
