@@ -153,7 +153,8 @@ function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (v
   }, [open]);
 
   useEffect(() => {
-    if (selected) setVisibleMonth(new Date(selected.year, selected.month, 1));
+    const nextSelected = parseDateTimeLocal(value);
+    if (nextSelected) setVisibleMonth(new Date(nextSelected.year, nextSelected.month, 1));
   }, [value]);
 
   const commitDate = (day: number) => {
