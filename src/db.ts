@@ -7,6 +7,10 @@ export type Profile = {
   email: string | null;
   username: string | null;
   display_name: string | null;
+  avatar_path?: string | null;
+  // A short-lived signed URL generated when the profile is fetched. Only the
+  // private storage path is persisted in the database.
+  avatar_url?: string | null;
   is_premium: boolean;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
@@ -23,6 +27,53 @@ export type Profile = {
   premium_source?: string | null;
   premium_expires_at?: string | null;
 };
+
+const AVATAR_BUCKET = "avatars";
+
+export async function updateProfileAvatar(userId: string, file: File, previousPath?: string | null): Promise<{ path?: string; url?: string; error?: string }> {
+  if (!supabase) return { error: "Profile pictures aren't available right now." };
+  const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+  if (!allowedTypes.has(file.type)) return { error: "Choose a JPG, PNG, or WebP image." };
+  if (file.size > 5 * 1024 * 1024) return { error: "Choose an image smaller than 5 MB." };
+
+  const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const path = `${userId}/${crypto.randomUUID()}.${extension}`;
+  const { error: uploadError } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file, {
+    cacheControl: "31536000",
+    contentType: file.type,
+    upsert: false,
+  });
+  if (uploadError) {
+    console.warn("[Roamly] avatar upload failed", uploadError.message);
+    return { error: "Couldn't upload that picture. Try another image." };
+  }
+
+  const { data: signed, error: signedError } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrl(path, 60 * 60);
+  if (signedError) {
+    await supabase.storage.from(AVATAR_BUCKET).remove([path]);
+    return { error: "Couldn't prepare that profile picture." };
+  }
+  const { error: profileError } = await supabase.from("profiles").update({ avatar_path: path }).eq("id", userId);
+  if (profileError) {
+    await supabase.storage.from(AVATAR_BUCKET).remove([path]);
+    console.warn("[Roamly] avatar profile update failed", profileError.message);
+    return { error: "Couldn't save that profile picture." };
+  }
+
+  if (previousPath && previousPath !== path) void supabase.storage.from(AVATAR_BUCKET).remove([previousPath]);
+  return { path, url: signed.signedUrl };
+}
+
+export async function removeProfileAvatar(userId: string, currentPath?: string | null): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Profile pictures aren't available right now." };
+  const { error } = await supabase.from("profiles").update({ avatar_path: null }).eq("id", userId);
+  if (error) {
+    console.warn("[Roamly] avatar removal failed", error.message);
+    return { error: "Couldn't remove that profile picture." };
+  }
+  if (currentPath) void supabase.storage.from(AVATAR_BUCKET).remove([currentPath]);
+  return {};
+}
 
 export type FocusSessionRow = { date: string; minutes: number };
 
@@ -285,6 +336,10 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
   if (error) { console.warn("[Roamly] fetchProfile failed", error.message); return null; }
   const profile = data as Profile;
+  if (profile.avatar_path) {
+    const { data: signed } = await supabase.storage.from(AVATAR_BUCKET).createSignedUrl(profile.avatar_path, 60 * 60);
+    profile.avatar_url = signed?.signedUrl ?? null;
+  }
   const { data: entitlement, error: entitlementError } = await supabase.rpc("get_my_premium_entitlement");
   if (!entitlementError) {
     const row = (entitlement as Array<{ is_premium: boolean; source: string | null; expires_at: string | null }> | null)?.[0];
