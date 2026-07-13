@@ -22,6 +22,7 @@ import { loadPref, savePref } from "./storage";
 import type { Profile } from "./db";
 import type { Session } from "@supabase/supabase-js";
 import { HealthyBreakActivities } from "./HealthyBreakActivities";
+import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 
 function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
@@ -571,6 +572,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   // Local, per-listener music mute — silences the background music just for you,
   // completely separate from the voice controls (muting a mic / people talking).
   const [musicMuted, setMusicMuted] = useState(() => loadPref("roamly-room-music-muted") === "on");
+  const [showAd, setShowAd] = useState(false);
 
   // The room owns the audio engine while you're in it: tell App to stand down
   // its personal-timer sound sync, and hand control back on leave.
@@ -760,6 +762,12 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
       </section>
 
       <div className="mt-4"><HealthyBreakActivities active={info.phase !== "focus"} breakKey={`room-${room.id}-${info.phase}-${info.focusIndex}`} /></div>
+      {info.phase !== "focus" && !isPremium && (
+        <div className="mt-4">
+          <AdBreakPrompt active onAdvertise={() => setShowAd(true)} onGoPremium={onUpgrade} />
+        </div>
+      )}
+      {showAd && <AdSubmitModal userId={userId} onClose={() => setShowAd(false)} />}
 
       {/* Picture-in-Picture: the shared room timer + break chat in a floating
           window. No timer controls — a room's timer is server-synced and can't
