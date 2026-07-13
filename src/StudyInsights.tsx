@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CalendarPlus, Check, Clock3 } from "lucide-react";
+import { CalendarPlus, Check, Clock3, ExternalLink } from "lucide-react";
 import type { Task } from "./data";
 import type { FocusSession } from "./streaks";
 import { MISSED_REASONS, type MissedReason, type PlannedStudySession, type StudyEvent } from "./release3";
@@ -17,16 +17,8 @@ function cutoff(range: Range): number {
 
 const duration = (min: number) => min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`;
 
-export function StudyInsights({ events, daily, tasks, plans, signedIn, onCreatePlan, onUpdatePlan }: {
-  events: StudyEvent[]; daily: FocusSession[]; tasks: Task[]; plans: PlannedStudySession[]; signedIn: boolean;
-  onCreatePlan: (row: Pick<PlannedStudySession, "task_id" | "task_title" | "category" | "scheduled_for" | "expected_minutes">) => void;
-  onUpdatePlan: (id: string, fields: { status?: PlannedStudySession["status"]; missed_reason?: MissedReason | null }) => void;
-}) {
+export function StudyInsights({ events, daily }: { events: StudyEvent[]; daily: FocusSession[] }) {
   const [range, setRange] = useState<Range>("week");
-  const [when, setWhen] = useState("");
-  const [taskId, setTaskId] = useState("");
-  const [minutes, setMinutes] = useState(25);
-  const [dismissed, setDismissed] = useState<string[]>([]);
   const filtered = useMemo(() => events.filter((e) => new Date(e.completed_at).getTime() >= cutoff(range)), [events, range]);
   const detailedMinutes = filtered.reduce((sum, e) => sum + e.minutes, 0);
   const aggregateMinutes = daily.filter((row) => {
@@ -53,10 +45,6 @@ export function StudyInsights({ events, daily, tasks, plans, signedIn, onCreateP
   const total = aggregateMinutes;
   const sessionCount = filtered.length;
   const average = sessionCount ? Math.round(detailedMinutes / sessionCount) : 0;
-  const overdue = plans.filter((p) => p.status === "planned" && !dismissed.includes(p.id) && new Date(p.scheduled_for).getTime() + p.expected_minutes * 60_000 < Date.now());
-  const missed = plans.filter((p) => p.status === "missed" && p.missed_reason);
-  const reasonCounts = new Map<string, number>(); for (const p of missed) reasonCounts.set(p.missed_reason!, (reasonCounts.get(p.missed_reason!) ?? 0) + 1);
-  const commonReason = [...reasonCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   const trendGroups = useMemo(() => {
     const rows = daily.map((row) => ({ ...row, dateObj: new Date(`${row.date}T12:00:00`) })).sort((a, b) => a.dateObj.getTime() - b.dateObj.getTime());
     const dailyRows = rows.slice(-7).map((r) => ({ label: r.dateObj.toLocaleDateString(undefined, { weekday: "short" }), minutes: r.minutes }));
@@ -75,13 +63,6 @@ export function StudyInsights({ events, daily, tasks, plans, signedIn, onCreateP
     return { daily: dailyRows, weekly: group("week", 6), monthly: group("month", 6) };
   }, [daily]);
 
-  const create = () => {
-    if (!when) return;
-    const task = tasks.find((t) => t.id === taskId);
-    onCreatePlan({ task_id: task?.id ?? null, task_title: task?.title ?? null, category: task?.tag || "Uncategorized", scheduled_for: new Date(when).toISOString(), expected_minutes: minutes });
-    setWhen("");
-  };
-
   return <div className="mt-6 space-y-6">
     <section className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -93,24 +74,71 @@ export function StudyInsights({ events, daily, tasks, plans, signedIn, onCreateP
       <div className="mt-5 grid gap-4 md:grid-cols-3"><Trend title="Daily trend" rows={trendGroups.daily} /><Trend title="Weekly trend" rows={trendGroups.weekly} /><Trend title="Monthly trend" rows={trendGroups.monthly} /></div>
     </section>
 
-    <section className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold"><CalendarPlus size={15} className="text-primary" /> Planned study</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">Only sessions you schedule here can produce an optional missed-session check-in.</p>
-      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_110px_auto]">
-        <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="Planned study time" className="rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-        <select value={taskId} onChange={(e) => setTaskId(e.target.value)} aria-label="Planned task" className="rounded-xl border border-border bg-card px-3 py-2 text-sm"><option value="">No task</option>{tasks.filter((t) => !t.done).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select>
-        <input type="number" min={5} max={480} value={minutes} onChange={(e) => setMinutes(Math.max(5, Math.min(480, Number(e.target.value))))} aria-label="Expected minutes" className="rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-        <button onClick={create} disabled={!when} className="rounded-xl gradient-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Plan</button>
-      </div>
-      {!signedIn && <p className="mt-2 text-[11px] text-muted-foreground">Guest plans stay on this device.</p>}
-      {overdue.slice(0, 3).map((plan) => <div key={plan.id} className="mt-3 rounded-xl border border-border bg-card/70 p-3">
-        <p className="text-sm font-medium">{plan.task_title || plan.category} · {new Date(plan.scheduled_for).toLocaleString()}</p>
-        <p className="mt-1 text-xs text-muted-foreground">Did this planned session happen? Tagging a miss is optional.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5"><button onClick={() => onUpdatePlan(plan.id, { status: "completed", missed_reason: null })} className="rounded-full border border-roamly-green/40 px-2.5 py-1 text-xs text-roamly-green"><Check size={11} className="inline" /> Completed</button>{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="rounded-full px-2.5 py-1 text-xs text-muted-foreground underline">Not now</button></div>
-      </div>)}
-      {missed.length >= 3 && commonReason && <p className="mt-3 rounded-xl bg-secondary p-3 text-xs text-muted-foreground"><Clock3 size={13} className="mr-1 inline text-primary" />Across {missed.length} tagged misses, your most common reason is <span className="font-semibold text-foreground">{commonReason[0]}</span> ({commonReason[1]}). This is a pattern, not a judgment.</p>}
-    </section>
   </div>;
+}
+
+function calendarDetails(plan: PlannedStudySession) {
+  const start = new Date(plan.scheduled_for);
+  const end = new Date(start.getTime() + plan.expected_minutes * 60_000);
+  const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  return { title: plan.task_title || `Study: ${plan.category}`, start, end, dates: `${stamp(start)}/${stamp(end)}` };
+}
+
+function addToCalendar(plan: PlannedStudySession, provider: "google" | "outlook" | "apple") {
+  const event = calendarDetails(plan);
+  if (provider === "google") {
+    window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.title)}&dates=${event.dates}&details=${encodeURIComponent("Planned in Roamly Flow")}`, "_blank", "noopener,noreferrer");
+    return;
+  }
+  if (provider === "outlook") {
+    window.open(`https://outlook.live.com/calendar/0/deeplink/compose?subject=${encodeURIComponent(event.title)}&startdt=${encodeURIComponent(event.start.toISOString())}&enddt=${encodeURIComponent(event.end.toISOString())}&body=${encodeURIComponent("Planned in Roamly Flow")}`, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const ics = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Roamly Flow//Planned Study//EN", "BEGIN:VEVENT", `UID:${plan.id}@roamlyflow.com`, `DTSTART:${event.dates.split("/")[0]}`, `DTEND:${event.dates.split("/")[1]}`, `SUMMARY:${event.title.replace(/[\\,;]/g, "\\$&")}`, "DESCRIPTION:Planned in Roamly Flow", "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+  const url = URL.createObjectURL(new Blob([ics], { type: "text/calendar;charset=utf-8" }));
+  const link = document.createElement("a"); link.href = url; link.download = "roamly-study.ics"; link.click(); URL.revokeObjectURL(url);
+}
+
+export function PlannedStudyPanel({ tasks, plans, signedIn, onCreatePlan, onUpdatePlan }: {
+  tasks: Task[]; plans: PlannedStudySession[]; signedIn: boolean;
+  onCreatePlan: (row: Pick<PlannedStudySession, "task_id" | "task_title" | "category" | "scheduled_for" | "expected_minutes">) => void;
+  onUpdatePlan: (id: string, fields: { status?: PlannedStudySession["status"]; missed_reason?: MissedReason | null }) => void;
+}) {
+  const [when, setWhen] = useState("");
+  const [taskId, setTaskId] = useState("");
+  const [minutes, setMinutes] = useState(25);
+  const [dismissed, setDismissed] = useState<string[]>([]);
+  const planned = plans.filter((p) => p.status === "planned").sort((a, b) => new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime());
+  const overdue = planned.filter((p) => !dismissed.includes(p.id) && new Date(p.scheduled_for).getTime() + p.expected_minutes * 60_000 < Date.now());
+  const missed = plans.filter((p) => p.status === "missed" && p.missed_reason);
+  const reasonCounts = new Map<string, number>(); for (const p of missed) reasonCounts.set(p.missed_reason!, (reasonCounts.get(p.missed_reason!) ?? 0) + 1);
+  const commonReason = [...reasonCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const create = () => {
+    if (!when) return;
+    const task = tasks.find((t) => t.id === taskId);
+    onCreatePlan({ task_id: task?.id ?? null, task_title: task?.title ?? null, category: task?.tag || "Uncategorized", scheduled_for: new Date(when).toISOString(), expected_minutes: minutes });
+    setWhen("");
+  };
+  return <section className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+    <h2 className="flex items-center gap-1.5 text-sm font-semibold"><CalendarPlus size={15} className="text-primary" /> Planned study</h2>
+    <p className="mt-0.5 text-xs text-muted-foreground">Plan work beside your task list, then add it to Google Calendar, Apple Calendar, or Outlook.</p>
+    <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_110px_auto]">
+      <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} aria-label="Planned study time" className="rounded-xl border border-border bg-card px-3 py-2 text-sm" />
+      <select value={taskId} onChange={(e) => setTaskId(e.target.value)} aria-label="Planned task" className="rounded-xl border border-border bg-card px-3 py-2 text-sm"><option value="">No task</option>{tasks.filter((t) => !t.done).map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}</select>
+      <input type="number" min={5} max={480} value={minutes} onChange={(e) => setMinutes(Math.max(5, Math.min(480, Number(e.target.value))))} aria-label="Expected minutes" className="rounded-xl border border-border bg-card px-3 py-2 text-sm" />
+      <button onClick={create} disabled={!when} className="rounded-xl gradient-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Plan</button>
+    </div>
+    {!signedIn && <p className="mt-2 text-[11px] text-muted-foreground">Guest plans stay on this device.</p>}
+    {planned.slice(0, 5).map((plan) => <div key={plan.id} className="mt-3 rounded-xl border border-border bg-card/70 p-3">
+      <p className="text-sm font-medium">{plan.task_title || plan.category} · {new Date(plan.scheduled_for).toLocaleString()}</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {(["google", "apple", "outlook"] as const).map((provider) => <button key={provider} onClick={() => addToCalendar(plan, provider)} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40"><ExternalLink size={10} className="mr-1 inline" />{provider === "apple" ? "Apple" : provider[0].toUpperCase() + provider.slice(1)}</button>)}
+        {overdue.includes(plan) && <button onClick={() => onUpdatePlan(plan.id, { status: "completed", missed_reason: null })} className="rounded-full border border-roamly-green/40 px-2.5 py-1 text-xs text-roamly-green"><Check size={11} className="inline" /> Completed</button>}
+      </div>
+      {overdue.includes(plan) && <div className="mt-2 flex flex-wrap gap-1.5"><span className="text-xs text-muted-foreground">Missed?</span>{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="text-[11px] text-muted-foreground underline">Not now</button></div>}
+    </div>)}
+    {missed.length >= 3 && commonReason && <p className="mt-3 rounded-xl bg-secondary p-3 text-xs text-muted-foreground"><Clock3 size={13} className="mr-1 inline text-primary" />Across {missed.length} tagged misses, your most common reason is <span className="font-semibold text-foreground">{commonReason[0]}</span> ({commonReason[1]}).</p>}
+  </section>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="rounded-xl bg-secondary p-3"><p className="text-[11px] text-muted-foreground">{label}</p><p className="mt-1 font-mono text-lg font-semibold">{value}</p></div>; }
