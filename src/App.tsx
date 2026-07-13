@@ -828,12 +828,12 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
   return (
-    <header className="flex items-center justify-between gap-3">
-      <div className="flex min-w-0 items-baseline gap-3">
-        <span className="font-display text-2xl font-semibold tracking-tight text-gradient">Roamly</span>
+    <header className="flex items-center justify-between gap-1.5 sm:gap-3">
+      <div className="flex shrink-0 items-baseline gap-3">
+        <span className="font-display text-xl font-semibold tracking-tight text-gradient sm:text-2xl">Roamly</span>
         <span className="hidden font-mono text-[11px] uppercase tracking-[0.22em] text-primary sm:inline">Focus</span>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
         <span className="hidden sm:block"><StreakBadge streak={streak} /></span>
         <button onClick={onOpenTutorial} aria-label="Replay the app tour"
           className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
@@ -844,14 +844,14 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
         {/* Everyone who isn't premium gets a one-tap path to the plan page —
             guests land there too and hit the sign-in gate only at checkout. */}
         {!isPremium && (
-          <button onClick={onOpenPremium}
-            className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95">
-            <Crown size={13} /> Try Premium
+          <button onClick={onOpenPremium} aria-label="Try Premium"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full gradient-primary font-semibold text-white shadow-glow transition active:scale-95 sm:flex sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs">
+            <Crown size={15} /> <span className="hidden sm:inline">Try Premium</span>
           </button>
         )}
         {!session && (
-          <button onClick={onSignIn} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-            <LogIn size={13} /> Sign in
+          <button onClick={onSignIn} aria-label="Sign in" className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-card font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground sm:flex sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs">
+            <LogIn size={15} /> <span className="hidden sm:inline">Sign in</span>
           </button>
         )}
         <ProfileMenu session={session} profile={profile} isPremium={isPremium}
