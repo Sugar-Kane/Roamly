@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Users, DoorOpen, UserPlus, BarChart3 } from "lucide-react";
+import { Bell, Users, DoorOpen, UserPlus, BarChart3, CalendarPlus } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchNotifications, markAllNotificationsRead, getPublicProfiles, fetchRooms,
@@ -24,6 +24,7 @@ const KIND_ICON = {
   room_joined: Users,
   stats_request: BarChart3,
   stats_approved: BarChart3,
+  planned_study_invite: CalendarPlus,
 } as const;
 
 function label(n: AppNotification, actor: PublicProfile | undefined, room: { name: string; mine: boolean } | undefined): string {
@@ -39,13 +40,15 @@ function label(n: AppNotification, actor: PublicProfile | undefined, room: { nam
     case "room_joined": return room?.mine ? `${who} joined your room ${roomText}` : `${who} joined ${roomText}`;
     case "stats_request": return `${who} requested permission to compare study statistics`;
     case "stats_approved": return `${who} approved your study statistics request`;
+    case "planned_study_invite": return `${who} invited you to a planned study event`;
   }
 }
 
-export function NotificationsBell({ session, onOpenRoom, onOpenFriends }: {
+export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPlannedStudy }: {
   session: Session;
   onOpenRoom: (roomId: string) => void;
   onOpenFriends: () => void;
+  onOpenPlannedStudy: () => void;
 }) {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [actors, setActors] = useState<Map<string, PublicProfile>>(new Map());
@@ -109,6 +112,7 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends }: {
   const activate = (n: AppNotification) => {
     setOpen(false);
     if (n.room_id) onOpenRoom(n.room_id);
+    else if (n.kind === "planned_study_invite") onOpenPlannedStudy();
     else onOpenFriends();
   };
 
