@@ -75,7 +75,7 @@ test("a task can be added locally", async ({ page }) => {
   await page.getByPlaceholder(/Add a study task/).fill("Smoke test task");
   await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
-  await expect(page.getByText("Smoke test task")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Smoke test task\b/ })).toBeVisible();
 });
 
 test("a task can be completed locally", async ({ page }) => {
@@ -102,8 +102,8 @@ test("guest tasks persist and stop at five", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Add task", exact: true })).toBeDisabled();
   await page.reload();
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
-  await expect(page.getByText("Guest task 1")).toBeVisible();
-  await expect(page.getByText("Guest task 5")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Guest task 1\b/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Guest task 5\b/ })).toBeVisible();
 });
 
 test("count-up timer starts, pauses, and can be reset", async ({ page }) => {
