@@ -11,7 +11,7 @@ export type Phase = "focus" | "short" | "long";
 // correct across backgrounding (and simply reads 0 when the phase elapsed
 // while the tab was hidden). Mirrors how rooms already derive phase from
 // wall-clock time. Public API is unchanged.
-export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase) => void) {
+export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase) => void, autoAdvance = false) {
   const [phase, setPhase] = useState<Phase>("focus");
   const [running, setRunning] = useState(false);
   const [completedFocus, setCompletedFocus] = useState(0);
@@ -21,8 +21,11 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
   const deadlineRef = useRef<number | null>(null); // ms epoch the phase ends
   const [, forceRender] = useState(0);
   const onPhaseCompleteRef = useRef(onPhaseComplete);
+  // Ref-mirrored so flipping the preference never restarts the tick effect.
+  const autoAdvanceRef = useRef(autoAdvance);
 
   useEffect(() => { onPhaseCompleteRef.current = onPhaseComplete; }, [onPhaseComplete]);
+  useEffect(() => { autoAdvanceRef.current = autoAdvance; }, [autoAdvance]);
 
   const phaseLength = useCallback(
     (p: Phase) => (p === "focus" ? method.focus : p === "short" ? method.short : method.long) * 60,
@@ -39,18 +42,20 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
     setCompletedFocus(0);
   }, [method.id, method.focus, method.short, method.long, method.cycles]);
 
-  const advance = useCallback(() => {
-    deadlineRef.current = null;
+  const advance = useCallback((autoStart = false) => {
+    let next: Phase;
     if (phase === "focus") {
       const nextCount = completedFocus + 1;
       setCompletedFocus(nextCount);
-      const next: Phase = nextCount % method.cycles === 0 ? "long" : "short";
-      setPhase(next);
-      setRemaining(phaseLength(next));
+      next = nextCount % method.cycles === 0 ? "long" : "short";
     } else {
-      setPhase("focus");
-      setRemaining(phaseLength("focus"));
+      next = "focus";
     }
+    setPhase(next);
+    setRemaining(phaseLength(next));
+    // Auto-flow: roll straight into the next phase's countdown (like rooms
+    // do) instead of parking paused until the user presses Start.
+    deadlineRef.current = autoStart ? Date.now() + phaseLength(next) * 1000 : null;
   }, [phase, completedFocus, method.cycles, phaseLength]);
 
   // Live remaining seconds: computed from the deadline while running so it's
@@ -72,9 +77,13 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
         done = true;
         window.clearInterval(iv);
         document.removeEventListener("visibilitychange", onVisible);
-        setRunning(false);
         onPhaseCompleteRef.current?.(phase);
-        advance();
+        if (autoAdvanceRef.current) {
+          advance(true); // stays running; the effect re-arms on the phase change
+        } else {
+          setRunning(false);
+          advance();
+        }
       } else {
         forceRender((n) => n + 1);
       }

@@ -209,7 +209,12 @@ export default function App() {
     if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown");
   }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks]);
 
-  const timer = useTimer(method, handlePhaseComplete);
+  // Auto-flow: roll straight from focus into break (and back) like rooms do,
+  // for users who don't want to press Start at every boundary. Default off —
+  // the classic "own your start" behavior.
+  const [autoFlow, setAutoFlow] = useState(() => loadPref("roamly-autostart") === "1");
+  const toggleAutoFlow = () => setAutoFlow((v) => { savePref("roamly-autostart", v ? "0" : "1"); return !v; });
+  const timer = useTimer(method, handlePhaseComplete, autoFlow);
   const countUp = useCountUpTimer();
 
   const completeCountUp = useCallback(() => {
@@ -582,6 +587,7 @@ export default function App() {
               isPremium={isPremium} gateThen={gateThen}
               examDate={examDate} examName={profile?.exam_name ?? null} setExam={setExam} alerts={alerts}
               embed={embed} playEmbed={playEmbed} guardSolo={guardSolo} immersive={immersive}
+              autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow} onOpenTasks={() => setView("tasks")}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
               session={session} onSignIn={onSignIn} sounds={sounds}
@@ -642,6 +648,17 @@ export default function App() {
             </button>
             <button onClick={timer.skip} className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Skip">
               <SkipForward size={18} />
+            </button>
+            {pipSupported && (
+              <button onClick={() => (pipWindow ? closePip() : openPip().then((pip) => { if (pip) track("pip_open", "focus_mode"); }))}
+                className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+                aria-label={pipWindow ? "Close pop-out timer" : "Pop out timer"}>
+                <PictureInPicture2 size={18} />
+              </button>
+            )}
+            <button onClick={toggleAutoFlow} aria-pressed={autoFlow}
+              className={`flex h-12 items-center rounded-2xl border px-4 text-xs font-medium transition ${autoFlow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+              Auto-flow {autoFlow ? "on" : "off"}
             </button>
           </>
         }
@@ -753,6 +770,14 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
         </button>
         <ThemeMenu themeId={themeId} setThemeId={setThemeId} />
         {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} />}
+        {/* Everyone who isn't premium gets a one-tap path to the plan page —
+            guests land there too and hit the sign-in gate only at checkout. */}
+        {!isPremium && (
+          <button onClick={onOpenPremium}
+            className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95">
+            <Crown size={13} /> Try Premium
+          </button>
+        )}
         {!session && (
           <button onClick={onSignIn} className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
             <LogIn size={13} /> Sign in
@@ -918,7 +943,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, immersive, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, examDate, examName, setExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, playEmbed, guardSolo, immersive, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1012,6 +1037,12 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                   <InfoTip text="Pop the timer into a small floating window that stays on top of other apps — so you can keep studying on the rest of your screen and still see the countdown. Desktop Chrome/Edge only." />
                 </>
               )}
+              <button onClick={onToggleAutoFlow}
+                className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${autoFlow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
+                aria-pressed={autoFlow}>
+                <Play size={13} /> Auto-flow {autoFlow ? "on" : "off"}
+              </button>
+              <InfoTip text="Auto-flow starts the next phase by itself — focus rolls into break and back without pressing Start. Turn it off to start each block yourself." />
               <NotificationToggle alerts={alerts} />
             </div>
           </div>
@@ -1115,9 +1146,21 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           )}
           <div className="space-y-2">
             {/* Active task pins to the top so the "Focusing" marker is always visible here. */}
-            {sortTasks(tasks).filter((t: Task) => !t.done && (activeUpNextTag === "all" || t.tag === activeUpNextTag))
-              .sort((a: Task, b: Task) => Number(b.id === activeTask) - Number(a.id === activeTask))
-              .slice(0, 3).map((t: Task) => (
+            {(() => {
+              const upNext = sortTasks(tasks)
+                .filter((t: Task) => !t.done && (activeUpNextTag === "all" || t.tag === activeUpNextTag))
+                .sort((a: Task, b: Task) => Number(b.id === activeTask) - Number(a.id === activeTask))
+                .slice(0, 3);
+              if (upNext.length === 0) return (
+                <div className="rounded-xl border border-dashed border-border bg-card/50 p-4 text-center">
+                  <p className="text-sm text-muted-foreground">0 tasks queued — add what you'll study and it shows up here.</p>
+                  <button onClick={onOpenTasks}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-1.5 text-xs font-medium text-primary transition hover:border-primary/40">
+                    <Plus size={13} /> Add tasks
+                  </button>
+                </div>
+              );
+              return upNext.map((t: Task) => (
               <button key={t.id} onClick={() => setActiveTask(t.id)}
                 className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${activeTask === t.id ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
                 <span className="min-w-0 flex-1">
@@ -1133,7 +1176,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 </span>
                 <span className="shrink-0 font-mono text-xs text-muted-foreground" title="Focus sessions done / planned">{t.poms}/{t.est} <span className="font-sans text-[10px]">sessions</span></span>
               </button>
-            ))}
+              ));
+            })()}
           </div>
         </div>
       </div>
@@ -1443,11 +1487,51 @@ function TagPill({ tag }: { tag: string }) {
 
 type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
 
+// Themed replacements for the old window.prompt() dialogs — same look as
+// every other Roamly modal instead of a bare browser popup.
+function TaskTitleModal({ task, onSave, onClose }: any) {
+  const [draft, setDraft] = useState(task.title);
+  const commit = () => { const v = draft.trim(); if (v) onSave(v); onClose(); };
+  return (
+    <Modal label="Edit task" onClose={onClose} cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
+      <h3 className="font-display text-lg font-semibold">Edit task</h3>
+      <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); }} aria-label="Task title"
+        className="mt-3 w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+      <div className="mt-4 flex gap-2">
+        <button onClick={onClose} className="flex-1 rounded-full border border-border bg-card py-2 text-sm text-muted-foreground transition hover:border-primary/40">Cancel</button>
+        <button onClick={commit} className="flex-1 rounded-full gradient-primary py-2 text-sm font-semibold text-white shadow-glow transition active:scale-95">Save</button>
+      </div>
+    </Modal>
+  );
+}
+
+function TaskEstModal({ task, onPick, onClose }: any) {
+  return (
+    <Modal label="Focus sessions needed" onClose={onClose} cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
+      <h3 className="font-display text-lg font-semibold">How many focus sessions?</h3>
+      <p className="mt-1 text-sm text-muted-foreground">
+        “{task.title}” completes itself when it gets there{task.poms > 0 ? ` — ${task.poms} done so far` : ""}.
+      </p>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {Array.from({ length: 9 }, (_, i) => i + 1).map((n) => (
+          <button key={n} onClick={() => { onPick(n); onClose(); }} aria-pressed={task.est === n}
+            className={`rounded-xl border py-2.5 font-mono text-sm transition ${task.est === n ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+            {n}
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
 function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
   const [showDone, setShowDone] = useState(false);
+  const [editTarget, setEditTarget] = useState<Task | null>(null); // themed title editor
+  const [estTarget, setEstTarget] = useState<Task | null>(null);   // themed sessions picker
 
   // --- Drag reordering (grip handle, or press-and-hold anywhere on the row) ---
   // Grab the ⋮⋮ handle (instant with a mouse, ~0.1s on touch) or hold the row
@@ -1589,7 +1673,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="New tasks are done in 1 focus session. Bigger task? Click its 0/1 counter to say how many sessions it needs — it completes itself when it gets there (e.g. 1/3 = 1 session done of 3). Reorder within a subject by dragging the ⋮⋮ handle, and reorder whole subjects with the ▲▼ on each header." />
+        <InfoTip text="Each task is sized in focus sessions — new ones need just 1. The counter shows progress (1/3 = 1 session done of 3); tap it to resize a bigger task, and it completes itself when the sessions are done. Finishing a focus block counts a session for whichever task you're focusing. Drag ⋮⋮ to reorder within a subject; ▲▼ moves whole subjects." />
       </p>
       {tasks.length > 0 && (
         <div className="mt-4">
@@ -1604,7 +1688,14 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
       )}
       {!session && (
         <div className="mt-4">
-          <SignInPrompt onSignIn={onSignIn} message={`Guest tasks stay on this device (${tasks.length}/${guestLimit}). Sign in to sync across devices.`} />
+          <>
+            <SignInPrompt onSignIn={onSignIn} message={`Guest tasks stay on this device (${tasks.length}/${guestLimit}). Sign in to sync across devices.`} />
+            <p className="mt-2 rounded-xl border border-dashed border-border p-3 text-xs text-muted-foreground">
+              <Crown size={12} className="mr-1 inline text-primary" />
+              Signed-in users can also generate tasks with AI — upload lecture notes, slides, or
+              even photos of handwritten pages and Roamly turns them into a task list (3 uploads/month free, 10 with Premium).
+            </p>
+          </>
         </div>
       )}
       {session && (
@@ -1715,19 +1806,11 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
                             <Play size={13} />
                           </button>
                         )}
-                        <button onClick={() => {
-                          const next = window.prompt("Edit task", t.title);
-                          if (next !== null) editTask(t.id, next);
-                        }} aria-label={`Edit ${t.title}`}
+                        <button onClick={() => setEditTarget(t)} aria-label={`Edit ${t.title}`}
                           className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
                           <Pencil size={13} />
                         </button>
-                        <button data-nodrag onClick={() => {
-                          const raw = window.prompt(`How many focus sessions does "${t.title}" need? (1–9; it auto-completes when it gets there)`, String(t.est));
-                          if (raw === null) return;
-                          const n = Number(raw);
-                          if (Number.isFinite(n) && n >= 1) setTaskEst(t.id, n);
-                        }} title="Focus sessions done / planned — click to change"
+                        <button data-nodrag onClick={() => setEstTarget(t)} title="Focus sessions done / planned — click to change"
                           className="rounded-md px-1.5 py-0.5 text-center font-mono text-xs text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
                           aria-label={`${t.poms} of ${t.est} focus sessions done for ${t.title} — change estimate`}>
                           {t.poms}/{t.est}
@@ -1773,6 +1856,9 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
           )}
         </section>
       )}
+
+      {editTarget && <TaskTitleModal task={editTarget} onSave={(title: string) => editTask(editTarget.id, title)} onClose={() => setEditTarget(null)} />}
+      {estTarget && <TaskEstModal task={estTarget} onPick={(n: number) => setTaskEst(estTarget.id, n)} onClose={() => setEstTarget(null)} />}
     </div>
   );
 }
@@ -1855,7 +1941,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         {session ? (
           <DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
         ) : (
-          <><DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} /><div className="mt-3"><SignInPrompt onSignIn={onSignIn} message="This device is tracking your current guest activity. Sign in for long-term history and syncing." /></div></>
+          <><DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} /><div className="mt-3"><SignInPrompt onSignIn={onSignIn} message="As a guest, analytics track only what you do in this browser, on this device — nothing is saved to an account. Create a free account to keep your history, streaks, and stats everywhere you sign in." /></div></>
         )}
       </div>
 
