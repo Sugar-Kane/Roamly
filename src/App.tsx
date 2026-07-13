@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
+import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
@@ -360,6 +360,17 @@ export default function App() {
   useEffect(() => {
     if (timer.running) track("timer_start");
   }, [timer.running]);
+
+  // Hand the audio session back to the OS when nothing needs it. The silent
+  // iOS "keeper" loop must run while a session is live (so chimes beat the
+  // hardware silent switch), but left alone it pins a Now Playing tile on the
+  // lock screen forever and drains battery. The delay lets an end-of-phase
+  // chime ring out before the release; any Start tap re-acquires everything.
+  useEffect(() => {
+    if (roomActive || timer.running || countUp.running || soundPlaying) return;
+    const idle = window.setTimeout(() => releaseAudioSession(), 3000);
+    return () => window.clearTimeout(idle);
+  }, [roomActive, timer.running, countUp.running, soundPlaying]);
 
   // Dim the music over the last ~5s of a focus block so it flows into the
   // break. The timer re-renders several times a second, so a ref guards the

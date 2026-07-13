@@ -126,6 +126,67 @@ function audioCtx(): AudioContext | null {
   return ctx;
 }
 
+// ---- OS media-session signaling + full release ----
+// iOS promotes any playing <audio> element to a lock-screen "Now Playing"
+// tile. While a session is active we give that tile honest metadata; when
+// nothing needs audio anymore we fully release everything, or the looping
+// silent keeper pins the tile forever and burns battery.
+
+function mediaSession(): MediaSession | null {
+  return typeof navigator !== "undefined" && "mediaSession" in navigator ? navigator.mediaSession : null;
+}
+
+function announcePlayback(title: string, artist = "Roamly Focus") {
+  const ms = mediaSession();
+  if (!ms) return;
+  try {
+    ms.metadata = new MediaMetadata({ title, artist });
+    ms.playbackState = "playing";
+  } catch { /* MediaMetadata unsupported — cosmetic only */ }
+}
+
+function clearPlayback(state: MediaSessionPlaybackState = "none") {
+  const ms = mediaSession();
+  if (!ms) return;
+  try {
+    if (state === "none") ms.metadata = null;
+    ms.playbackState = state;
+  } catch { /* cosmetic only */ }
+}
+
+// Hand the audio session back to the OS: silence and unload the keeper and
+// the music element, suspend the AudioContext, dismiss the media tile.
+// No-op while something is actively playing. Everything re-acquires on the
+// next Start tap (unlockAudio/startFocusSound run inside user gestures).
+export function releaseAudioSession() {
+  if (masterGain) return; // a sound is playing — the session is legitimately held
+  if (keeper) {
+    keeper.pause();
+    keeper.removeAttribute("src");
+    try { keeper.load(); } catch { /* older browsers */ }
+    keeper = null; // rebuilt from a data URI on the next unlockAudio
+  }
+  if (musicEl) {
+    musicEl.pause();
+    if (musicEl.src) {
+      musicEl.removeAttribute("src");
+      try { musicEl.load(); } catch { /* older browsers */ }
+    }
+  }
+  if (ctx && ctx.state === "running") void ctx.suspend();
+  clearPlayback("none");
+}
+
+// The page going away is the one moment we can't rely on React cleanup.
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => {
+    teardown?.();
+    masterGain = null;
+    teardown = null;
+    releaseAudioSession();
+  });
+}
+
 // 4 seconds of looped noise; brown noise is a leaky integration of white.
 function noiseBuffer(audio: AudioContext, kind: "white" | "brown"): AudioBuffer {
   const length = audio.sampleRate * 4;
@@ -494,8 +555,10 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
         [order[i], order[j]] = [order[j], order[i]];
       }
     }
-    el.src = order.pop()!.file;
+    const track = order.pop()!;
+    el.src = track.file;
     void el.play().catch(() => { /* resumes on the next user gesture */ });
+    announcePlayback(track.title, track.artist);
   };
   el.onended = nextTrack;
   void playlistReady.then(() => { if (!stopped) nextTrack(); });
@@ -506,6 +569,7 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
     el.onended = null;
     el.pause();
     el.removeAttribute("src");
+    try { el.load(); } catch { /* flush the buffered track */ }
     musicSrcNode?.disconnect();
     musicToken = null;
   };
@@ -526,10 +590,11 @@ export function stopFocusSound(fadeSeconds = 0.6) {
   window.setTimeout(() => {
     td?.();
     g.disconnect();
-    // The iOS keeper is intentionally NOT paused here — it stays looping for
-    // the whole session so WebAudio (the end-of-phase chime especially) remains
-    // audible with the hardware silent switch on, even during breaks when no
-    // music is playing.
+    // The iOS keeper is intentionally NOT paused here — it stays looping while
+    // the session may still need a chime (silent-switch audibility). The
+    // idle-release effect in App calls releaseAudioSession() once nothing is
+    // running anymore, which is what finally frees the keeper and the tile.
+    if (!masterGain) clearPlayback("paused");
   }, fadeSeconds * 1000 + 100);
   masterGain = null;
   teardown = null;
@@ -603,6 +668,8 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
 
   masterGain = gain;
   teardown = stop;
+  // Real-track stations overwrite this with per-track metadata as they play.
+  announcePlayback(FOCUS_SOUNDS.find((s) => s.id === id)?.name ?? "Focus sounds");
 }
 
 export function focusSoundActive(): boolean {
