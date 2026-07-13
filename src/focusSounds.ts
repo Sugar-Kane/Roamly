@@ -2,24 +2,25 @@
 // audio (unlike the Spotify/Apple embeds), the timer can control it
 // perfectly: start on focus, fade out at the break.
 //
-// Every option is actual music, and nothing repeats within an hour:
-//  - "melody", "beats", "piano" are generative WebAudio — they synthesize a
+// Every option is actual music, and recorded tracks do not repeat for 7 days:
+//  - "melody", "beats", "piano", "ambient", and "rain" are generative WebAudio — they synthesize a
 //    fresh, non-looping performance each session, so they never repeat.
 //  - "lofi" (Café) and "calm" are real free-license recordings (Kevin MacLeod)
-//    bundled under /audio/lofi and played as a shuffle that exhausts the whole
-//    category before repeating, so with >60 min per category nothing recurs
-//    within an hour. Each falls back to a generative station if its manifest
-//    is missing.
+//    bundled under /audio/lofi. A local 7-day listening history removes every
+//    recently heard track from the shuffle. When that pool is exhausted, the
+//    station switches to a fresh generative performance instead of repeating.
 
 export type FocusSoundId =
-  | "melody" | "lofi" | "calm" | "beats" | "piano";
+  | "melody" | "lofi" | "calm" | "beats" | "piano" | "ambient" | "rain";
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
   { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
-  { id: "lofi", name: "Café music", hint: "Real tracks · mellow jazz" },
-  { id: "calm", name: "Calm music", hint: "Real tracks · ambient, meditative" },
+  { id: "lofi", name: "Café music", hint: "25 real tracks · 7-day no-repeat memory" },
+  { id: "calm", name: "Calm music", hint: "18 real tracks · 7-day no-repeat memory" },
   { id: "beats", name: "Lo-fi beats", hint: "Live chillhop groove" },
   { id: "piano", name: "Piano", hint: "Gentle drifting piano" },
+  { id: "ambient", name: "Ambient drift", hint: "Endless evolving soundscape" },
+  { id: "rain", name: "Rainy piano", hint: "Fresh piano with soft rainfall" },
 ];
 
 let ctx: AudioContext | null = null;
@@ -45,6 +46,35 @@ const playlistReady = fetch("/audio/lofi/manifest.json")
   .then((r) => (r.ok ? r.json() : []))
   .then((rows: MusicTrack[]) => { playlist = Array.isArray(rows) ? rows : []; })
   .catch(() => { playlist = []; });
+
+const TRACK_HISTORY_KEY = "roamly-music-track-history-v1";
+const TRACK_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+function recentTrackHistory(now = Date.now()): Record<string, number> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(TRACK_HISTORY_KEY) ?? "{}") as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, number] =>
+      typeof entry[1] === "number" && now - entry[1] < TRACK_COOLDOWN_MS));
+  } catch {
+    return {};
+  }
+}
+
+function rememberTrack(file: string, now = Date.now()) {
+  try {
+    const history = recentTrackHistory(now);
+    history[file] = now;
+    localStorage.setItem(TRACK_HISTORY_KEY, JSON.stringify(history));
+  } catch {
+    // Storage can be unavailable in private browsing. The in-session shuffle
+    // still prevents repeats until the page is closed.
+  }
+}
+
+export function tracksOutsideCooldown(pool: MusicTrack[], now = Date.now()): MusicTrack[] {
+  const history = recentTrackHistory(now);
+  return pool.filter((track) => history[track.file] === undefined);
+}
 
 // Tracks in a category (falls back to the whole playlist if none are tagged
 // that way, so an unpopulated category still plays something).
@@ -358,6 +388,75 @@ function buildPiano(audio: AudioContext, out: GainNode): () => void {
   return () => { timers.forEach((t) => window.clearTimeout(t)); };
 }
 
+function buildAmbient(audio: AudioContext, out: GainNode): () => void {
+  const oscs: OscillatorNode[] = [];
+  const timers: number[] = [];
+  const rootChoices = [110, 123.47, 130.81, 146.83, 164.81];
+  const root = rootChoices[Math.floor(Math.random() * rootChoices.length)];
+  const intervals = [1, 1.5, 2, 2.5];
+  const warm = audio.createBiquadFilter();
+  warm.type = "lowpass";
+  warm.frequency.value = rand(650, 1100);
+  warm.Q.value = 0.4;
+  warm.connect(out);
+
+  for (const [index, interval] of intervals.entries()) {
+    const gain = audio.createGain();
+    gain.gain.value = 0.035 + index * 0.008;
+    gain.connect(warm);
+    for (const detune of [-rand(2, 7), rand(2, 7)]) {
+      const osc = audio.createOscillator();
+      osc.type = index % 2 ? "sine" : "triangle";
+      osc.frequency.value = root * interval;
+      osc.detune.value = detune;
+      osc.connect(gain);
+      osc.start();
+      oscs.push(osc);
+    }
+  }
+
+  const bell = () => {
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    const at = audio.currentTime;
+    osc.type = "sine";
+    osc.frequency.value = root * [3, 4, 5, 6][Math.floor(Math.random() * 4)];
+    gain.gain.setValueAtTime(0.0001, at);
+    gain.gain.linearRampToValueAtTime(rand(0.035, 0.065), at + 0.4);
+    gain.gain.exponentialRampToValueAtTime(0.0001, at + rand(5, 9));
+    osc.connect(gain); gain.connect(out);
+    osc.start(at); osc.stop(at + 10);
+    timers.push(window.setTimeout(bell, rand(7000, 16000)));
+  };
+  timers.push(window.setTimeout(bell, rand(2500, 7000)));
+
+  return () => {
+    timers.forEach((timer) => window.clearTimeout(timer));
+    for (const osc of oscs) { try { osc.stop(); } catch { /* stopped */ } osc.disconnect(); }
+    warm.disconnect();
+  };
+}
+
+function buildRainyPiano(audio: AudioContext, out: GainNode): () => void {
+  const pianoStop = buildPiano(audio, out);
+  const rain = audio.createBufferSource();
+  rain.buffer = noiseBuffer(audio, "white");
+  rain.loop = true;
+  const rainBand = audio.createBiquadFilter();
+  rainBand.type = "bandpass";
+  rainBand.frequency.value = rand(1800, 2600);
+  rainBand.Q.value = 0.35;
+  const rainGain = audio.createGain();
+  rainGain.gain.value = 0.025;
+  rain.connect(rainBand); rainBand.connect(rainGain); rainGain.connect(out);
+  rain.start();
+  return () => {
+    pianoStop();
+    try { rain.stop(); } catch { /* stopped */ }
+    rain.disconnect(); rainBand.disconnect(); rainGain.disconnect();
+  };
+}
+
 function buildLofi(audio: AudioContext, out: GainNode): () => void {
   // Everything runs through one warm lowpass bus.
   const bus = audio.createGain(); bus.gain.value = 1;
@@ -544,18 +643,25 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
 
   let stopped = false;
   let order: MusicTrack[] = [];
+  let fallbackStop: (() => void) | null = null;
   const nextTrack = () => {
     if (stopped) return;
     const pool = tracksFor(category);
     if (pool.length === 0) return;
     if (order.length === 0) {
-      order = [...pool];
+      order = tracksOutsideCooldown(pool);
+      if (order.length === 0) {
+        fallbackStop = category === "lofi" ? buildLofi(audio, out) : buildPiano(audio, out);
+        announcePlayback(category === "lofi" ? "Fresh café session" : "Fresh calm session", "Roamly Focus");
+        return;
+      }
       for (let i = order.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [order[i], order[j]] = [order[j], order[i]];
       }
     }
     const track = order.pop()!;
+    rememberTrack(track.file);
     el.src = track.file;
     void el.play().catch(() => { /* resumes on the next user gesture */ });
     announcePlayback(track.title, track.artist);
@@ -567,6 +673,7 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
     stopped = true;
     if (musicToken !== token) return; // a newer music build already took over
     el.onended = null;
+    fallbackStop?.();
     el.pause();
     el.removeAttribute("src");
     try { el.load(); } catch { /* flush the buffered track */ }
@@ -659,6 +766,8 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   let stop: () => void;
   if (id === "beats") stop = buildLofi(audio, gain);
   else if (id === "piano") stop = buildPiano(audio, gain);
+  else if (id === "ambient") stop = buildAmbient(audio, gain);
+  else if (id === "rain") stop = buildRainyPiano(audio, gain);
   // Café / Calm play real bundled tracks; a generative station stands in as the
   // fallback while that category's manifest is missing (e.g. before the workflow ran).
   else if (id === "lofi") stop = hasTracks("lofi") ? buildMusic(audio, gain, "lofi") : buildLofi(audio, gain);

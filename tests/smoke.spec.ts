@@ -19,6 +19,12 @@ test("homepage loads with the timer", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
 });
 
+test("expanded built-in music library is available", async ({ page }) => {
+  await goHome(page);
+  await expect(page.getByRole("button", { name: /Ambient drift/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Rainy piano/ })).toBeVisible();
+});
+
 test("first-run tutorial shows on a fresh device", async ({ browser }) => {
   const ctx = await browser.newContext(); // no seen-flag
   const page = await ctx.newPage();
