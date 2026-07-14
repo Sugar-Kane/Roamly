@@ -499,11 +499,11 @@ export default function App() {
     }
   }, [timer.secondsLeft, timer.running, timer.phase]);
 
-  const nav: { id: View; label: string; icon: typeof Timer }[] = [
+  const nav: { id: View; label: string; icon: typeof Timer; locked?: boolean }[] = [
     { id: "focus", label: "Focus", icon: Timer },
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "rooms", label: "Rooms", icon: Users },
-    { id: "garden", label: "Garden", icon: Sprout },
+    { id: "garden", label: "Garden", icon: Sprout, locked: !session },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "premium", label: "Premium", icon: Crown },
   ];
@@ -811,9 +811,13 @@ export default function App() {
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           </div>
           {view === "garden" && (
-            <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
-              onSignIn={onSignIn} onToggle={onToggleCompanion}
-              companionsOn={companionsOn} onToggleCompanions={toggleCompanions} />
+            session ? (
+              <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
+                onSignIn={onSignIn} onToggle={onToggleCompanion}
+                companionsOn={companionsOn} onToggleCompanions={toggleCompanions} />
+            ) : (
+              <GardenLock onSignIn={onSignIn} />
+            )
           )}
           {view === "premium" && (
             <PremiumView isPremium={isPremium} session={session} profile={profile} onSubscribe={startCheckout}
@@ -1008,6 +1012,24 @@ function SignInPrompt({ onSignIn, message }: any) {
       <button onClick={onSignIn} className="flex shrink-0 items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow transition active:scale-95">
         <LogIn size={13} /> Sign in
       </button>
+    </div>
+  );
+}
+
+// Account-only gate for the Garden tab: the tab stays visible (advertising the
+// feature) but its contents are locked behind sign-in for guests.
+function GardenLock({ onSignIn }: { onSignIn: () => void }) {
+  return (
+    <div className="mx-auto max-w-md">
+      <h1 className="flex items-center gap-2 font-display text-3xl font-semibold"><Sprout size={26} className="text-roamly-green" /> Garden</h1>
+      <div className="mt-6 rounded-2xl border border-border bg-card/80 p-8 text-center shadow-sm">
+        <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-primary/10 text-primary"><Lock size={24} /></span>
+        <h2 className="mt-4 font-display text-xl font-semibold">Sign in to unlock your Garden</h2>
+        <p className="mt-1.5 text-sm text-muted-foreground">Earn XP, level up, collect pets, and grow plants as you study — your progress saves to your account and syncs across devices.</p>
+        <button onClick={onSignIn} className="mt-5 inline-flex items-center gap-1.5 rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
+          <LogIn size={15} /> Sign in
+        </button>
+      </div>
     </div>
   );
 }
@@ -2796,7 +2818,10 @@ function BottomNav({ nav, view, setView }: any) {
           return (
             <button key={n.id} onClick={() => setView(n.id)}
               className={`flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 transition ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
-              <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+              <span className="relative">
+                <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+                {n.locked && <Lock size={10} className="absolute -right-1.5 -top-1 rounded-full bg-card text-muted-foreground" />}
+              </span>
               <span className="text-[10px] font-medium">{n.label}</span>
             </button>
           );
