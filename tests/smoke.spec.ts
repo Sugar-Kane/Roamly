@@ -42,6 +42,8 @@ test("navigation tabs switch views", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Study rooms" })).toBeVisible();
   await page.getByRole("button", { name: "Analytics" }).click();
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
+  await page.getByRole("button", { name: "Premium", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Go Premium" })).toBeVisible();
 });
 
 test("auth modal opens from the header", async ({ page }) => {
@@ -83,6 +85,9 @@ test("a task can be added locally", async ({ page }) => {
   await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
   await expect(page.getByRole("button", { name: /^Smoke test task\b/ })).toBeVisible();
+  await page.getByRole("button", { name: /focus sessions done for Smoke test task/ }).click();
+  await expect(page.getByRole("heading", { name: "How many focus sessions to complete this task?" })).toBeVisible();
+  await expect(page.getByText(/completes itself when it gets there/)).toHaveCount(0);
 });
 
 test("a task can be completed locally", async ({ page }) => {
@@ -258,7 +263,7 @@ test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   for (const width of [320, 375, 390, 430, 768, 1280]) {
     await page.setViewportSize({ width, height: width >= 768 ? 800 : 844 });
     await goHome(page);
-    for (const tab of ["Focus", "Tasks", "Rooms", "Analytics"]) {
+    for (const tab of ["Focus", "Tasks", "Rooms", "Analytics", "Premium"]) {
       await page.getByRole("button", { name: tab, exact: true }).click();
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${tab} overflows at ${width}px`).toBeLessThanOrEqual(1);

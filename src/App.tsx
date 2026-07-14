@@ -436,13 +436,12 @@ export default function App() {
     }
   }, [timer.secondsLeft, timer.running, timer.phase]);
 
-  // Premium isn't a bottom-nav tab: it's reached from the profile-menu plan
-  // card and the upsell popups, so it doesn't need a permanent slot here.
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
     { id: "focus", label: "Focus", icon: Timer },
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "rooms", label: "Rooms", icon: Users },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "premium", label: "Premium", icon: Crown },
   ];
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
@@ -756,7 +755,8 @@ export default function App() {
             </button>
             {pipSupported && (
               <button onClick={() => (pipWindow ? closePip() : openPip().then((pip) => { if (pip) track("pip_open", "focus_mode"); }))}
-                className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
+                className={`grid h-12 w-12 place-items-center rounded-2xl border transition ${pipWindow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
+                aria-pressed={!!pipWindow}
                 aria-label={pipWindow ? "Close pop-out timer" : "Pop out timer"}>
                 <PictureInPicture2 size={18} />
               </button>
@@ -1045,6 +1045,9 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
   const [customName, setCustomName] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ExamSchedule | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const todayStr = localTodayISO();
   const sorted = [...exams].sort((a, b) => a.exam_date.localeCompare(b.exam_date));
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1086,13 +1089,18 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
     if (saved) resetDraft();
     else setMessage("Couldn't save that exam. Try again.");
   };
-  const remove = async (exam: ExamSchedule) => {
-    if (!window.confirm(`Delete ${exam.name} from your exam schedule?`)) return;
-    if (!await onDelete(exam.id)) {
-      setMessage("Couldn't delete that exam. Try again.");
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    if (!await onDelete(deleteTarget.id)) {
+      setDeleteError("Couldn't delete that exam. Try again.");
+      setDeleting(false);
       return;
     }
-    if (editingId === exam.id) resetDraft();
+    if (editingId === deleteTarget.id) resetDraft();
+    setDeleting(false);
+    setDeleteTarget(null);
   };
 
   return (
@@ -1113,9 +1121,12 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
       </div>
 
       {editingId && (
-        <div className="mt-3 rounded-xl border border-border bg-background/35 p-3">
-          <p className="text-xs font-semibold">{editingId === "new" ? "Add an exam" : "Edit exam"}</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+        <Modal label={editingId === "new" ? "Add an exam" : "Edit exam"} onClose={resetDraft}
+          cardClassName="w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-xl">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl gradient-primary text-white shadow-glow"><CalendarClock size={20} /></div>
+          <h3 className="mt-4 font-display text-xl font-semibold">{editingId === "new" ? "Add an exam" : "Edit exam"}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">Choose the exam and date Roamly should track.</p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="flex min-w-0 gap-2">
               <select value={examPick} onChange={(event) => setExamPick(event.target.value)} aria-label="Which exam"
                 className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
@@ -1129,17 +1140,17 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
               )}
             </div>
             <ThemedDatePicker value={draftDate} min={todayStr} onChange={setDraftDate} />
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 sm:col-span-2">
+              <button onClick={resetDraft} className="flex-1 rounded-full border border-border bg-card py-2.5 text-sm text-muted-foreground transition hover:border-primary/40">Cancel</button>
               <button onClick={save} disabled={saving || !draftDate || draftDate < todayStr || (examPick === "custom" && !customName.trim())}
-                className="rounded-xl gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
+                className="flex-1 rounded-full gradient-primary px-4 py-2.5 text-sm font-semibold text-white shadow-glow disabled:opacity-40">
                 {saving ? "Saving…" : editingId === "new" ? "Add" : "Save"}
               </button>
-              {(exams.length > 0 || editingId !== "new") && <button onClick={resetDraft} className="text-xs text-muted-foreground underline">Cancel</button>}
             </div>
           </div>
           {draftDate && draftDate < todayStr && <p className="mt-1.5 text-xs text-destructive">Pick today or a future date.</p>}
           {message && <p className="mt-1.5 text-xs text-destructive">{message}</p>}
-        </div>
+        </Modal>
       )}
       {message && !editingId && <p className="mt-2 text-xs text-destructive">{message}</p>}
 
@@ -1158,7 +1169,7 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
                   </div>
                   <div className="flex shrink-0 gap-1">
                     <button onClick={() => startEdit(exam)} aria-label={`Edit ${exam.name}`} className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:bg-primary/10 hover:text-primary"><Pencil size={13} /></button>
-                    <button onClick={() => remove(exam)} aria-label={`Delete ${exam.name}`} className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={13} /></button>
+                    <button onClick={() => { setDeleteError(null); setDeleteTarget(exam); }} aria-label={`Delete ${exam.name}`} className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive"><Trash2 size={13} /></button>
                   </div>
                 </div>
                 <p className="mt-2 text-sm">
@@ -1171,6 +1182,25 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
           })}
         </div>
       )}
+      {deleteTarget && (
+        <Modal label="Delete exam" onClose={() => { if (!deleting) setDeleteTarget(null); }}
+          cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
+          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-destructive/10 text-destructive"><Trash2 size={20} /></div>
+          <h3 className="mt-4 font-display text-xl font-semibold">Delete {deleteTarget.name}?</h3>
+          <p className="mt-1.5 text-sm text-muted-foreground">This removes the exam date and countdown from your schedule.</p>
+          {deleteError && <p className="mt-2 text-xs text-destructive">{deleteError}</p>}
+          <div className="mt-5 flex gap-2">
+            <button onClick={() => setDeleteTarget(null)} disabled={deleting}
+              className="flex-1 rounded-full border border-border bg-card py-2.5 text-sm text-muted-foreground transition hover:border-primary/40 disabled:opacity-50">
+              Cancel
+            </button>
+            <button onClick={confirmDelete} disabled={deleting}
+              className="flex-1 rounded-full bg-destructive py-2.5 text-sm font-semibold text-destructive-foreground transition active:scale-95 disabled:opacity-50">
+              {deleting ? "Deleting…" : "Delete exam"}
+            </button>
+          </div>
+        </Modal>
+      )}
     </section>
   );
 }
@@ -1178,7 +1208,7 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
 function NotificationToggle({ alerts }: any) {
   const soundToggle = (
     <button role="switch" aria-checked={alerts.soundEnabled} onClick={() => alerts.setSoundEnabled(!alerts.soundEnabled)}
-      className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+      className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${alerts.soundEnabled ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
       {alerts.soundEnabled ? <Volume2 size={13} /> : <BellOff size={13} />} Completion sound {alerts.soundEnabled ? "on" : "off"}
     </button>
   );
@@ -1194,7 +1224,7 @@ function NotificationToggle({ alerts }: any) {
     );
   }
   return (
-    <><button onClick={alerts.requestPermission} className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground"><Bell size={13} /> Enable notifications</button>{soundToggle}</>
+    <><button onClick={alerts.requestPermission} className="flex items-center gap-1.5 self-start rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/15"><Bell size={13} /> Enable notifications</button>{soundToggle}</>
   );
 }
 
@@ -1257,9 +1287,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <section ref={timerRef} className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
         <button onClick={() => setShowMethods(true)}
-          className="mb-5 flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-2.5 text-sm transition hover:border-primary/40">
+          className="mb-5 flex w-full items-center justify-between rounded-2xl border border-primary bg-primary/10 px-4 py-2.5 text-sm text-primary transition hover:bg-primary/15">
           <span className="flex items-center gap-2 font-medium"><Timer size={15} className="text-primary" /> Select timer</span>
-          <span className="flex items-center gap-1 text-muted-foreground">{timerMode === "countup" ? "Count-up" : method.name} <ChevronDown size={14} /></span>
+          <span className="flex items-center gap-1">{timerMode === "countup" ? "Count-up" : method.name} <ChevronDown size={14} /></span>
         </button>
         {timerMode === "pomodoro" ? (
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
@@ -1309,14 +1339,15 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => enterFocus?.()}
-                className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                className="flex items-center gap-1.5 self-start rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/15">
                 <Timer size={13} /> Focus mode
               </button>
               <InfoTip text="Focus mode fills your whole screen with the timer, your music, and your task list — Start opens it automatically, and this button gets you back in." />
               {pipSupported && (
                 <>
                   <button onClick={() => (pipActive ? onClosePip?.() : onPopOut?.())}
-                    className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                    className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${pipActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
+                    aria-pressed={pipActive}>
                     <PictureInPicture2 size={13} /> {pipActive ? "Close pop-out" : "Pop out timer"}
                   </button>
                   <InfoTip text="Pop the timer into a small floating window that stays on top of other apps — so you can keep studying on the rest of your screen and still see the countdown. Desktop Chrome/Edge only." />
@@ -1391,7 +1422,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                       setTimerMode("pomodoro");
                       if (m.id !== "custom") setShowMethods(false);
                     }}
-                    className={`relative w-full rounded-2xl border p-3 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                    aria-pressed={active && timerMode === "pomodoro"}
+                    className={`relative w-full rounded-2xl border p-3 text-left transition ${active && timerMode === "pomodoro" ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold">{m.name}</span>
                       {locked && <Crown size={13} className="text-primary" />}
@@ -1405,7 +1437,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             <div className="mt-3 border-t border-border pt-3">
               <button
                 onClick={() => { setTimerMode("countup"); setShowMethods(false); scrollToTimer(); }}
-                className={`relative w-full rounded-2xl border p-3 text-left transition ${timerMode === "countup" ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                aria-pressed={timerMode === "countup"}
+                className={`relative w-full rounded-2xl border p-3 text-left transition ${timerMode === "countup" ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-semibold">Count-up timer</span>
                   <Timer size={13} className="text-primary" />
@@ -1601,7 +1634,8 @@ function FocusSoundsPanel({ sounds }: any) {
         </div>
         <button onClick={sounds.toggle} disabled={!sounds.sound}
           aria-label={sounds.playing ? "Pause sound" : "Play sound"}
-          className="grid h-9 w-9 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">
+          aria-pressed={sounds.playing}
+          className={`grid h-9 w-9 place-items-center rounded-full border transition disabled:opacity-40 ${sounds.playing ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
           {sounds.playing ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
         </button>
       </div>
@@ -1610,8 +1644,8 @@ function FocusSoundsPanel({ sounds }: any) {
         {FOCUS_SOUNDS.map((s) => {
           const active = sounds.sound === s.id;
           return (
-            <button key={s.id} onClick={() => sounds.choose(s.id)}
-              className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+            <button key={s.id} onClick={() => sounds.choose(s.id)} aria-pressed={active}
+              className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">{s.name}</span>
                 {active && sounds.playing && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
@@ -1837,10 +1871,7 @@ function TaskTitleModal({ task, onSave, onClose }: any) {
 function TaskEstModal({ task, onPick, onClose }: any) {
   return (
     <Modal label="Focus sessions needed" onClose={onClose} cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
-      <h3 className="font-display text-lg font-semibold">How many focus sessions?</h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        “{task.title}” completes itself when it gets there{task.poms > 0 ? ` — ${task.poms} done so far` : ""}.
-      </p>
+      <h3 className="font-display text-lg font-semibold">How many focus sessions to complete this task?</h3>
       <div className="mt-4 grid grid-cols-3 gap-2">
         {Array.from({ length: 9 }, (_, i) => i + 1).map((n) => (
           <button key={n} onClick={() => { onPick(n); onClose(); }} aria-pressed={task.est === n}
@@ -2622,7 +2653,7 @@ function Upsell({ onClose, onUpgrade, onBuyCredits }: { onClose: () => void; onU
       cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
         <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary shadow-glow"><Crown className="text-white" /></div>
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
-        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 10 AI note uploads a month, and hosting your own study rooms.</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">Unlock planned study, premium methods, advanced analytics, 10 AI note uploads a month, and hosting your own study rooms.</p>
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Unlock with Premium</button>
         {onBuyCredits && (
           <button onClick={onBuyCredits} className="mt-2 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20">
