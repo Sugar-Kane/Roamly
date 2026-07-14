@@ -256,8 +256,10 @@ test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
 
 test("Spotify and Apple Music choices are visible without opening a popup", async ({ page }) => {
   await goHome(page);
-  await expect(page.getByRole("button", { name: "Spotify", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Apple Music", exact: true })).toBeVisible();
+  // Both the Music panel tabs and the dock's service toggle carry these
+  // labels now — assert at least one of each is visible, with no dialog.
+  await expect(page.getByRole("button", { name: "Spotify", exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apple Music", exact: true }).first()).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
