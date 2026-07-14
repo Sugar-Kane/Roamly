@@ -294,20 +294,25 @@ export default function App() {
     savePref("roamly-focus-sound", "off");
     setEmbed(t);
   };
-  // The dock preloads the last-used service's first preset so both streaming
+  // The selected service lives in state (not just the pref) so the dock's
+  // fallback stays on the chosen service even after `embed` is cleared —
+  // e.g. when picking a built-in sound resets the streaming player.
+  const [dockService, setDockService] = useState<"spotify" | "apple">(() => loadPref("roamly-music-service") === "apple" ? "apple" : "spotify");
+  // The dock preloads the selected service's first preset so both streaming
   // players are visibly available before any station is picked.
   const defaultEmbed = useMemo(() => {
-    if (loadPref("roamly-music-service") === "apple") {
+    if (dockService === "apple") {
       const p = APPLE_MUSIC_PRESETS[0] as any;
       return { service: "apple" as const, src: toAppleEmbedSrc({ type: p.type, path: p.path }), height: appleEmbedHeight(p.type), label: p.name };
     }
     const p = SPOTIFY_PRESETS[0] as any;
     return { service: "spotify" as const, src: toSpotifyEmbedSrc({ type: p.type, id: p.spotifyId }), height: embedHeight(p.type), label: p.name };
-  }, []);
+  }, [dockService]);
   const shownEmbed = embed ?? defaultEmbed;
   // Service switch from inside the dock itself: loads the picked service's
   // first preset, and remembers the choice for the next visit's preload.
   const pickDockService = (svc: "spotify" | "apple") => {
+    setDockService(svc);
     savePref("roamly-music-service", svc);
     if (shownEmbed.service === svc) return;
     if (svc === "apple") {
@@ -1665,7 +1670,10 @@ function MusicDock({ shown, minimized, onToggleMin, onPickService, hidden = fals
   return (
     // z-[45]: above the bottom nav (z-40), below every modal (z-50+) — a
     // permanent fixture must never eat taps meant for an open dialog.
-    <div className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[45] overflow-hidden rounded-2xl border border-border bg-card shadow-xl transition ${hidden ? "pointer-events-none opacity-0" : "opacity-100"} sm:left-auto sm:right-4 sm:w-96`}>
+    // `inert` while hidden: opacity/pointer-events only hide it visually —
+    // without it the controls stay tabbable and announced to screen readers.
+    <div data-testid="music-dock" inert={hidden} aria-hidden={hidden}
+      className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[45] overflow-hidden rounded-2xl border border-border bg-card shadow-xl transition ${hidden ? "pointer-events-none opacity-0" : "opacity-100"} sm:left-auto sm:right-4 sm:w-96`}>
       <button onClick={onToggleMin} className="flex w-full items-center justify-between px-3 py-1.5 text-left"
         aria-label={minimized ? "Expand music player" : "Minimize music player"} aria-expanded={!minimized}>
         <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
@@ -1674,8 +1682,9 @@ function MusicDock({ shown, minimized, onToggleMin, onPickService, hidden = fals
         </span>
         {minimized ? <ChevronUp size={14} className="shrink-0 text-muted-foreground" /> : <ChevronDown size={14} className="shrink-0 text-muted-foreground" />}
       </button>
-      {/* Collapsed via height, NOT unmounted — the music keeps playing. */}
-      <div className={minimized ? "h-0 overflow-hidden" : ""} aria-hidden={minimized}>
+      {/* Collapsed via height, NOT unmounted — the music keeps playing.
+          `inert` keeps the collapsed controls out of the tab order too. */}
+      <div className={minimized ? "h-0 overflow-hidden" : ""} inert={minimized} aria-hidden={minimized}>
         {/* Switch services without leaving the dock — loads that service's
             default station (the panel's presets still work as before). */}
         <div className="mx-2 mb-1.5 flex gap-1 rounded-lg border border-border bg-card/60 p-0.5">
