@@ -310,13 +310,18 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
                   const outgoingPermission = statPermissions.find((p) => p.owner_id === friendId && p.viewer_id === myId);
                   const incomingPermission = statPermissions.find((p) => p.owner_id === myId && p.viewer_id === friendId);
                   const open = comparison?.friendId === friendId;
+                  // A friend sharing publicly can be compared directly — no
+                  // request needed — so surface Compare straight away.
+                  const canCompare = outgoingPermission?.status === "approved" || people.get(friendId)?.stats_public === true;
                   return <div key={f.id} className="rounded-xl border border-border bg-card/70 px-3 py-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <PersonLabel person={people.get(friendId)} />
                       <div className="flex flex-wrap items-center justify-end gap-1.5">
-                        {!outgoingPermission && <button onClick={() => requestStats(friendId)} className="rounded-full border border-primary/40 px-2.5 py-1 text-[11px] text-primary">Request stats</button>}
-                        {outgoingPermission?.status === "pending" && <span className="text-[11px] text-muted-foreground">Stats requested</span>}
-                        {outgoingPermission?.status === "approved" && <button onClick={() => open ? setComparison(null) : viewStats(friendId)} className="flex items-center gap-1 rounded-full border border-primary/40 px-2.5 py-1 text-[11px] text-primary"><BarChart3 size={11} /> {open ? "Hide" : "Compare"}</button>}
+                        {canCompare
+                          ? <button onClick={() => open ? setComparison(null) : viewStats(friendId)} className="flex items-center gap-1 rounded-full border border-primary/40 px-2.5 py-1 text-[11px] text-primary"><BarChart3 size={11} /> {open ? "Hide" : "Compare"}</button>
+                          : outgoingPermission?.status === "pending"
+                            ? <span className="text-[11px] text-muted-foreground">Stats requested</span>
+                            : <button onClick={() => requestStats(friendId)} className="rounded-full border border-primary/40 px-2.5 py-1 text-[11px] text-primary">Request stats</button>}
                         {incomingPermission?.status === "approved" && <span className="text-[10px] text-roamly-green">Sharing yours</span>}
                         {(outgoingPermission?.status === "approved" || incomingPermission?.status === "approved") && <button onClick={() => revokeStats(friendId)} className="text-[11px] text-muted-foreground underline hover:text-destructive">Revoke sharing</button>}
                         <button onClick={() => remove(f.id)} className="text-[11px] text-muted-foreground underline hover:text-destructive">Remove</button>

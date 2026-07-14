@@ -151,9 +151,11 @@ export default function App() {
       // migrated rows rather than racing them.
       const guestTasks = loadGuestTasks();
       const guestSessions = loadGuestSessions();
+      const guestEvents = loadGuestStudyEvents();
       if (guestTasks.length > 0 || guestSessions.length > 0) {
-        await migrateGuestDataToAccount(userId, guestTasks, guestSessions);
+        await migrateGuestDataToAccount(userId, guestTasks, guestSessions, guestEvents);
         clearMigratedGuestData();
+        saveGuestStudyEvents([]); // carried over above; clear so a later sign-in can't re-import
       }
 
       const nextProfile = await fetchProfile(userId);
