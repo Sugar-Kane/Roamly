@@ -143,7 +143,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       <div className="w-full">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-card/60 px-3 py-2.5">
           <span className="flex items-center gap-2 text-xs text-muted-foreground"><Sparkles size={14} className="text-primary" /> Upload study material and AI will create editable tasks for you</span>
-          <button onClick={() => setOpen(true)} className="rounded-full border border-primary/50 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">Choose file</button>
+          <button onClick={() => setOpen(true)} className="rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white shadow-glow transition active:scale-95">Choose file</button>
         </div>
         <p className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
           {`You have ${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}
@@ -191,7 +191,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       {stage !== "done" && (
         <input type="file" accept={ACCEPT} disabled={loading}
           onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
-          className="mt-3 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-full file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary" />
+          className="themed-file-input mt-3 block w-full text-xs text-muted-foreground" />
       )}
       {(loading || stage === "done") && (
         <div className="mt-3">
