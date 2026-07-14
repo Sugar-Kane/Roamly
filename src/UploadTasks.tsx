@@ -143,7 +143,17 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       <div className="w-full">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-card/60 px-3 py-2.5">
           <span className="flex items-center gap-2 text-xs text-muted-foreground"><Sparkles size={14} className="text-primary" /> Upload study material and AI will create editable tasks for you</span>
-          <button onClick={() => setOpen(true)} className="rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white shadow-glow transition active:scale-95">Choose file</button>
+          <label className="cursor-pointer rounded-full gradient-primary px-3 py-1 text-xs font-semibold text-white shadow-glow transition active:scale-95">
+            <input type="file" accept={ACCEPT} className="sr-only" aria-label="Choose study material"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0] ?? null;
+                if (!file) return;
+                setOpen(true);
+                void handleFile(file);
+                event.currentTarget.value = "";
+              }} />
+            Choose file
+          </label>
         </div>
         <p className="mt-1.5 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
           {`You have ${uploadsLeft} upload${uploadsLeft === 1 ? "" : "s"} left`}

@@ -2005,10 +2005,6 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
           <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} onBuyCredits={onBuyCredits} />
         </div>
       )}
-      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
-        isPremium={session ? (profile ? !!profile.is_premium : null) : false}
-        onSignIn={onSignIn} onUpgrade={onBuyCredits}
-        onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
       {/* On phones the task input takes the full row and the subject + add
           button drop to a second line; side-by-side from sm up. */}
       <div className="mt-6 flex flex-wrap gap-2">
@@ -2038,6 +2034,10 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
         <button onClick={add} disabled={!session && tasks.length >= guestLimit} aria-label="Add task" className="grid w-12 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={20} /></button>
       </div>
       {!session && tasks.length >= guestLimit && <p role="status" className="mt-2 text-sm text-muted-foreground">You reached the 5-task guest limit. Sign in to create and sync more tasks.</p>}
+      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
+        isPremium={session ? (profile ? !!profile.is_premium : null) : false}
+        onSignIn={onSignIn} onUpgrade={onBuyCredits}
+        onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
 
       {session && !tasksLoaded && (
         <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">

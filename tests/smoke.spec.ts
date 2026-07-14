@@ -231,6 +231,11 @@ test("planned study lives in Tasks and requires an account", async ({ page }) =>
   await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Planned study" })).toBeVisible();
+  const taskCreationBox = await page.getByPlaceholder(/Add a study task/).boundingBox();
+  const plannedStudyBox = await page.getByRole("heading", { name: "Planned study" }).boundingBox();
+  expect(taskCreationBox).not.toBeNull();
+  expect(plannedStudyBox).not.toBeNull();
+  expect(taskCreationBox!.y).toBeLessThan(plannedStudyBox!.y);
   await expect(page.getByText("Account required", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in to plan" })).toBeVisible();
   await expect(page.getByLabel("Planned study time")).toHaveCount(0);
