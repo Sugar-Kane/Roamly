@@ -418,13 +418,12 @@ export default function App() {
     }
   }, [timer.secondsLeft, timer.running, timer.phase]);
 
-  // Premium isn't a bottom-nav tab: it's reached from the profile-menu plan
-  // card and the upsell popups, so it doesn't need a permanent slot here.
   const nav: { id: View; label: string; icon: typeof Timer }[] = [
     { id: "focus", label: "Focus", icon: Timer },
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "rooms", label: "Rooms", icon: Users },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "premium", label: "Premium", icon: Crown },
   ];
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
@@ -1805,10 +1804,7 @@ function TaskTitleModal({ task, onSave, onClose }: any) {
 function TaskEstModal({ task, onPick, onClose }: any) {
   return (
     <Modal label="Focus sessions needed" onClose={onClose} cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
-      <h3 className="font-display text-lg font-semibold">How many focus sessions?</h3>
-      <p className="mt-1 text-sm text-muted-foreground">
-        “{task.title}” completes itself when it gets there{task.poms > 0 ? ` — ${task.poms} done so far` : ""}.
-      </p>
+      <h3 className="font-display text-lg font-semibold">How many focus sessions to complete this task?</h3>
       <div className="mt-4 grid grid-cols-3 gap-2">
         {Array.from({ length: 9 }, (_, i) => i + 1).map((n) => (
           <button key={n} onClick={() => { onPick(n); onClose(); }} aria-pressed={task.est === n}
@@ -2590,7 +2586,7 @@ function Upsell({ onClose, onUpgrade, onBuyCredits }: { onClose: () => void; onU
       cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
         <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary shadow-glow"><Crown className="text-white" /></div>
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
-        <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 10 AI note uploads a month, and hosting your own study rooms.</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">Unlock planned study, premium methods, advanced analytics, 10 AI note uploads a month, and hosting your own study rooms.</p>
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Unlock with Premium</button>
         {onBuyCredits && (
           <button onClick={onBuyCredits} className="mt-2 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20">
