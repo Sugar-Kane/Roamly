@@ -715,14 +715,31 @@ export function stopFocusSound(fadeSeconds = 0.6) {
   teardown = null;
 }
 
-// End-of-phase chime, played through the SAME unlocked AudioContext + keeper as
-// the focus sounds — so it survives the iOS silent switch (a separate context
-// with no keeper element gets muted). Two soft rising sine notes.
-export function playChime() {
+// End-of-phase chimes, played through the SAME unlocked AudioContext + keeper
+// as the focus sounds — so they survive the iOS silent switch (a separate
+// context with no keeper element gets muted). Two variants:
+//   "transition" — the short two-note rise, used when a focus block ends and a
+//                  break begins (and at other quick boundaries).
+//   "breakEnd"   — one sustained ~3s tone (soft attack, gentle release) marking
+//                  the end of a break, clearly distinct from the transition.
+export function playChime(kind: "transition" | "breakEnd" = "transition") {
   const audio = audioCtx();
   if (!audio) return;
   keeper?.play().catch(() => { /* not unlocked yet; harmless */ });
   const start = audio.currentTime + 0.02;
+  if (kind === "breakEnd") {
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = "sine";
+    o.frequency.value = 528;
+    o.connect(g); g.connect(audio.destination);
+    g.gain.setValueAtTime(0.0001, start);
+    g.gain.exponentialRampToValueAtTime(0.18, start + 0.15); // soft attack
+    g.gain.setValueAtTime(0.18, start + 2.0);                // hold
+    g.gain.exponentialRampToValueAtTime(0.0001, start + 3.0); // gentle release
+    o.start(start); o.stop(start + 3.05);
+    return;
+  }
   const notes: [number, number][] = [[528, start], [660, start + 0.18]];
   for (const [freq, at] of notes) {
     const o = audio.createOscillator();
@@ -748,7 +765,7 @@ export function setFocusVolume(volume: number) {
 // masterGain) over the last few seconds of a focus block, so the music flows
 // into the break instead of cutting off. The phase-boundary stop/start that
 // follows resets the gain naturally.
-export function duckFocusSound(seconds = 5) {
+export function duckFocusSound(seconds = 3) {
   if (!ctx || !masterGain) return;
   const g = masterGain;
   const t = ctx.currentTime;

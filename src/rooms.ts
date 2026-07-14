@@ -170,6 +170,18 @@ export async function createRoom(
   return null;
 }
 
+// Deterministic lobby head-counts from heartbeats (occupants write one every
+// 20s; the RPC counts rows fresher than 60s). This is the authoritative count;
+// realtime presence only layers sub-20s liveness on top when it works.
+export async function fetchRoomOccupancy(ids: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (!supabase || ids.length === 0) return map;
+  const { data, error } = await supabase.rpc("room_occupancy", { p_rooms: ids });
+  if (error) { console.warn("[Roamly] fetchRoomOccupancy failed", error.message); return map; }
+  for (const row of (data ?? []) as { room_id: string; occupants: number }[]) map.set(row.room_id, Number(row.occupants));
+  return map;
+}
+
 export async function joinRoom(roomId: string, code?: string): Promise<{ room?: LiveRoom; error?: string }> {
   if (!supabase) return { error: "Rooms aren't available right now." };
   const { data, error } = await supabase.rpc("join_room", { p_room: roomId, p_code: code?.trim() || null });

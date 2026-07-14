@@ -544,9 +544,9 @@ export default function App() {
   const duckedRef = useRef(false);
   useEffect(() => {
     if (timer.phase !== "focus" || !timer.running) { duckedRef.current = false; return; }
-    if (timer.secondsLeft <= 6 && timer.secondsLeft > 0 && !duckedRef.current && focusSoundActive()) {
+    if (timer.secondsLeft <= 4 && timer.secondsLeft > 0 && !duckedRef.current && focusSoundActive()) {
       duckedRef.current = true;
-      duckFocusSound(5);
+      duckFocusSound(3);
     }
   }, [timer.secondsLeft, timer.running, timer.phase]);
 

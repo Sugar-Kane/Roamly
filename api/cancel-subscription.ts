@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { limitOrResponse } from "./_ratelimit";
 
 // In-app subscription cancel (and undo). Sets Stripe's cancel_at_period_end so
 // the user keeps Premium for the time they already paid for; Stripe fires
@@ -26,6 +27,10 @@ export async function POST(request: Request): Promise<Response> {
   const admin = createClient(supabaseUrl, serviceRoleKey);
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
+
+  // Short-window burst guard (Upstash; no-op until configured).
+  const rl = await limitOrResponse("cancel-sub", userData.user.id, 5, 60);
+  if (rl) return rl;
 
   let resume = false;
   try {

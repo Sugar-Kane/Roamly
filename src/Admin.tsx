@@ -4,7 +4,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Crown, Search, ExternalLink, Trash2, ChevronDown, ChevronRight, ArrowUpDown } from "lucide-react";
 import {
-  adminSearchUsers, adminGrantPremium, adminRevokePremium, adminDeleteUser, sendInvite,
+  adminSearchUsers, adminGrantPremium, adminRevokePremium, adminDeleteUser, adminAdjustCredits, sendInvite,
   adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, adminListErrors,
   adminUserActivity, adminFeedbackAction, adminUsageUsers, adminOverviewToday, adminEventStatsToday,
   adminListAdSubmissions, adminSetAdSubmissionStatus, adminDeleteAdSubmission,
@@ -88,6 +88,17 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     // follow-up so the admin checks the Stripe dashboard.
     if (result.stripeWarning) setError(`Roamly access revoked. ${result.stripeWarning}`);
     setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: false } : r)));
+  };
+
+  // One credit at a time, per the admin_adjust_credits contract; the RPC
+  // returns the authoritative new balance which replaces the shown value.
+  const adjustCredits = async (u: AdminUser, delta: 1 | -1) => {
+    setBusyId(`${u.id}:credits`);
+    setError(null);
+    const result = await adminAdjustCredits(u.id, delta);
+    setBusyId(null);
+    if (result.error) { setError(result.error); return; }
+    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, ai_credits: result.balance } : r)));
   };
 
   // Permanent, typed-confirmation account deletion. Billing is canceled server-
@@ -196,8 +207,15 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{u.display_name || u.username || u.email || "Unnamed user"}</p>
                 <p className="truncate text-xs text-muted-foreground">{u.email}{u.username ? ` · @${u.username}` : ""}</p>
-                <p className="truncate text-[11px] text-muted-foreground">
-                  {u.ai_credits ?? 0} credit{(u.ai_credits ?? 0) === 1 ? "" : "s"}
+                <p className="flex flex-wrap items-center gap-1 truncate text-[11px] text-muted-foreground">
+                  <button onClick={() => adjustCredits(u, -1)} disabled={busyId !== null || (u.ai_credits ?? 0) === 0}
+                    aria-label={`Remove one credit from ${u.email ?? u.id}`}
+                    className="grid h-4 w-4 place-items-center rounded border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">−</button>
+                  <span className="font-mono">{busyId === `${u.id}:credits` ? "…" : (u.ai_credits ?? 0)}</span>
+                  <button onClick={() => adjustCredits(u, 1)} disabled={busyId !== null}
+                    aria-label={`Add one credit to ${u.email ?? u.id}`}
+                    className="grid h-4 w-4 place-items-center rounded border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">+</button>
+                  credit{(u.ai_credits ?? 0) === 1 ? "" : "s"}
                   {typeof u.ai_uploads_count === "number" ? ` · ${u.ai_uploads_count} upload${u.ai_uploads_count === 1 ? "" : "s"} used${u.ai_uploads_period ? ` in ${u.ai_uploads_period}` : ""}` : ""}
                   {u.is_premium && u.premium_expires_at ? ` · Premium through ${new Date(u.premium_expires_at).toLocaleDateString()}` : ""}
                 </p>

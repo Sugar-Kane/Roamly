@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { limitOrResponse } from "./_ratelimit";
 
 // Opens the Stripe Billing Portal for the signed-in user: update card, view
 // invoices, or cancel. Cancelling flows back through api/stripe-webhook
@@ -26,6 +27,10 @@ export async function POST(request: Request): Promise<Response> {
   const admin = createClient(supabaseUrl, serviceRoleKey);
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
+
+  // Short-window burst guard (Upstash; no-op until configured).
+  const rl = await limitOrResponse("portal", userData.user.id, 10, 60);
+  if (rl) return rl;
 
   const { data: profileRow } = await admin
     .from("profiles")
