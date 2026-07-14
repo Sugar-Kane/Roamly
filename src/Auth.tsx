@@ -136,8 +136,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
 
 // Shown when someone arrives from an invite (or password-recovery) email
 // link: they're already signed in magic-link-style but have no password, so
-// without this they couldn't sign back in later. Skippable — they're in a
-// valid session either way.
+// this required step ensures they can sign back in later.
 export function SetPasswordModal({ onDone }: { onDone: () => void }) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -159,7 +158,7 @@ export function SetPasswordModal({ onDone }: { onDone: () => void }) {
   };
 
   return (
-    <Modal label="Set a password" onClose={onDone} backdropClose={false}
+    <Modal label="Set a password" onClose={() => {}} backdropClose={false}
       cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
       <h3 className="font-display text-xl font-semibold">Welcome to Roamly!</h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
@@ -176,9 +175,6 @@ export function SetPasswordModal({ onDone }: { onDone: () => void }) {
       <button onClick={save} disabled={saving}
         className="mt-4 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
         {saving ? "Saving…" : "Save password"}
-      </button>
-      <button onClick={onDone} className="mt-3 w-full text-center text-xs text-muted-foreground underline">
-        Skip for now
       </button>
     </Modal>
   );
