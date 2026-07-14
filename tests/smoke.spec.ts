@@ -136,8 +136,8 @@ test("guest count-up completion is saved to analytics", async ({ page }) => {
   await page.getByRole("button", { name: "Stop & save" }).click();
   await page.getByRole("button", { name: "Analytics" }).click();
   await expect(page.getByText("1 / 120 min")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Study time by category" })).toBeVisible();
-  await expect(page.getByText("You studied 1 minute on Uncategorized.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Study time by category" })).toHaveCount(0);
+  await expect(page.getByText("You studied 1 minute on Uncategorized.")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Study post-mortem" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Unlock Study post-mortem with Premium" })).toBeVisible();
   await page.reload();
@@ -223,7 +223,7 @@ test("planned study lives in Tasks and requires an account", async ({ page }) =>
   await page.getByRole("button", { name: "Analytics", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Study breakdown" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Unlock Study breakdown with Premium" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "All time" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "All time" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Planned study" })).toBeVisible();
