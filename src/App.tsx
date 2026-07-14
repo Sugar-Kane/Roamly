@@ -985,7 +985,7 @@ function ThemedDatePicker({ value, min, onChange }: { value: string; min?: strin
               const chosen = selected?.year === year && selected.month === month && selected.day === day;
               const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
               const disabled = !!min && dateValue < min;
-              return <button key={day} type="button" disabled={disabled} onClick={() => onChange(dateValue)} aria-pressed={chosen}
+              return <button key={day} type="button" disabled={disabled} onClick={() => { onChange(dateValue); setOpen(false); }} aria-pressed={chosen}
                 className={`grid h-9 place-items-center rounded-xl text-sm transition ${chosen ? "gradient-primary font-semibold text-white shadow-glow" : isToday ? "border border-primary/50 bg-primary/10 font-semibold text-primary" : "hover:bg-primary/10 hover:text-primary"} disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground`}>
                 {day}
               </button>;
@@ -996,6 +996,7 @@ function ThemedDatePicker({ value, min, onChange }: { value: string; min?: strin
               <button type="button" onClick={() => {
                 setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
                 onChange(localDateValue(today.getFullYear(), today.getMonth(), today.getDate()));
+                setOpen(false);
               }} className="rounded-full px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10">Today</button>
               <button type="button" onClick={() => onChange("")} className="rounded-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-background/60">Clear</button>
             </div>
@@ -2272,9 +2273,16 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         </div>
       </div>
 
-      <StudyInsights events={studyEvents} daily={sessions} plans={plannedSessions} />
+      {isPremium ? (
+        <StudyInsights events={studyEvents} daily={sessions} plans={plannedSessions} />
+      ) : (
+        <div className="mt-6 space-y-6">
+          <PremiumAnalyticsGate title="Study breakdown" description="Unlock task, category, and study-trend analysis across every time range." onUpgrade={onUpsell} />
+          <PremiumAnalyticsGate title="Study post-mortem" description="Unlock follow-through patterns, missed-session reasons, and practical planning guidance." onUpgrade={onUpsell} />
+        </div>
+      )}
 
-      <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+      {isPremium ? <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Achievements</h2>
           <span className="text-xs text-muted-foreground">{earned}/{achievements.length} earned</span>
@@ -2290,9 +2298,9 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
             </div>
           ))}
         </div>
-      </div>
+      </div> : <PremiumAnalyticsGate title="Achievements" description="Unlock progress milestones for focus time, streaks, deep-study days, and completed tasks." onUpgrade={onUpsell} />}
 
-      {subjectSplit.length > 0 && (
+      {isPremium ? subjectSplit.length > 0 && (
         <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Subject breakdown</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">Share of your completed pomodoros by subject.</p>
@@ -2313,7 +2321,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
             </div>
           </div>
         </div>
-      )}
+      ) : <PremiumAnalyticsGate title="Subject breakdown" description="Unlock a visual breakdown of completed focus sessions by subject." onUpgrade={onUpsell} />}
 
       <div className="relative mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">
@@ -2337,6 +2345,21 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
   );
 }
 
+function PremiumAnalyticsGate({ title, description, onUpgrade }: { title: string; description: string; onUpgrade: () => void }) {
+  return (
+    <section className="mt-6 rounded-2xl border border-primary/30 bg-card/80 p-5 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        <span className="flex items-center gap-1 text-xs font-medium text-primary"><Crown size={12} /> Premium</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+      <button onClick={onUpgrade} aria-label={`Unlock ${title} with Premium`} className="mt-3 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow transition active:scale-95">
+        Unlock with Premium
+      </button>
+    </section>
+  );
+}
+
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
@@ -2352,7 +2375,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   // so it has no customer to open the billing portal for. Only offer "Manage
   // subscription" when there's an actual Stripe customer behind the account.
   const hasStripeSubscription = !!profile?.stripe_subscription_id;
-  const perks = ["Planned study scheduling", "10 AI note uploads each month", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods"];
+  const perks = ["Planned study scheduling", "10 AI note uploads each month", "Breakdowns, achievements & post-mortem", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods"];
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
   // [feature, free, premium] — strings render as text, booleans as ✓/—.
   const compare: [string, string | boolean, string | boolean][] = [
@@ -2363,7 +2386,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
     ["Timer methods", "Core methods", "+ PANCE Drill & Marathon"],
     ["Study rooms", "Join any room", "Join + host up to 3"],
     ["Voice chat during breaks", false, true],
-    ["Analytics", "This week", "Full history"],
+    ["Analytics", "7-day basics", "Breakdowns, achievements & full history"],
     ["Themes", "Core themes", "All themes"],
   ];
   const [portalLoading, setPortalLoading] = useState(false);
