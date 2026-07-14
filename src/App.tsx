@@ -985,7 +985,7 @@ function ThemedDatePicker({ value, min, onChange }: { value: string; min?: strin
               const chosen = selected?.year === year && selected.month === month && selected.day === day;
               const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
               const disabled = !!min && dateValue < min;
-              return <button key={day} type="button" disabled={disabled} onClick={() => onChange(dateValue)} aria-pressed={chosen}
+              return <button key={day} type="button" disabled={disabled} onClick={() => { onChange(dateValue); setOpen(false); }} aria-pressed={chosen}
                 className={`grid h-9 place-items-center rounded-xl text-sm transition ${chosen ? "gradient-primary font-semibold text-white shadow-glow" : isToday ? "border border-primary/50 bg-primary/10 font-semibold text-primary" : "hover:bg-primary/10 hover:text-primary"} disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground`}>
                 {day}
               </button>;
@@ -996,6 +996,7 @@ function ThemedDatePicker({ value, min, onChange }: { value: string; min?: strin
               <button type="button" onClick={() => {
                 setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
                 onChange(localDateValue(today.getFullYear(), today.getMonth(), today.getDate()));
+                setOpen(false);
               }} className="rounded-full px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10">Today</button>
               <button type="button" onClick={() => onChange("")} className="rounded-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-background/60">Clear</button>
             </div>
