@@ -498,14 +498,19 @@ export async function fetchRecentSessions(userId: string, days = 36_500): Promis
 // Called once on sign-in when local guest data is present; the caller clears
 // guest storage immediately afterward so this can never run twice (a second run
 // would double each migrated day's minutes). Best-effort per item — a single
-// failed row must not abort the rest. Only the two non-overlapping guest
-// sources are migrated: the task list and the per-day focus minutes that drive
-// the streak. (Guest study-insights events aren't carried over, to avoid
-// double-counting the daily totals that log_focus_minutes already reconstructs.)
+// failed row must not abort the rest. The task list and per-day focus minutes
+// (which drive the streak) are migrated. Guest study-insights events are also
+// carried over, but inserted DIRECTLY into study_session_events — never through
+// record_focus_session — so the per-day totals that log_focus_minutes already
+// reconstructs aren't double-counted. Carrying the events preserves the
+// signed-in session count, category breakdown, and gamification XP/pets that
+// derive from study_session_events. task_id is dropped (guest ids don't exist
+// server-side); task_title/category are kept.
 export async function migrateGuestDataToAccount(
   userId: string,
   guestTasks: Task[],
   guestSessions: FocusSessionRow[],
+  guestStudyEvents: StudyEvent[] = [],
 ): Promise<void> {
   if (!supabase) return;
   for (let i = 0; i < guestTasks.length; i++) {
@@ -521,6 +526,21 @@ export async function migrateGuestDataToAccount(
   }
   for (const s of guestSessions) {
     if (s.minutes > 0) await logFocusMinutes(s.date, s.minutes);
+  }
+  const events = guestStudyEvents.filter((e) => e.minutes > 0);
+  if (events.length > 0) {
+    const { error } = await supabase.from("study_session_events").insert(
+      events.map((e) => ({
+        user_id: userId,
+        task_id: null,
+        task_title: e.task_title,
+        category: e.category || "Uncategorized",
+        minutes: e.minutes,
+        session_kind: e.session_kind,
+        completed_at: e.completed_at,
+      }))
+    );
+    if (error) console.warn("[Roamly] migrate guest study events failed", error.message);
   }
 }
 

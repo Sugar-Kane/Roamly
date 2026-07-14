@@ -28,8 +28,19 @@ test("Garden tab shows level, companions and rewards", async ({ page }) => {
   await expect(page.getByText(/more sessions?/).first()).toBeVisible();
 });
 
-test("companions ride the solo timer and the sleep button toggles", async ({ page }) => {
+test("companions are off by default", async ({ page }) => {
   await goHome(page);
+  // Opt-in per device: nothing on the timer until the user enables it.
+  await expect(page.getByRole("button", { name: "Too distracting" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Garden", exact: true }).click();
+  await expect(page.getByText("Companions are hidden on your timer.")).toBeVisible();
+});
+
+test("enabling companions rides the solo timer and the sleep button toggles", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Garden", exact: true }).click();
+  await page.getByRole("switch", { name: "Show companions on the timer" }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
   // The pet stage is drawn on a canvas over the timer, and the "too distracting"
   // control appears alongside the focus controls.
   await expect(page.locator("canvas").first()).toBeVisible();
@@ -37,16 +48,6 @@ test("companions ride the solo timer and the sleep button toggles", async ({ pag
   await expect(sleep).toBeVisible();
   await sleep.click();
   await expect(page.getByRole("button", { name: "Wake pets" })).toBeVisible();
-});
-
-test("hiding companions removes them from the timer", async ({ page }) => {
-  await goHome(page);
-  await expect(page.getByRole("button", { name: "Too distracting" })).toBeVisible();
-  await page.getByRole("button", { name: "Garden", exact: true }).click();
-  await page.getByRole("switch", { name: "Show companions on the timer" }).click();
-  await expect(page.getByText("Companions are hidden on your timer.")).toBeVisible();
-  await page.getByRole("button", { name: "Focus", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Too distracting" })).toHaveCount(0);
 });
 
 test("no horizontal overflow on the Garden tab", async ({ page }) => {

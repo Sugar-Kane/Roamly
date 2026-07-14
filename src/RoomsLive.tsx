@@ -617,14 +617,22 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   // Credit a completed room focus block to Analytics + gamification. Room
   // blocks were never recorded before; group_size = the live headcount at the
   // boundary, which drives the XP multiplier (more people together = more XP).
-  // Fires once per focus→break transition while you're actually in the room.
+  // Only blocks we witnessed from the start count: sawFocusStart flips true on a
+  // break→focus transition, so someone who joins mid-block (e.g. with seconds
+  // left) isn't credited the whole block — which would inflate their stats.
   const prevPhaseRef = useRef(info.phase);
+  const sawFocusStartRef = useRef(false);
   useEffect(() => {
     const prev = prevPhaseRef.current;
     prevPhaseRef.current = info.phase;
-    if (prev === "focus" && info.phase !== "focus" && userId) {
-      void recordFocusSession(dateKey(), room.focus_min, undefined, "room", Math.max(1, members.length))
-        .then((ok) => { if (ok) void syncGamification(); });
+    if (prev !== "focus" && info.phase === "focus") { sawFocusStartRef.current = true; return; }
+    if (prev === "focus" && info.phase !== "focus") {
+      const witnessed = sawFocusStartRef.current;
+      sawFocusStartRef.current = false;
+      if (witnessed && userId) {
+        void recordFocusSession(dateKey(), room.focus_min, undefined, "room", Math.max(1, members.length))
+          .then((ok) => { if (ok) void syncGamification(); });
+      }
     }
   }, [info.phase, room.focus_min, members.length, userId]);
 

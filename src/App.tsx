@@ -71,8 +71,8 @@ export default function App() {
   // guests compute it locally from their focus history (see `gamification`).
   const [serverGam, setServerGam] = useState<Gamification | null>(null);
   const [gamPopup, setGamPopup] = useState<GamSyncResult | null>(null);
-  // Companions (pets/plants on the timer) can be hidden globally on this device.
-  const [companionsOn, setCompanionsOn] = useState(() => loadPref("roamly-companions") !== "0");
+  // Companions (pets/plants on the timer) are OFF by default; opt in per device.
+  const [companionsOn, setCompanionsOn] = useState(() => loadPref("roamly-companions") === "1");
   const toggleCompanions = () => setCompanionsOn((v) => { savePref("roamly-companions", v ? "0" : "1"); return !v; });
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
@@ -151,9 +151,11 @@ export default function App() {
       // migrated rows rather than racing them.
       const guestTasks = loadGuestTasks();
       const guestSessions = loadGuestSessions();
+      const guestEvents = loadGuestStudyEvents();
       if (guestTasks.length > 0 || guestSessions.length > 0) {
-        await migrateGuestDataToAccount(userId, guestTasks, guestSessions);
+        await migrateGuestDataToAccount(userId, guestTasks, guestSessions, guestEvents);
         clearMigratedGuestData();
+        saveGuestStudyEvents([]); // carried over above; clear so a later sign-in can't re-import
       }
 
       const nextProfile = await fetchProfile(userId);

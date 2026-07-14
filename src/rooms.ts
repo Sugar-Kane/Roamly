@@ -91,7 +91,7 @@ export function roomPhaseAt(room: LiveRoom, atMs: number = roomNowMs()): RoomPha
   return { phase: "long", secondsLeft: l - e, phaseTotal: l, focusIndex: c };
 }
 
-export type PublicProfile = { id: string; username: string | null; display_name: string | null };
+export type PublicProfile = { id: string; username: string | null; display_name: string | null; stats_public?: boolean };
 
 export type Friendship = {
   id: string;
