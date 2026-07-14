@@ -199,7 +199,7 @@ function clearPlayback(state: MediaSessionPlaybackState = "none") {
 // No-op while something is actively playing. Everything re-acquires on the
 // next Start tap (unlockAudio/startFocusSound run inside user gestures).
 export function releaseAudioSession() {
-  if (masterGain) return; // a sound is playing — the session is legitimately held
+  if (masterGain || chimeOscillators.length > 0) return; // music or a completion chime still needs the session
   if (keeper) {
     keeper.pause();
     keeper.removeAttribute("src");
@@ -765,6 +765,7 @@ export function playChime() {
     }
     chimeOscillators = [];
     chimeCleanupTimer = null;
+    releaseAudioSession();
   }, 5100);
 }
 
