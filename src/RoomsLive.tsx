@@ -585,6 +585,11 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     return () => onInRoom(false);
   }, [onInRoom]);
 
+  // A room pop-out belongs to this RoomView. Close it whenever the room view
+  // unmounts, including manual leave, host end, remote deletion, or a forced
+  // leave when starting a solo timer.
+  useEffect(() => () => onClosePip(), [onClosePip]);
+
   // Room music follows the shared timer: the room's track plays during focus
   // blocks and stops for breaks (honoring the global "Play with timer" switch
   // and this listener's local mute). Deps only change at phase boundaries, when
