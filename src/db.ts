@@ -352,17 +352,6 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   return profile;
 }
 
-export async function startPremiumTrial(): Promise<boolean> {
-  const token = await getAccessToken();
-  if (!token) return false;
-  try {
-    const response = await fetch("/api/start-trial", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
 // NOTE the explicit .eq(id) filter: without it this update silently fails
 // (production data showed every profile still at the defaults — goals and
 // exam dates never persisted while the optimistic UI looked saved).
