@@ -11,6 +11,11 @@ const PHASE_MESSAGE: Record<Phase, string> = {
 
 const FLASH_TITLE = "⏰ Time's up! | Roamly";
 const FLASH_INTERVAL_MS = 1000;
+// The built-in two-note chime lasts about 1.1 seconds. Four plays spaced 1.3
+// seconds apart create a clear notification sequence that runs for about five
+// seconds without turning into a harsh continuous alarm.
+const CHIME_REPEAT_MS = 1300;
+const CHIME_REPEAT_COUNT = 4;
 
 type Permission = NotificationPermission | "unsupported";
 
@@ -23,6 +28,7 @@ export function useEndOfPhaseAlerts() {
 
   const flashTimer = useRef<number | null>(null);
   const originalTitle = useRef<string | null>(null);
+  const chimeTimers = useRef<number[]>([]);
 
   const stopFlashing = useCallback(() => {
     if (flashTimer.current !== null) {
@@ -33,6 +39,11 @@ export function useEndOfPhaseAlerts() {
       document.title = originalTitle.current;
       originalTitle.current = null;
     }
+  }, []);
+
+  const stopChimeSequence = useCallback(() => {
+    chimeTimers.current.forEach((timer) => window.clearTimeout(timer));
+    chimeTimers.current = [];
   }, []);
 
   const startFlashing = useCallback(() => {
@@ -51,8 +62,9 @@ export function useEndOfPhaseAlerts() {
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       stopFlashing();
+      stopChimeSequence();
     };
-  }, [stopFlashing]);
+  }, [stopFlashing, stopChimeSequence]);
 
   const requestPermission = useCallback(() => {
     if (!supported) return;
@@ -60,19 +72,26 @@ export function useEndOfPhaseAlerts() {
   }, [supported]);
 
   const notify = useCallback((finishedPhase: Phase) => {
-    if (soundEnabled) playChime();
+    if (soundEnabled) {
+      stopChimeSequence();
+      playChime();
+      chimeTimers.current = Array.from({ length: CHIME_REPEAT_COUNT - 1 }, (_, index) =>
+        window.setTimeout(playChime, CHIME_REPEAT_MS * (index + 1))
+      );
+    }
     if (supported && Notification.permission === "granted") {
       try {
         new Notification("Roamly Focus", { body: PHASE_MESSAGE[finishedPhase] });
       } catch { /* some browsers restrict Notification construction; ignore */ }
     }
     if (document.hidden) startFlashing();
-  }, [supported, startFlashing, soundEnabled]);
+  }, [supported, startFlashing, soundEnabled, stopChimeSequence]);
 
   const setSoundEnabled = useCallback((enabled: boolean) => {
     setSoundEnabledState(enabled);
     savePref("roamly-completion-sound", enabled ? "on" : "off");
-  }, []);
+    if (!enabled) stopChimeSequence();
+  }, [stopChimeSequence]);
 
   return { permission, requestPermission, notify, soundEnabled, setSoundEnabled };
 }
