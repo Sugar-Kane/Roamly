@@ -70,8 +70,19 @@ export async function POST(request: Request): Promise<Response> {
     detail: `Deleted account ${profile.email ?? userId}.${billingCanceled ? " Stripe subscription canceled." : ""}${stripeWarning ? ` ${stripeWarning}` : ""}`.slice(0, 500),
   });
 
-  const { error: deleteError } = await service.auth.admin.deleteUser(userId);
+  // Explicitly request a hard delete. Supabase defaults to hard deletion, but
+  // passing false makes the security intent unambiguous and guards against a
+  // future default change.
+  const { error: deleteError } = await service.auth.admin.deleteUser(userId, false);
   if (deleteError) return json({ error: `Couldn't delete the account: ${deleteError.message}` }, 500);
+
+  // Do not report success until Auth confirms the user record is actually gone.
+  // This catches any unexpected partial deletion instead of merely hiding the
+  // profile row in the admin UI.
+  const { data: verification } = await service.auth.admin.getUserById(userId);
+  if (verification?.user) {
+    return json({ error: "The account could not be fully removed from authentication. Try again." }, 500);
+  }
 
   return json({ ok: true, billingCanceled, ...(stripeWarning ? { stripeWarning } : {}) }, 200);
 }
