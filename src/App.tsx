@@ -2371,19 +2371,22 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   // so it has no customer to open the billing portal for. Only offer "Manage
   // subscription" when there's an actual Stripe customer behind the account.
   const hasStripeSubscription = !!profile?.stripe_subscription_id;
-  const perks = ["Planned study scheduling", "10 AI note uploads each month", "Breakdowns, achievements & post-mortem", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods"];
+  const perks = ["Planned study scheduling", "10 AI note uploads each month", "Breakdowns, achievements & post-mortem", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "PANCE & Marathon methods"];
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
-  // [feature, free, premium] — strings render as text, booleans as ✓/—.
-  const compare: [string, string | boolean, string | boolean][] = [
-    ["Price", "$0", "$3 monthly or $30 yearly"],
-    ["AI note uploads", "3 a month", "10 a month"],
-    ["Planned study", false, true],
-    ["Extra upload credits", "Buy anytime", "Buy anytime"],
-    ["Timer methods", "Core methods", "+ PANCE Drill & Marathon"],
-    ["Study rooms", "Join any room", "Join + host up to 3"],
-    ["Voice chat during breaks", false, true],
-    ["Analytics", "7-day basics", "Breakdowns, achievements & full history"],
-    ["Themes", "Core themes", "All themes"],
+  // [feature, no account, free account, Premium account]. Every theme is free
+  // for everyone, so themes intentionally do not appear as a tier difference.
+  const compare: [string, string | boolean, string | boolean, string | boolean][] = [
+    ["Price", "$0", "$0", "$3 monthly or $30 yearly"],
+    ["Tasks", "5 on this device", "Unlimited + synced", "Unlimited + synced"],
+    ["Exam schedules", false, "Multiple + synced", "Multiple + synced"],
+    ["AI note uploads", false, "3 a month", "10 a month"],
+    ["Planned study", false, false, true],
+    ["Extra upload credits", false, "Buy anytime", "Buy anytime"],
+    ["Timer methods", "Core methods", "Core methods", "+ PANCE Drill & Marathon"],
+    ["Study rooms", "Browse only", "Join any room", "Join + host up to 3"],
+    ["Room break chat", false, true, true],
+    ["Voice chat during breaks", false, false, true],
+    ["Analytics", "7-day local basics", "7-day synced basics", "Breakdowns, achievements & full history"],
   ];
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
@@ -2416,21 +2419,22 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
       <p className="mt-1 text-sm text-muted-foreground">Built for the long road to the PANCE.</p>
 
       {!isPremium && (
-        <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-card/70">
-          <div className="grid grid-cols-[1.4fr_1fr_1fr] gap-x-3 border-b border-border px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            <span>What you get</span><span>Free</span><span className="text-primary">Premium</span>
-          </div>
-          {compare.map(([feature, free, prem]) => (
-            <div key={feature} className="grid grid-cols-[1.4fr_1fr_1fr] items-center gap-x-3 border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
-              <span className="min-w-0 text-muted-foreground">{feature}</span>
-              <span className="min-w-0 text-xs">
-                {free === true ? <Check size={15} className="text-roamly-green" /> : free === false ? <span className="text-muted-foreground/50">—</span> : free}
-              </span>
-              <span className="min-w-0 text-xs font-medium">
-                {prem === true ? <Check size={15} className="text-roamly-green" /> : prem === false ? <span className="text-muted-foreground/50">—</span> : prem}
-              </span>
+        <div className="mt-6 overflow-x-auto rounded-2xl border border-border bg-card/70">
+          <div className="min-w-[720px]">
+            <div className="grid grid-cols-[1.25fr_repeat(3,minmax(0,1fr))] gap-x-3 border-b border-border px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <span>What you get</span><span>No account</span><span>Free account</span><span className="text-primary">Premium account</span>
             </div>
-          ))}
+            {compare.map(([feature, guest, free, prem]) => (
+              <div key={feature} className="grid grid-cols-[1.25fr_repeat(3,minmax(0,1fr))] items-center gap-x-3 border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
+                <span className="min-w-0 text-muted-foreground">{feature}</span>
+                {[guest, free, prem].map((value, index) => (
+                  <span key={index} className={`min-w-0 text-xs ${index === 2 ? "font-medium" : ""}`}>
+                    {value === true ? <Check size={15} className="text-roamly-green" /> : value === false ? <span className="text-muted-foreground/50">—</span> : value}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -2476,7 +2480,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
               ))}
             </div>
             {checkoutError && <p className="mt-2 text-center text-xs text-destructive">{checkoutError}</p>}
-            <p className="mt-2 text-center text-xs text-muted-foreground">Secure billing via Stripe. Cancel anytime. New verified accounts receive a 30-day no-card trial.</p>
+            <p className="mt-2 text-center text-xs text-muted-foreground">Secure subscription billing via Stripe. Cancel anytime.</p>
           </div>
         </div>
       )}
