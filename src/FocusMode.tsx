@@ -108,7 +108,7 @@ function useImmersive(open: boolean) {
 
 export function FocusMode({
   open, phase, phaseLabel, timeText, progress, title, subtitle, cycles, completed, ring,
-  onExit, controls, music, extra,
+  onExit, controls, music, extra, companions,
 }: {
   open: boolean;
   phase: Phase;
@@ -124,6 +124,7 @@ export function FocusMode({
   controls?: ReactNode;
   music?: ReactNode;
   extra?: ReactNode;
+  companions?: ReactNode; // pet/plant stage drawn over the timer
 }) {
   useImmersive(open);
   const [showNudge, setShowNudge] = useState(() => loadPref("roamly-dnd-nudge-seen") !== "1");
@@ -175,7 +176,8 @@ export function FocusMode({
           </div>
         )}
 
-        <div className="flex flex-col items-center">
+        <div className="relative flex flex-col items-center">
+          {companions && <div className="pointer-events-none absolute inset-x-0 -top-16 h-16 sm:-top-20 sm:h-20">{companions}</div>}
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
           <TimeDisplay value={timeText} className="font-display text-[20vw] font-medium tracking-tight sm:text-[15vw] lg:text-[8.5rem] xl:text-[10rem]" />
           {title && <span className="mt-2 max-w-[80vw] truncate text-base text-foreground">{title}</span>}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2 } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
@@ -31,11 +31,15 @@ import { UploadTasksPanel } from "./UploadTasks";
 import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks, clearMigratedGuestData } from "./guestData";
 import { loadGuestStudyEvents, newStudyEvent, saveGuestStudyEvents, type PlannedStudyDraft, type PlannedStudySession, type StudyEvent } from "./release3";
 import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
+import { computeLocalGamification, fetchGamification, syncGamification, setPetActive, setRewardActive, stageProps, type Gamification, type GamSyncResult } from "./gamification";
+import { GamificationView, UnlockToast } from "./GamificationView";
+import { usePetSleep } from "./usePetSleep";
+const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 import { HealthyBreakActivities } from "./HealthyBreakActivities";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
 
-export type View = "focus" | "tasks" | "analytics" | "rooms" | "premium" | "admin";
+export type View = "focus" | "tasks" | "analytics" | "rooms" | "garden" | "premium" | "admin";
 
 export default function App() {
   const [view, setView] = useState<View>("focus");
@@ -63,6 +67,13 @@ export default function App() {
   const [studyEvents, setStudyEvents] = useState<StudyEvent[]>(loadGuestStudyEvents);
   const [plannedSessions, setPlannedSessions] = useState<PlannedStudySession[]>([]);
   const [examSchedules, setExamSchedules] = useState<ExamSchedule[]>([]);
+  // Gamification: signed-in users get authoritative state from the server;
+  // guests compute it locally from their focus history (see `gamification`).
+  const [serverGam, setServerGam] = useState<Gamification | null>(null);
+  const [gamPopup, setGamPopup] = useState<GamSyncResult | null>(null);
+  // Companions (pets/plants on the timer) can be hidden globally on this device.
+  const [companionsOn, setCompanionsOn] = useState(() => loadPref("roamly-companions") !== "0");
+  const toggleCompanions = () => setCompanionsOn((v) => { savePref("roamly-companions", v ? "0" : "1"); return !v; });
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
@@ -78,6 +89,13 @@ export default function App() {
   const dailyGoal = profile?.daily_goal_minutes ?? 120;
   const streak = useMemo(() => computeStreak(sessions), [sessions]);
   const todayMinutes = useMemo(() => minutesToday(sessions), [sessions]);
+  const doneTasks = useMemo(() => tasks.filter((t) => t.done).length, [tasks]);
+  // Signed-in: server state once loaded; otherwise a live local computation so
+  // the Garden and pets work in guest mode too (and while the server loads).
+  const gamification = useMemo<Gamification>(
+    () => (session && serverGam ? serverGam : computeLocalGamification(sessions, studyEvents, doneTasks)),
+    [session, serverGam, sessions, studyEvents, doneTasks]
+  );
 
   const method = useMemo(() => {
     const base = METHODS.find((m) => m.id === methodId)!;
@@ -184,6 +202,36 @@ export default function App() {
     return () => { client.removeChannel(channel); };
   }, [session?.user.id]);
 
+  // Recompute server-side gamification after a completed session and surface
+  // any newly-unlocked achievements/pets/rewards as a toast. No-op for guests —
+  // their state is derived live from local history in `gamification`.
+  const bumpGamification = useCallback(async () => {
+    if (!session?.user.id) return;
+    const res = await syncGamification();
+    if (res && (res.new_achievements.length || res.new_pets.length || res.new_rewards.length)) setGamPopup(res);
+    const g = await fetchGamification();
+    if (g) setServerGam(g);
+  }, [session?.user.id]);
+
+  // Sync + load gamification whenever the signed-in user changes.
+  useEffect(() => {
+    if (!session?.user.id) { setServerGam(null); return; }
+    let cancelled = false;
+    void (async () => {
+      await syncGamification();
+      const g = await fetchGamification();
+      if (!cancelled && g) setServerGam(g);
+    })();
+    return () => { cancelled = true; };
+  }, [session?.user.id]);
+
+  // Refresh gamification when opening the Garden so room-earned XP (credited
+  // from RoomsLive) and any other drift show up without a reload.
+  useEffect(() => {
+    if (view !== "garden" || !session?.user.id) return;
+    void fetchGamification().then((g) => { if (g) setServerGam(g); });
+  }, [view, session?.user.id]);
+
   const handlePhaseComplete = useCallback((finishedPhase: Phase) => {
     alerts.notify(finishedPhase);
     if (finishedPhase !== "focus") return;
@@ -208,8 +256,8 @@ export default function App() {
     setSessions((prev) => addSession(prev, method.focus));
     const event = newStudyEvent(method.focus, current, "countdown");
     setStudyEvents((prev) => [...prev, event]);
-    if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown");
-  }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks, autoCompleteEstimates]);
+    if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown").then((ok) => { if (ok) void bumpGamification(); });
+  }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks, autoCompleteEstimates, bumpGamification]);
 
   // Auto-flow: roll straight from focus into break (and back) like rooms do,
   // for users who don't want to press Start at every boundary. Default off —
@@ -218,6 +266,19 @@ export default function App() {
   const toggleAutoFlow = () => setAutoFlow((v) => { savePref("roamly-autostart", v ? "0" : "1"); return !v; });
   const timer = useTimer(method, handlePhaseComplete, autoFlow);
   const countUp = useCountUpTimer();
+
+  // Companions on the timer: which pets/plant to draw, and the "too distracting"
+  // sleep state (they nap until the focus block ends). Hidden entirely when the
+  // device pref is off or nothing is active.
+  const petSleep = usePetSleep(timer);
+  const companionStage = useMemo(() => stageProps(gamification), [gamification]);
+  const showCompanions = companionsOn && (companionStage.pets.length > 0 || !!companionStage.plant);
+  const petStageNode = showCompanions ? (
+    <Suspense fallback={null}>
+      <PetStage pets={companionStage.pets} plant={companionStage.plant} asleep={petSleep.asleep} reduceMotion={a11y.reduceMotion} className="h-full w-full" />
+    </Suspense>
+  ) : null;
+  const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
 
   const completeCountUp = useCallback(() => {
     // Snapshot elapsed BEFORE the blocking confirm: countUp.stop() recomputes
@@ -231,9 +292,9 @@ export default function App() {
     const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
     setSessions((prev) => addSession(prev, minutes));
     setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
-    if (session?.user.id) void recordFocusSession(dateKey(), minutes, current, "count_up");
+    if (session?.user.id) void recordFocusSession(dateKey(), minutes, current, "count_up").then((ok) => { if (ok) void bumpGamification(); });
     track("count_up_complete", String(minutes));
-  }, [countUp, session?.user.id, activeTask, tasks]);
+  }, [countUp, session?.user.id, activeTask, tasks, bumpGamification]);
 
   const createStudyPlan = useCallback(async (row: PlannedStudyDraft): Promise<PlannedStudySession | null> => {
     if (!session?.user.id) return null;
@@ -440,11 +501,30 @@ export default function App() {
     { id: "focus", label: "Focus", icon: Timer },
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "rooms", label: "Rooms", icon: Users },
+    { id: "garden", label: "Garden", icon: Sprout },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "premium", label: "Premium", icon: Crown },
   ];
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
+
+  // Pick which pet/plant is shown on the timer (signed-in only). Only one
+  // plant/tree grows at a time, so activating one turns the others off.
+  const onToggleCompanion = useCallback(async (kind: "pet" | "reward", id: string, active: boolean) => {
+    if (!session?.user.id) return;
+    if (kind === "pet") {
+      await setPetActive(id, active);
+    } else {
+      if (active) {
+        const others = (serverGam?.rewards ?? []).filter((r) => r.is_active && (r.kind === "plant" || r.kind === "tree") && r.id !== id);
+        await Promise.all(others.map((r) => setRewardActive(r.id, false)));
+      }
+      await setRewardActive(id, active);
+    }
+    const gg = await fetchGamification();
+    if (gg) setServerGam(gg);
+  }, [session?.user.id, serverGam]);
+
   const onSignIn = () => setShowAuth(true);
   const onSignOut = () => supabase?.auth.signOut();
   const changeTheme = (id: string) => { setThemeId(id); track("theme_change", id); };
@@ -694,7 +774,8 @@ export default function App() {
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               pipSupported={pipSupported} pipActive={!!pipWindow}
-              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip} />
+              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
+              companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
@@ -727,6 +808,11 @@ export default function App() {
               onPopOut={() => openPip({ width: 191, height: 349 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           </div>
+          {view === "garden" && (
+            <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
+              onSignIn={onSignIn} onToggle={onToggleCompanion}
+              companionsOn={companionsOn} onToggleCompanions={toggleCompanions} />
+          )}
           {view === "premium" && (
             <PremiumView isPremium={isPremium} session={session} profile={profile} onSubscribe={startCheckout}
               checkoutLoading={checkoutLoading} checkoutError={checkoutError} />
@@ -765,8 +851,15 @@ export default function App() {
               className={`flex h-12 items-center rounded-2xl border px-4 text-xs font-medium transition ${autoFlow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
               Auto-flow {autoFlow ? "on" : "off"}
             </button>
+            {showCompanions && (
+              <button onClick={toggleSleep} aria-pressed={petSleep.asleep}
+                className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${petSleep.asleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <Moon size={14} /> {petSleep.asleep ? "Wake pets" : "Too distracting"}
+              </button>
+            )}
           </>
         }
+        companions={petStageNode}
         extra={
           // Order per user feedback: 1) Tasks, 2) built-in Music, 3) the
           // Spotify/Apple embed — so the two music boxes sit together under the
@@ -809,6 +902,7 @@ export default function App() {
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }}
         onBuyCredits={() => { setShowUpsell(false); setView("premium"); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
+      {gamPopup && <UnlockToast result={gamPopup} onClose={() => setGamPopup(null)} />}
       {needsPassword && session && (
         <SetPasswordModal onDone={() => {
           setNeedsPassword(false);
@@ -816,7 +910,8 @@ export default function App() {
         }} />
       )}
       {showFriends && session && (
-        <FriendsModal session={session} profile={profile} onClose={() => setShowFriends(false)} onUsernameSet={handleUsernameSet} />
+        <FriendsModal session={session} profile={profile} onClose={() => setShowFriends(false)} onUsernameSet={handleUsernameSet}
+          isPremium={isPremium} onUpgrade={() => { setShowFriends(false); setShowUpsell(true); }} />
       )}
       {/* Deferred while a password prompt from an email link is up. */}
       {showTutorial && !needsPassword && <Tutorial setView={setView} onClose={() => setShowTutorial(false)} />}
@@ -1258,7 +1353,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1293,7 +1388,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         </button>
         {timerMode === "pomodoro" ? (
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
-          <div className="flex shrink-0 flex-col items-center lg:items-start">
+          <div className="relative flex shrink-0 flex-col items-center lg:items-start">
+            {companions && <div className="pointer-events-none absolute inset-x-0 -top-14 h-14">{companions}</div>}
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
             <TimeDisplay value={fmt(timer.secondsLeft)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
             <span className="mt-1 text-sm text-muted-foreground">{method.name}</span>
@@ -1360,6 +1456,12 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               </button>
               <InfoTip text="Auto-flow starts the next phase by itself — focus rolls into break and back without pressing Start. Turn it off to start each block yourself." />
               <NotificationToggle alerts={alerts} />
+              {showCompanions && (
+                <button onClick={onToggleSleep} aria-pressed={petsAsleep}
+                  className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${petsAsleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                  <Moon size={13} /> {petsAsleep ? "Wake pets" : "Too distracting"}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2341,7 +2443,10 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         </div>
       )}
 
-      {isPremium ? <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+      {/* Achievements are free for everyone (they feed the leveling system in
+          the Garden tab). This is a live snapshot; the full collection, XP, and
+          rewards live under Garden. */}
+      <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Achievements</h2>
           <span className="text-xs text-muted-foreground">{earned}/{achievements.length} earned</span>
@@ -2357,7 +2462,8 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
             </div>
           ))}
         </div>
-      </div> : <PremiumAnalyticsGate title="Achievements" description="Unlock progress milestones for focus time, streaks, deep-study days, and completed tasks." onUpgrade={onUpsell} />}
+        <p className="mt-3 text-[11px] text-muted-foreground">Earn XP, level up, and collect pets & plants in the <span className="font-medium text-foreground">Garden</span> tab.</p>
+      </div>
 
       {isPremium ? subjectSplit.length > 0 && (
         <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
