@@ -19,6 +19,9 @@ import { ROOMS } from "./data";
 import { displayNameOf } from "./Friends";
 import { track } from "./track";
 import { loadPref, savePref } from "./storage";
+import { recordFocusSession } from "./db";
+import { syncGamification } from "./gamification";
+import { dateKey } from "./streaks";
 import type { Profile } from "./db";
 import type { Session } from "@supabase/supabase-js";
 import { HealthyBreakActivities } from "./HealthyBreakActivities";
@@ -610,6 +613,20 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
       duckedRef.current = false;
     }
   }, [info.secondsLeft, info.phase]);
+
+  // Credit a completed room focus block to Analytics + gamification. Room
+  // blocks were never recorded before; group_size = the live headcount at the
+  // boundary, which drives the XP multiplier (more people together = more XP).
+  // Fires once per focus→break transition while you're actually in the room.
+  const prevPhaseRef = useRef(info.phase);
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    prevPhaseRef.current = info.phase;
+    if (prev === "focus" && info.phase !== "focus" && userId) {
+      void recordFocusSession(dateKey(), room.focus_min, undefined, "room", Math.max(1, members.length))
+        .then((ok) => { if (ok) void syncGamification(); });
+    }
+  }, [info.phase, room.focus_min, members.length, userId]);
 
   const toggleMusicMuted = () => {
     unlockAudio(); // iOS-safe resume when unmuting mid-focus

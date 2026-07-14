@@ -392,7 +392,7 @@ export async function getPublicProfiles(ids: string[]): Promise<Map<string, Publ
 }
 
 export type StatPermission = { owner_id: string; viewer_id: string; status: "pending" | "approved"; requested_by: string; created_at: string; updated_at: string };
-export type FriendComparison = { focus_minutes: number; session_count: number; weekly_consistency: number; achievements: number; level: number; category_minutes: Record<string, number> };
+export type FriendComparison = { focus_minutes: number; session_count: number; weekly_consistency: number; achievements: number; level: number; category_minutes: Record<string, number>; pets_count: number };
 
 export async function fetchStatPermissions(): Promise<StatPermission[]> {
   if (!supabase) return [];

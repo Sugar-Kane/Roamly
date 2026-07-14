@@ -6,8 +6,10 @@ import {
   type Friendship, type PublicProfile, type StatPermission, type FriendComparison,
 } from "./rooms";
 import { sendInvite, type Profile } from "./db";
+import { setStatsPublic } from "./gamification";
 import { Modal } from "./Modal";
 import type { Session } from "@supabase/supabase-js";
+import { Crown, Lock } from "lucide-react";
 
 export function displayNameOf(p: PublicProfile | undefined | null): string {
   return p?.display_name || p?.username || "someone";
@@ -46,11 +48,13 @@ export function UsernameSetup({ onSaved }: { onSaved: (username: string) => void
   );
 }
 
-export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
+export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremium, onUpgrade }: {
   session: Session;
   profile: Profile | null;
   onClose: () => void;
   onUsernameSet: (username: string) => void;
+  isPremium: boolean;
+  onUpgrade: () => void;
 }) {
   const myId = session.user.id;
   const [friendships, setFriendships] = useState<Friendship[]>([]);
@@ -69,6 +73,15 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   const [statPermissions, setStatPermissions] = useState<StatPermission[]>([]);
   const [comparison, setComparison] = useState<{ friendId: string; data: FriendComparison } | null>(null);
   const [statError, setStatError] = useState<string | null>(null);
+  const [statsPublic, setStatsPublicState] = useState(!!profile?.stats_public);
+
+  const toggleStatsPublic = async () => {
+    if (!isPremium) { onUpgrade(); return; }
+    const next = !statsPublic;
+    const err = await setStatsPublic(next);
+    if (err) { setStatError(err); return; }
+    setStatsPublicState(next);
+  };
 
   const invite = async (addr: string, name?: string) => {
     setInviting(true); setInviteError(null); setInviteMsg(null);
@@ -147,6 +160,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
   };
 
   const requestStats = async (friendId: string) => {
+    if (!isPremium) { onUpgrade(); return; }
     setStatError(await requestStatComparison(friendId));
     reload();
   };
@@ -158,6 +172,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
     await revokeStatComparison(friendId); setComparison(null); reload();
   };
   const viewStats = async (friendId: string) => {
+    if (!isPremium) { onUpgrade(); return; }
     const data = await getFriendComparison(friendId);
     if (!data) { setStatError("Statistics are no longer shared."); return; }
     setComparison({ friendId, data });
@@ -176,6 +191,20 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet }: {
         ) : (
           <>
             <p className="mt-1 text-xs text-muted-foreground">You're @{profile.username}. Friends get notified when you start or join a study room.</p>
+
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/70 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-xs font-medium"><Crown size={12} className="text-roamly-purple" /> Share stats with friends</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  {statsPublic ? "Any friend can compare stats with you — no request needed." : "Off — friends must request to compare. Premium."}
+                </p>
+              </div>
+              <button role="switch" aria-checked={statsPublic} aria-label="Share stats publicly with friends" onClick={toggleStatsPublic}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${statsPublic ? "bg-primary" : "bg-border"}`}>
+                {!isPremium && <Lock size={9} className="absolute -left-4 top-1.5 text-muted-foreground" />}
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${statsPublic ? "left-[22px]" : "left-0.5"}`} />
+              </button>
+            </div>
 
             <div className="relative mt-4">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -354,7 +383,7 @@ function ComparisonCard({ data }: { data: FriendComparison }) {
   const categories = Object.entries(data.category_minutes ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 4);
   return <div className="mt-2 rounded-xl bg-secondary p-3">
     <div className="grid grid-cols-3 gap-2 text-center"><span><b className="block font-mono text-sm">{Math.floor(data.focus_minutes / 60)}h {data.focus_minutes % 60}m</b><small className="text-[10px] text-muted-foreground">Focus</small></span><span><b className="block font-mono text-sm">{data.session_count}</b><small className="text-[10px] text-muted-foreground">Sessions</small></span><span><b className="block font-mono text-sm">{data.weekly_consistency}/7</b><small className="text-[10px] text-muted-foreground">This week</small></span></div>
-    <p className="mt-2 text-[11px] text-muted-foreground">Level {data.level} · {data.achievements} achievements</p>
+    <p className="mt-2 text-[11px] text-muted-foreground">Level {data.level} · {data.achievements} achievements · {data.pets_count} companion{data.pets_count === 1 ? "" : "s"}</p>
     {categories.length > 0 && <p className="mt-1 text-[11px] text-muted-foreground">Top categories: {categories.map(([name, minutes]) => `${name} ${minutes}m`).join(" · ")}</p>}
   </div>;
 }

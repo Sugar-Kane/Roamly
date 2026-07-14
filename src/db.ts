@@ -26,6 +26,9 @@ export type Profile = {
   ai_credits?: number;
   premium_source?: string | null;
   premium_expires_at?: string | null;
+  // When true, accepted friends can compare stats without a per-friend request.
+  // Optional so the client tolerates the pre-migration schema.
+  stats_public?: boolean;
 };
 
 const AVATAR_BUCKET = "avatars";
@@ -423,11 +426,12 @@ export async function logFocusMinutes(date: string, minutes: number) {
   if (error) console.warn("[Roamly] logFocusMinutes failed", error.message);
 }
 
-export async function recordFocusSession(date: string, minutes: number, task: Task | undefined, kind: StudyEvent["session_kind"]): Promise<boolean> {
+export async function recordFocusSession(date: string, minutes: number, task: Task | undefined, kind: StudyEvent["session_kind"], groupSize = 1): Promise<boolean> {
   if (!supabase) return false;
   const { error } = await supabase.rpc("record_focus_session", {
     p_date: date, p_minutes: minutes, p_task: task?.id ?? null,
     p_task_title: task?.title ?? null, p_category: task?.tag || "Uncategorized", p_kind: kind,
+    p_group_size: Math.max(1, Math.round(groupSize)),
   });
   if (error) { console.warn("[Roamly] recordFocusSession failed", error.message); return false; }
   return true;
