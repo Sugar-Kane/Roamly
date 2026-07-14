@@ -242,11 +242,6 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
       ch.on("presence", { event: "sync" }, () => {
         const count = Object.keys(ch.presenceState()).length;
         setPresenceCounts((prev) => new Map(prev).set(room.id, count));
-        // Track how long each hosted room has been empty, for the 2-min reap.
-        if (!room.is_system) {
-          if (count > 0) emptySince.current.delete(room.id);
-          else if (!emptySince.current.has(room.id)) emptySince.current.set(room.id, Date.now());
-        }
       });
       // These subscribes used to swallow CHANNEL_ERROR/TIMED_OUT silently
       // (e.g. an auth-token race right after mount), permanently freezing the
@@ -267,6 +262,20 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     return () => { channels.forEach((ch) => client.removeChannel(ch)); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomIdsKey, active]);
+
+  // Track how long each hosted room has been empty, for the 2-min reap below.
+  // Driven by the MERGED counts (heartbeats + presence), not presence alone:
+  // a hosted room whose presence channel silently failed is neither flagged
+  // empty while people are inside (which leaned on the server's heartbeat
+  // guard to refuse the reap) nor left untracked once it truly empties.
+  useEffect(() => {
+    for (const room of rooms) {
+      if (room.is_system) continue;
+      const count = occupancy.get(room.id) ?? 0;
+      if (count > 0) emptySince.current.delete(room.id);
+      else if (!emptySince.current.has(room.id)) emptySince.current.set(room.id, Date.now());
+    }
+  }, [rooms, occupancy]);
 
   // Auto-end hosted rooms that have sat empty for 2 minutes. reap_room's own
   // age guard makes this safe even if a room only just went empty.
