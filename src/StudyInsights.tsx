@@ -560,7 +560,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
       </div>
       <p className="mt-2 text-xs text-muted-foreground">Upgrade to schedule study days, attach tasks or full categories, invite friends, and sync events across devices and calendars.</p>
       <button onClick={onUpgrade} className="mt-3 flex items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow">
-        <Crown size={13} /> View Premium
+        <Crown size={13} /> Unlock with Premium
       </button>
     </section>;
   }
