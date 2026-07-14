@@ -14,7 +14,7 @@ export const supabaseEnabled = Boolean(url && anonKey);
 
 if (!supabaseEnabled) {
   console.warn(
-    "[Roamly] Supabase env vars are missing — accounts, sync, and payments are disabled. " +
+    "[Roamly] Supabase env vars are missing. Accounts, sync, and payments are disabled. " +
     "The app runs in local-only demo mode until VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY are set."
   );
 }

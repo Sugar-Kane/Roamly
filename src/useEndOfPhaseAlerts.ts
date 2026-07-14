@@ -4,12 +4,12 @@ import { playChime } from "./focusSounds";
 import { loadPref, savePref } from "./storage";
 
 const PHASE_MESSAGE: Record<Phase, string> = {
-  focus: "Focus session complete — time for a break.",
-  short: "Short break's over — back to it.",
-  long: "Long break's over — ready for the next block.",
+  focus: "Focus session complete. Time for a break.",
+  short: "Short break's over. Back to it.",
+  long: "Long break's over. Ready for the next block.",
 };
 
-const FLASH_TITLE = "⏰ Time's up! — Roamly";
+const FLASH_TITLE = "⏰ Time's up! | Roamly";
 const FLASH_INTERVAL_MS = 1000;
 
 type Permission = NotificationPermission | "unsupported";

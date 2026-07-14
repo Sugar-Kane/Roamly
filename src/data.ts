@@ -28,9 +28,9 @@ export const METHODS: Method[] = [
 export type Task = { id: string; title: string; tag: string; done: boolean; poms: number; est: number; sort_order?: number | null };
 
 export const SEED_TASKS: Task[] = [
-  { id: "t1", title: "Cardiology — review heart failure pathways", tag: "Cardio", done: false, poms: 2, est: 4, sort_order: 1 },
+  { id: "t1", title: "Cardiology: review heart failure pathways", tag: "Cardio", done: false, poms: 2, est: 4, sort_order: 1 },
   { id: "t2", title: "Pharm flashcards: beta-blockers", tag: "Pharm", done: false, poms: 1, est: 2, sort_order: 2 },
-  { id: "t3", title: "OSCE practice — abdominal exam", tag: "Clinical", done: true, poms: 3, est: 3, sort_order: 3 },
+  { id: "t3", title: "OSCE practice: abdominal exam", tag: "Clinical", done: true, poms: 3, est: 3, sort_order: 3 },
   { id: "t4", title: "PANCE practice block (50 questions)", tag: "PANCE", done: false, poms: 0, est: 3, sort_order: 4 },
 ];
 
@@ -273,7 +273,7 @@ export const THEMES: Theme[] = [
 
 export type Room = { id: string; name: string; host: string; focus: string; members: number; cap: number };
 export const ROOMS: Room[] = [
-  { id: "r1", name: "PANCE Grind — Quiet", host: "Maya R.", focus: "PANCE review", members: 7, cap: 12 },
+  { id: "r1", name: "PANCE Grind (Quiet)", host: "Maya R.", focus: "PANCE review", members: 7, cap: 12 },
   { id: "r2", name: "Pharm Power Hour", host: "Devin K.", focus: "Pharmacology", members: 4, cap: 8 },
   { id: "r3", name: "Anatomy All-Nighter", host: "Sofia L.", focus: "Musculoskeletal", members: 11, cap: 12 },
   { id: "r4", name: "Early Birds 6AM", host: "Theo M.", focus: "Open study", members: 2, cap: 10 },

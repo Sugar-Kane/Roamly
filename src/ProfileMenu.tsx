@@ -9,6 +9,7 @@ import { Camera, Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, 
 import type { Session } from "@supabase/supabase-js";
 import { loadPref } from "./storage";
 import { removeProfileAvatar, updateProfileAvatar, type Profile } from "./db";
+import { currentUploadPeriod, FREE_MONTHLY_UPLOAD_QUOTA, PREMIUM_MONTHLY_UPLOAD_QUOTA } from "./UploadTasks";
 
 export type A11ySettings = {
   colorBlind: boolean;
@@ -96,6 +97,13 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
   const email = session?.user.email ?? null;
   const initials = (name ?? email ?? "?").slice(0, 2).toUpperCase();
 
+  // AI upload balance for the plan row: the monthly allowance resets each
+  // month (never rolls over); purchased credits persist until used.
+  const usedThisPeriod = profile?.ai_uploads_period === currentUploadPeriod() ? (profile?.ai_uploads_count ?? 0) : 0;
+  const uploadQuota = isPremium ? PREMIUM_MONTHLY_UPLOAD_QUOTA : FREE_MONTHLY_UPLOAD_QUOTA;
+  const uploadsRemaining = Math.max(0, uploadQuota - usedThisPeriod);
+  const credits = profile?.ai_credits ?? 0;
+
   const flip = (key: keyof A11ySettings) => setA11y({ ...a11y, [key]: !a11y[key] });
 
   const chooseAvatar = async (file: File | undefined) => {
@@ -150,7 +158,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
                   <Trash2 size={12} /> Remove
                 </button>}
               </div>
-              <p className="mt-1.5 text-[10px] text-muted-foreground">JPG, PNG, or WebP. Maximum 5 MB.</p>
+              <p className="mt-1.5 text-[10px] text-muted-foreground">JPG, PNG, or WebP. Maximum 15 MB.</p>
               {avatarError && <p role="alert" className="mt-1 text-[11px] text-destructive">{avatarError}</p>}
             </div>
           )}
@@ -164,7 +172,10 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
                 <span className="min-w-0">
                   <span className="block text-sm font-medium">{isPremium ? "Premium plan" : "Free plan"}</span>
                   <span className="block truncate text-[11px] text-muted-foreground">
-                    {isPremium ? "All Premium features unlocked" : "Music is free — upgrade for hosting and more"}
+                    {isPremium ? "All Premium features unlocked" : "Music is free. Upgrade for hosting and more"}
+                  </span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    AI uploads: {uploadsRemaining} of {uploadQuota} left this month · {credits} purchased credit{credits === 1 ? "" : "s"}
                   </span>
                 </span>
               </span>

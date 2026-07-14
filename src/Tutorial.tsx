@@ -17,7 +17,7 @@ export const TUTORIAL_SEEN_KEY = "roamly-tutorial-seen";
 const STEPS: { view: View; icon: LucideIcon; title: string; body: string }[] = [
   {
     view: "focus", icon: Timer, title: "Welcome to Roamly",
-    body: "This is your study timer. Tap “Select timer” to pick a rhythm — like 25 minutes of focus, then a 5-minute break — and hit Start. Roamly runs the cycles for you.",
+    body: "This is your study timer. Tap “Select timer” to pick a rhythm, like 25 minutes of focus, then a 5-minute break, and hit Start. Roamly runs the cycles for you.",
   },
   {
     view: "tasks", icon: ListChecks, title: "Queue your studying",
@@ -25,11 +25,11 @@ const STEPS: { view: View; icon: LucideIcon; title: string; body: string }[] = [
   },
   {
     view: "focus", icon: Smartphone, title: "Put Roamly on your Home Screen",
-    body: "On iPhone: tap Safari's Share button (the square with the arrow), then “Add to Home Screen” — Roamly opens full-screen like a real app, with its own icon. On Android or desktop, use the browser menu → “Install app”.",
+    body: "On iPhone: tap Safari's Share button (the square with the arrow), then “Add to Home Screen”. Roamly opens full-screen like a real app, with its own icon. On Android or desktop, use the browser menu → “Install app”.",
   },
   {
     view: "rooms", icon: Users, title: "Study together",
-    body: "Every room's timer is already running — just hit Join to drop in. You focus in silence alongside everyone inside, then chat and voice open at each break. Premium members can host private rooms for friends.",
+    body: "Every room's timer is already running. Just hit Join to drop in. You focus in silence alongside everyone inside, then chat and voice open at each break. Premium members can host private rooms for friends.",
   },
   {
     view: "analytics", icon: BarChart3, title: "Watch it add up",

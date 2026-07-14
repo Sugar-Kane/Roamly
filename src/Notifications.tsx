@@ -130,7 +130,7 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
       {open && (
         <div className="absolute right-0 top-11 z-50 w-80 rounded-2xl border border-border bg-card p-2 shadow-xl">
           <p className="px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Notifications</p>
-          {items.length === 0 && <p className="px-2.5 pb-2 text-sm text-muted-foreground">Nothing yet — add friends and they'll show up here.</p>}
+          {items.length === 0 && <p className="px-2.5 pb-2 text-sm text-muted-foreground">Nothing yet. Add friends and they'll show up here.</p>}
           <div className="max-h-80 overflow-y-auto">
             {items.map((n) => {
               const Icon = KIND_ICON[n.kind];

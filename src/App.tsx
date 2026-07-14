@@ -3,8 +3,9 @@ import { createPortal } from "react-dom";
 import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
-import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, type SpotifyEmbedType } from "./spotify";
+import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, type FocusSoundId } from "./focusSounds";
+import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, embedSrcToUri, type SpotifyEmbedType } from "./spotify";
+import { SpotifyEmbed } from "./SpotifyEmbed";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
@@ -27,7 +28,7 @@ import { AdminView } from "./Admin";
 import { Modal } from "./Modal";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
-import { UploadTasksPanel } from "./UploadTasks";
+import { UploadTasksPanel, currentUploadPeriod, FREE_MONTHLY_UPLOAD_QUOTA, PREMIUM_MONTHLY_UPLOAD_QUOTA } from "./UploadTasks";
 import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions, saveGuestTasks, clearMigratedGuestData } from "./guestData";
 import { loadGuestStudyEvents, newStudyEvent, saveGuestStudyEvents, type PlannedStudyDraft, type PlannedStudySession, type StudyEvent } from "./release3";
 import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
@@ -41,8 +42,20 @@ import type { Session } from "@supabase/supabase-js";
 
 export type View = "focus" | "tasks" | "analytics" | "rooms" | "garden" | "premium" | "admin";
 
+// Every tab has its own URL (/focus, /tasks, …) so pages are linkable and the
+// browser back button works. Unknown paths fall back to Focus; vercel.json
+// already rewrites all non-api paths to the SPA.
+const VIEW_LABELS: Record<View, string> = {
+  focus: "Focus", tasks: "Tasks", analytics: "Analytics", rooms: "Rooms",
+  garden: "Garden", premium: "Premium", admin: "Admin",
+};
+function viewFromPath(pathname: string): View {
+  const slug = pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
+  return (Object.keys(VIEW_LABELS) as View[]).find((v) => v === slug) ?? "focus";
+}
+
 export default function App() {
-  const [view, setView] = useState<View>("focus");
+  const [view, setView] = useState<View>(() => viewFromPath(window.location.pathname));
   const [immersive, setImmersive] = useState(false); // personal focus-mode takeover
   const [methodId, setMethodId] = useState("classic");
   const [themeId, setThemeId] = useState("coffee");
@@ -84,6 +97,26 @@ export default function App() {
   // user is signed in but passwordless, so we prompt them to set one.
   const [needsPassword, setNeedsPassword] = useState(arrivedViaEmailLink);
   const alerts = useEndOfPhaseAlerts();
+
+  // Stripe Checkout returns to /?checkout=success|cancelled. Show a brief
+  // confirmation and strip the param so a refresh doesn't repeat it. (Premium
+  // itself flips via the webhook + the realtime profile subscription.)
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(() => {
+    const value = new URLSearchParams(window.location.search).get("checkout");
+    if (value === "success") return "Payment successful. Your account updates momentarily.";
+    if (value === "cancelled") return "Checkout cancelled. You have not been charged.";
+    return null;
+  });
+  useEffect(() => {
+    if (!checkoutNotice) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("checkout")) {
+      url.searchParams.delete("checkout");
+      history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
+    const timer = window.setTimeout(() => setCheckoutNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [checkoutNotice]);
 
   const isPremium = profile?.is_premium ?? false;
   const dailyGoal = profile?.daily_goal_minutes ?? 120;
@@ -344,6 +377,24 @@ export default function App() {
   // persistent mini-dock — so streaming music keeps playing across tab
   // switches instead of dying when a panel unmounts.
   const [embed, setEmbed] = useState<{ service: "spotify" | "apple"; src: string; height: number; label: string } | null>(null);
+
+  // Keep the two audio sources exclusive without manual pausing:
+  //  * Focus sound starts (any path: picker, timer auto-play, room music) →
+  //    embedStopSignal bumps; the Spotify player pauses via its API and the
+  //    Apple iframe remounts (a reload is the only way to stop a plain embed).
+  //  * Spotify playback starts inside the player → onEmbedPlaying stops the
+  //    focus sound. Apple's embed has no play-detection API, so that direction
+  //    only exists for Spotify; picking an Apple station still takes over via
+  //    playEmbed below.
+  const [embedStopSignal, setEmbedStopSignal] = useState(0);
+  useEffect(() => {
+    setOnPlaybackStart(() => setEmbedStopSignal((n) => n + 1));
+    return () => setOnPlaybackStart(null);
+  }, []);
+  const onEmbedPlaying = useCallback(() => {
+    if (focusSoundActive()) stopFocusSound();
+    setSoundPlaying(false);
+  }, []);
   const playEmbed = (t: { service: "spotify" | "apple"; src: string; height: number; label: string }) => {
     // Streaming takes over — silence and deselect the built-in focus sound.
     track("embed_play");
@@ -710,7 +761,14 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify(pack ? { pack } : { plan }),
       });
-      if (!res.ok) { setCheckoutError("Payments aren't set up yet — check back soon."); setCheckoutLoading(false); return; }
+      if (!res.ok) {
+        // Show the endpoint's actual message (e.g. a Stripe misconfiguration)
+        // instead of a generic guess; it makes setup problems diagnosable.
+        const body = await res.json().catch(() => ({}));
+        setCheckoutError(body?.error || "Payments aren't set up yet. Check back soon.");
+        setCheckoutLoading(false);
+        return;
+      }
       const { url } = await res.json();
       window.location.href = url;
     } catch {
@@ -719,9 +777,29 @@ export default function App() {
     }
   }, [session]);
 
-  // Each tab opens at the top — carrying the previous tab's scroll position
-  // over is disorienting, especially on phones.
-  useEffect(() => { window.scrollTo(0, 0); track(`view_${view}`); }, [view]);
+  // Each tab opens at the top (carrying the previous tab's scroll position
+  // over is disorienting, especially on phones), gets its own URL, and sets
+  // the document title. Search + hash are preserved: the Stripe return param
+  // and Supabase email-link hash both ride along untouched.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    track(`view_${view}`);
+    const target = `/${view}`;
+    if (window.location.pathname !== target) {
+      // Same view, different path (first load at "/" or an alias) normalizes
+      // in place; an actual tab change pushes a history entry so Back works.
+      const method = viewFromPath(window.location.pathname) === view ? "replaceState" : "pushState";
+      history[method](null, "", target + window.location.search + window.location.hash);
+    }
+    document.title = view === "focus" ? "Roamly Focus. Study timer for PA students" : `Roamly Focus · ${VIEW_LABELS[view]}`;
+  }, [view]);
+
+  // Browser back/forward drives the view.
+  useEffect(() => {
+    const onPop = () => setView(viewFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // Apply the active theme's palette to the document root so every CSS variable
   // (background, card, primary, etc.) updates live across the whole app.
@@ -748,8 +826,16 @@ export default function App() {
   }, [pipWindow, theme, a11y]);
 
   return (
-    <div className="min-h-screen w-full text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
+    <div className="min-h-dvh w-full text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
       <OfflineBanner />
+      {checkoutNotice && (
+        <div role="status" className="fixed inset-x-0 top-3 z-[60] flex justify-center px-4">
+          <div className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm shadow-lg">
+            <Check size={15} className="shrink-0 text-roamly-green" /> {checkoutNotice}
+            <button onClick={() => setCheckoutNotice(null)} aria-label="Dismiss" className="ml-1 text-muted-foreground hover:text-foreground"><X size={14} /></button>
+          </div>
+        </div>
+      )}
       {/* Bottom padding clears the nav PLUS the persistent music-dock pill, so
           page-end content can always scroll fully above the fixed chrome. */}
       <div className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-7 md:px-8">
@@ -761,7 +847,15 @@ export default function App() {
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
           onOpenTutorial={() => setShowTutorial(true)}
           themeId={themeId} setThemeId={changeTheme}
+          onGoHome={() => setView("focus")}
           onOpenFeedback={() => (session ? setShowFeedback(true) : setShowAuth(true))} />
+        {view !== "focus" && (
+          <nav aria-label="Breadcrumb" className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <button onClick={() => setView("focus")} className="transition hover:text-foreground">Roamly</button>
+            <ChevronRight size={12} aria-hidden="true" />
+            <span className="font-medium text-foreground" aria-current="page">{VIEW_LABELS[view]}</span>
+          </nav>
+        )}
         <main className="mt-8 flex-1">
           {view === "focus" && (
             <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
@@ -769,7 +863,8 @@ export default function App() {
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
               exams={examSchedules} addExam={addExam} editExam={editExam} removeExam={removeExam} alerts={alerts}
-              embed={embed} shownEmbed={shownEmbed} playEmbed={playEmbed} guardSolo={guardSolo}
+              embed={embed} shownEmbed={shownEmbed} playEmbed={playEmbed}
+              embedStopSignal={embedStopSignal} onEmbedPlaying={onEmbedPlaying} guardSolo={guardSolo}
               autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow} onOpenTasks={() => setView("tasks")}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
@@ -827,7 +922,8 @@ export default function App() {
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
-      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} hidden={view !== "focus" || immersive || !!pipWindow} />
+      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} hidden={view !== "focus" || immersive || !!pipWindow}
+        stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
       <FocusMode open={immersive} phase={timer.phase}
         phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
         timeText={fmt(timer.secondsLeft)} progress={timer.progress}
@@ -878,7 +974,7 @@ export default function App() {
               estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached} />
             <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} compact />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer />
+            <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
           </div>
         } />
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
@@ -902,7 +998,7 @@ export default function App() {
                 aria-label="Skip"><SkipForward size={16} /></button>
             </>
           }
-          extra={<StreamingPlayer shown={shownEmbed} compact />} />,
+          extra={<StreamingPlayer shown={shownEmbed} compact plain stopSignal={embedStopSignal} />} />,
         pipWindow.document.body
       )}
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }}
@@ -946,7 +1042,7 @@ function OfflineBanner() {
   if (!offline) return null;
   return (
     <div role="status" className="sticky top-0 z-[100] flex items-center justify-center gap-2 bg-foreground/90 px-4 py-1.5 text-center text-xs font-medium text-background">
-      <BellOff size={13} /> You're offline — changes will sync when you reconnect.
+      <BellOff size={13} /> You're offline. Changes will sync when you reconnect.
     </div>
   );
 }
@@ -960,16 +1056,17 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onGoHome, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
   return (
     <header className="flex items-center justify-between gap-1.5 sm:gap-3">
-      <div className="flex shrink-0 items-baseline gap-3">
+      <button onClick={onGoHome} aria-label="Go to the Focus home screen"
+        className="flex shrink-0 items-baseline gap-3 rounded-lg transition hover:opacity-80">
         <span className="font-display text-xl font-semibold tracking-tight text-gradient sm:text-2xl">Roamly</span>
         <span className="hidden font-mono text-[11px] uppercase tracking-[0.22em] text-primary sm:inline">Focus</span>
-      </div>
+      </button>
       <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
         <span className="hidden sm:block"><StreakBadge streak={streak} /></span>
         <button onClick={onOpenTutorial} aria-label="Replay the app tour"
@@ -1025,7 +1122,7 @@ function GardenLock({ onSignIn }: { onSignIn: () => void }) {
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-8 text-center shadow-sm">
         <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-primary/10 text-primary"><Lock size={24} /></span>
         <h2 className="mt-4 font-display text-xl font-semibold">Sign in to unlock your Garden</h2>
-        <p className="mt-1.5 text-sm text-muted-foreground">Earn XP, level up, collect pets, and grow plants as you study — your progress saves to your account and syncs across devices.</p>
+        <p className="mt-1.5 text-sm text-muted-foreground">Earn XP, level up, collect pets, and grow plants as you study. Your progress saves to your account and syncs across devices.</p>
         <button onClick={onSignIn} className="mt-5 inline-flex items-center gap-1.5 rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
           <LogIn size={15} /> Sign in
         </button>
@@ -1368,16 +1465,16 @@ function PomodoroExplainer() {
         <button onClick={dismiss} className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">Got it</button>
       </div>
       <p className="mt-2.5 text-sm text-muted-foreground">
-        It's a simple way to study without burning out: focus in short, timed blocks — classically <span className="font-medium text-foreground">25 minutes</span> — then take a <span className="font-medium text-foreground">5-minute break</span>. After about four blocks you take a longer break. The countdown keeps you honest during focus, and the breaks keep you fresh.
+        It's a simple way to study without burning out: focus in short, timed blocks, classically <span className="font-medium text-foreground">25 minutes</span>, then take a <span className="font-medium text-foreground">5-minute break</span>. After about four blocks you take a longer break. The countdown keeps you honest during focus, and the breaks keep you fresh.
       </p>
       <p className="mt-2 text-xs text-muted-foreground">
-        Just press <span className="font-medium text-foreground">Start</span> below to begin a block — or use <span className="font-medium text-foreground">Select timer</span> to pick a different rhythm.
+        Just press <span className="font-medium text-foreground">Start</span> below to begin a block, or use <span className="font-medium text-foreground">Select timer</span> to pick a different rhythm.
       </p>
     </div>
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1462,7 +1559,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 className="flex items-center gap-1.5 self-start rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/15">
                 <Timer size={13} /> Focus mode
               </button>
-              <InfoTip text="Focus mode fills your whole screen with the timer, your music, and your task list — Start opens it automatically, and this button gets you back in." />
+              <InfoTip text="Focus mode fills your whole screen with the timer, your music, and your task list. Start opens it automatically, and this button gets you back in." />
               {pipSupported && (
                 <>
                   <button onClick={() => (pipActive ? onClosePip?.() : onPopOut?.())}
@@ -1470,7 +1567,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                     aria-pressed={pipActive}>
                     <PictureInPicture2 size={13} /> {pipActive ? "Close pop-out" : "Pop out timer"}
                   </button>
-                  <InfoTip text="Pop the timer into a small floating window that stays on top of other apps — so you can keep studying on the rest of your screen and still see the countdown. Desktop Chrome/Edge only." />
+                  <InfoTip text="Pop the timer into a small floating window that stays on top of other apps, so you can keep studying on the rest of your screen and still see the countdown. Desktop Chrome/Edge only." />
                 </>
               )}
               <button onClick={onToggleAutoFlow}
@@ -1478,7 +1575,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 aria-pressed={autoFlow}>
                 <Play size={13} /> Auto-flow {autoFlow ? "on" : "off"}
               </button>
-              <InfoTip text="Auto-flow starts the next phase by itself — focus rolls into break and back without pressing Start. Turn it off to start each block yourself." />
+              <InfoTip text="Auto-flow starts the next phase by itself: focus rolls into break and back without pressing Start. Turn it off to start each block yourself." />
               <NotificationToggle alerts={alerts} />
               {showCompanions && (
                 <button onClick={onToggleSleep} aria-pressed={petsAsleep}
@@ -1494,14 +1591,14 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           <div className="flex shrink-0 flex-col items-center lg:items-start">
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: theme.ring }}>Count-up</span>
             <TimeDisplay value={fmt(countUp.elapsedSeconds)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
-            <span className="mt-1 text-sm text-muted-foreground">Stopwatch — no countdown</span>
+            <span className="mt-1 text-sm text-muted-foreground">Stopwatch, no countdown</span>
           </div>
 
           <div className="flex flex-1 flex-col gap-5">
             <p className="text-sm text-muted-foreground">
               {task
                 ? <>Time logs to <span className="text-foreground">{task.title}</span> ({task.tag}) when you stop &amp; save.</>
-                : "Select a task below to link this session — or just run the clock."}
+                : "Select a task below to link this session, or just run the clock."}
             </p>
             <div className="flex items-center gap-3">
               <button onClick={() => {
@@ -1525,14 +1622,14 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer />
+      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
           cardClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-5 shadow-xl">
             <div className="flex items-center justify-between">
               <h3 className="flex items-center gap-1.5 font-display text-lg font-semibold">Timer method
-                <InfoTip text="A method sets your rhythm: how long each focus block runs, how long breaks last, and how many blocks make a cycle. Pick short Sprints or go Deep — the timer handles the switching." />
+                <InfoTip text="A method sets your rhythm: how long each focus block runs, how long breaks last, and how many blocks make a cycle. Pick short Sprints or go Deep; the timer handles the switching." />
               </h3>
               <button onClick={() => setShowMethods(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close"><X size={18} /></button>
             </div>
@@ -1569,7 +1666,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                   <span className="text-sm font-semibold">Count-up timer</span>
                   <Timer size={13} className="text-primary" />
                 </div>
-                <p className="mt-0.5 text-xs leading-snug text-muted-foreground">Stopwatch mode — no countdown. Time logs to your selected task when you stop &amp; save.</p>
+                <p className="mt-0.5 text-xs leading-snug text-muted-foreground">Stopwatch mode, no countdown. Time logs to your selected task when you stop &amp; save.</p>
               </button>
             </div>
         </Modal>
@@ -1597,7 +1694,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 .slice(0, 3);
               if (upNext.length === 0) return (
                 <div className="rounded-xl border border-dashed border-border bg-card/50 p-4 text-center">
-                  <p className="text-sm text-muted-foreground">0 tasks queued — add what you'll study and it shows up here.</p>
+                  <p className="text-sm text-muted-foreground">0 tasks queued. Add what you'll study and it shows up here.</p>
                   <button onClick={onOpenTasks}
                     className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-1.5 text-xs font-medium text-primary transition hover:border-primary/40">
                     <Plus size={13} /> Add tasks
@@ -1721,7 +1818,7 @@ function ThemeMenu({ themeId, setThemeId }: any) {
         <Palette size={15} />
       </button>
       {open && (
-        <div className="absolute right-0 top-11 z-50 w-64 rounded-2xl border border-border bg-card p-2 shadow-xl">
+        <div className="absolute right-0 top-11 z-50 w-64 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-card p-2 shadow-xl">
           <p className="px-3 pt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Theme</p>
           <div className="mt-1 space-y-1">
             {THEMES.map((t: any) => {
@@ -1810,7 +1907,7 @@ function FocusSoundsPanel({ sounds }: any) {
 // up to App via onPlay — the iframe itself lives in the dock, so it keeps
 // playing across tab switches and pop-out timers instead of dying when this
 // panel unmounts.
-function MusicPanel({ embed, shown, onPlay, showPlayer = false }: any) {
+function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPlaying }: any) {
   // Remember the service tab so the persistent dock preloads the right
   // default station on the next visit.
   const [service, setServiceState] = useState<"spotify" | "apple">(() => loadPref("roamly-music-service") === "apple" ? "apple" : "spotify");
@@ -1851,7 +1948,7 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false }: any) {
       </div>
 
       <div>
-        {showPlayer && shown && <StreamingPlayer shown={shown} />}
+        {showPlayer && shown && <StreamingPlayer shown={shown} stopSignal={stopSignal} onPlaying={onPlaying} />}
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
           <button onClick={() => setService("spotify")}
             className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -1894,13 +1991,13 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false }: any) {
             className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
           {(service === "spotify" ? spotifyCustomError : appleCustomError) && (
             <p className="mt-1.5 text-[11px] text-destructive">
-              Couldn't read that link — paste a track, playlist, album, or artist URL.
+              Couldn't read that link. Paste a track, playlist, album, or artist URL.
             </p>
           )}
         </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Playlists load into the mini-player at the bottom of your screen — it keeps
+          Playlists load into the mini-player at the bottom of your screen. It keeps
           playing while you switch tabs. Minimize it there whenever it's in the way.
         </p>
       </div>
@@ -1913,21 +2010,38 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false }: any) {
 // DOM, so tab switches and minimizing only ever toggle CSS on this container.
 // Preloaded with a default station so both services are visibly available
 // without clicking anything (autoplay can't start without a user gesture).
-function StreamingPlayer({ shown, compact = false }: any) {
+// The actual player. Spotify goes through the iFrame API (SpotifyEmbed) so the
+// app can pause it and detect its play button; Apple Music has no such API, so
+// it stays a plain iframe that stopSignal remounts (a reload is the only way
+// to silence an uncontrolled embed).
+function EmbedPlayer({ shown, height, stopSignal, onPlaying, plain = false }: any) {
+  // `plain` skips the API player: the PiP window is a separate document the
+  // main-window iFrame API script can't manage.
+  const spotifyUri = !plain && shown.service === "spotify" ? embedSrcToUri(shown.src) : null;
+  if (spotifyUri) {
+    return <SpotifyEmbed key={shown.src} uri={spotifyUri} fallbackSrc={shown.src} height={height}
+      pauseSignal={stopSignal ?? 0} onPlay={onPlaying ?? (() => {})} />;
+  }
+  return (
+    <iframe key={`${stopSignal ?? 0}-${shown.src}`} src={shown.src} width="100%" height={height}
+      style={{ border: "none" }} title="Music player"
+      allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
+  );
+}
+
+function StreamingPlayer({ shown, compact = false, stopSignal, onPlaying, plain = false }: any) {
   return (
     <div className={`mb-3 overflow-hidden rounded-xl border border-border bg-card/70 ${compact ? "" : "shadow-sm"}`}>
       <p className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
         <Music size={12} className="text-primary" />
         <span className="truncate">{shown.service === "spotify" ? "Spotify" : "Apple Music"} · {shown.label}</span>
       </p>
-      <iframe key={shown.src} src={shown.src} width="100%" height={compact ? 96 : Math.min(shown.height, 152)}
-        style={{ border: "none" }} title={`${shown.service === "spotify" ? "Spotify" : "Apple Music"} player`}
-        allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
+      <EmbedPlayer shown={shown} height={compact ? 96 : Math.min(shown.height, 152)} stopSignal={stopSignal} onPlaying={onPlaying} plain={plain} />
     </div>
   );
 }
 
-function MusicDock({ shown, minimized, onToggleMin, onPickService, hidden = false }: any) {
+function MusicDock({ shown, minimized, onToggleMin, onPickService, hidden = false, stopSignal, onPlaying }: any) {
   return (
     // z-[45]: above the bottom nav (z-40), below every modal (z-50+) — a
     // permanent fixture must never eat taps meant for an open dialog.
@@ -1956,9 +2070,7 @@ function MusicDock({ shown, minimized, onToggleMin, onPickService, hidden = fals
             </button>
           ))}
         </div>
-        <iframe key={shown.src} src={shown.src} width="100%" height={Math.min(shown.height, 152)}
-          style={{ border: "none" }} title="Music player"
-          allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" />
+        <EmbedPlayer shown={shown} height={Math.min(shown.height, 152)} stopSignal={stopSignal} onPlaying={onPlaying} />
       </div>
     </div>
   );
@@ -2183,7 +2295,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
             <SignInPrompt onSignIn={onSignIn} message={`Guest tasks stay on this device (${tasks.length}/${guestLimit}). Sign in to sync across devices.`} />
             <p className="mt-2 rounded-xl border border-dashed border-border p-3 text-xs text-muted-foreground">
               <Crown size={12} className="mr-1 inline text-primary" />
-              Signed-in users can also generate tasks with AI — upload lecture notes, slides, or
+              Signed-in users can also generate tasks with AI: upload lecture notes, slides, or
               even photos of handwritten pages and Roamly turns them into a task list (3 uploads/month free, 10 with Premium).
             </p>
           </>
@@ -2203,7 +2315,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
         {showCustom ? (
           <span className="flex items-center gap-1">
             <input value={customTag ?? ""} onChange={(e) => setCustomTag(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()}
-              placeholder={noSubjectsYet ? "Subject — e.g. Pharm" : "New subject"} maxLength={24} autoFocus={customTag !== null} aria-label="New subject name"
+              placeholder={noSubjectsYet ? "Subject, e.g. Pharm" : "New subject"} maxLength={24} autoFocus={customTag !== null} aria-label="New subject name"
               className="w-32 rounded-xl border border-primary bg-card px-3 py-3 text-sm outline-none ring-2 ring-primary/20" />
             {!noSubjectsYet && (
               <button onClick={() => setCustomTag(null)} aria-label="Cancel new subject"
@@ -2236,7 +2348,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
 
       {tasksLoaded && open.length === 0 && tasks.length > 0 && (
         <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">
-          Everything's done — add your next study task above.
+          Everything's done. Add your next study task above.
         </p>
       )}
 
@@ -2305,9 +2417,9 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
                           className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
                           <Pencil size={13} />
                         </button>
-                        <button data-nodrag onClick={() => setEstTarget(t)} title="Focus sessions done / planned — click to change"
+                        <button data-nodrag onClick={() => setEstTarget(t)} title="Focus sessions done / planned. Click to change"
                           className="rounded-md px-1.5 py-0.5 text-center font-mono text-xs text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
-                          aria-label={`${t.poms} of ${t.est} focus sessions done for ${t.title} — change estimate`}>
+                          aria-label={`${t.poms} of ${t.est} focus sessions done for ${t.title}. Change estimate`}>
                           {t.poms}/{t.est}
                         </button>
                         <button onClick={() => removeTask(t.id)} aria-label={`Delete ${t.title}`}
@@ -2430,20 +2542,20 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
   return (
     <div className="mx-auto max-w-4xl">
       <h1 className="font-display text-3xl font-semibold">Analytics</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Live from your timer — every session you finish counts here.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Live from your timer. Every session you finish counts here.</p>
 
       <div className="mt-6">
         {session ? (
           <DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
         ) : (
-          <><DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} /><div className="mt-3"><SignInPrompt onSignIn={onSignIn} message="As a guest, analytics track only what you do in this browser, on this device — nothing is saved to an account. Create a free account to keep your history, streaks, and stats everywhere you sign in." /></div></>
+          <><DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} /><div className="mt-3"><SignInPrompt onSignIn={onSignIn} message="As a guest, analytics track only what you do in this browser, on this device. Nothing is saved to an account. Create a free account to keep your history, streaks, and stats everywhere you sign in." /></div></>
         )}
       </div>
 
       <div className="mt-6 grid grid-cols-3 gap-3">
         <Stat label="This week" value={`${Math.floor(weekMin / 60)}h ${weekMin % 60}m`} />
         <Stat label="Streak" value={`${streak} day${streak === 1 ? "" : "s"}`} />
-        <Stat label="Best day (7d)" value={bestWeek.min > 0 ? bestWeek.day : "—"} sub={bestWeek.min > 0 ? `${bestWeek.min}m` : "No focus yet"} />
+        <Stat label="Best day (7d)" value={bestWeek.min > 0 ? bestWeek.day : "-"} sub={bestWeek.min > 0 ? `${bestWeek.min}m` : "No focus yet"} />
       </div>
 
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
@@ -2583,6 +2695,42 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   ];
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
+  // In-app cancel: sets Stripe's cancel_at_period_end, so Premium runs through
+  // the already-paid period and then lapses. Local state reflects the API
+  // response immediately; the webhook + realtime profile refresh make it stick.
+  const [pendingCancel, setPendingCancel] = useState<boolean>(!!profile?.premium_cancel_at_period_end);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  useEffect(() => { setPendingCancel(!!profile?.premium_cancel_at_period_end); }, [profile?.premium_cancel_at_period_end]);
+  const periodEndText = profile?.premium_expires_at ? new Date(profile.premium_expires_at).toLocaleDateString() : null;
+
+  const changeCancel = async (resume: boolean) => {
+    if (!resume && !window.confirm(`Cancel your subscription? Premium stays active until ${periodEndText ?? "the end of the paid period"}, then your account returns to the free tier.`)) return;
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      const token = await getAccessToken();
+      if (!token) { setCancelBusy(false); return; }
+      const res = await fetch("/api/cancel-subscription", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ resume }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setCancelError(data.error ?? "Couldn't update the subscription. Try again."); setCancelBusy(false); return; }
+      setPendingCancel(data.cancel_at_period_end === true);
+      setCancelBusy(false);
+    } catch {
+      setCancelError("Couldn't reach the payments server. Try again soon.");
+      setCancelBusy(false);
+    }
+  };
+
+  // Monthly allowance vs purchased credits, mirroring UploadTasks: the
+  // allowance resets each month (no rollover); purchased credits never expire.
+  const usedThisPeriod = profile?.ai_uploads_period === currentUploadPeriod() ? (profile?.ai_uploads_count ?? 0) : 0;
+  const monthlyQuota = isPremium ? PREMIUM_MONTHLY_UPLOAD_QUOTA : FREE_MONTHLY_UPLOAD_QUOTA;
+  const monthlyRemaining = Math.max(0, monthlyQuota - usedThisPeriod);
 
   // Stripe Billing Portal: update card, view invoices, or cancel. Cancelling
   // flows through the webhook, which reverts the account to free automatically.
@@ -2595,7 +2743,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
       const res = await fetch("/api/create-portal-session", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.url) {
-        setPortalError(data.error ?? "Couldn't open the billing portal — try again.");
+        setPortalError(data.error ?? "Couldn't open the billing portal. Try again.");
         setPortalLoading(false);
         return;
       }
@@ -2622,7 +2770,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
                 <span className="min-w-0 text-muted-foreground">{feature}</span>
                 {[guest, free, prem].map((value, index) => (
                   <span key={index} className={`min-w-0 text-xs ${index === 2 ? "font-medium" : ""}`}>
-                    {value === true ? <Check size={15} className="text-roamly-green" /> : value === false ? <span className="text-muted-foreground/50">—</span> : value}
+                    {value === true ? <Check size={15} className="text-roamly-green" /> : value === false ? <span className="text-muted-foreground/50">-</span> : value}
                   </span>
                 ))}
               </div>
@@ -2633,15 +2781,42 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
 
       {isPremium && (
         <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
-          <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active — thanks for supporting Roamly.</p>
+          <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active. Thanks for supporting Roamly.</p>
+          {session && (
+            <p className="mt-2 rounded-xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+              AI uploads: <span className="font-medium text-foreground">{monthlyRemaining} of {monthlyQuota}</span> left this month
+              {" · "}<span className="font-medium text-foreground">{credits}</span> purchased credit{credits === 1 ? "" : "s"}.
+              {" "}Purchased credits never expire. The monthly allowance resets each month and does not roll over.
+            </p>
+          )}
           {hasStripeSubscription ? (
             <>
-              <p className="mt-1 text-xs text-muted-foreground">Manage billing below: update your card, see invoices, or cancel. If you cancel (or a payment stops), your account automatically returns to the free tier at the end of the paid period.</p>
-              <button onClick={openPortal} disabled={portalLoading}
-                className="mt-4 rounded-full border border-border bg-card px-5 py-2 text-sm font-medium transition hover:border-primary/40 disabled:opacity-60">
-                {portalLoading ? "Opening…" : "Manage subscription"}
-              </button>
+              {pendingCancel ? (
+                <p className="mt-2 text-xs font-medium text-roamly-coral">
+                  Your subscription is set to cancel{periodEndText ? ` and Premium ends on ${periodEndText}` : " at the end of the paid period"}. You keep everything until then.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-muted-foreground">Manage billing below: update your card, see invoices, or cancel. If you cancel (or a payment stops), your account automatically returns to the free tier at the end of the paid period.</p>
+              )}
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button onClick={openPortal} disabled={portalLoading}
+                  className="rounded-full border border-border bg-card px-5 py-2 text-sm font-medium transition hover:border-primary/40 disabled:opacity-60">
+                  {portalLoading ? "Opening…" : "Manage subscription"}
+                </button>
+                {pendingCancel ? (
+                  <button onClick={() => changeCancel(true)} disabled={cancelBusy}
+                    className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
+                    {cancelBusy ? "Saving…" : "Keep subscription"}
+                  </button>
+                ) : (
+                  <button onClick={() => changeCancel(false)} disabled={cancelBusy}
+                    className="rounded-full border border-destructive/40 px-5 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10 disabled:opacity-60">
+                    {cancelBusy ? "Saving…" : "Cancel subscription"}
+                  </button>
+                )}
+              </div>
               {portalError && <p className="mt-2 text-xs text-destructive">{portalError}</p>}
+              {cancelError && <p className="mt-2 text-xs text-destructive">{cancelError}</p>}
             </>
           ) : (
             <p className="mt-1 text-xs text-muted-foreground">
@@ -2681,7 +2856,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
       {/* Credit packs — one-time purchases, for subscribers and free users alike. */}
       <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
         <h2 className="flex items-center gap-2 text-sm font-semibold">
-          <Plus size={15} className="text-primary" /> Upload credits — no subscription needed
+          <Plus size={15} className="text-primary" /> Upload credits, no subscription needed
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Extra AI note uploads you buy once. They never expire and are used automatically after your monthly allowance
@@ -2740,7 +2915,7 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimate
       <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Studying</span>
       {open.length === 0 ? (
         <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-          <Check size={15} className="shrink-0 text-roamly-green" /> All tasks done — ride out the timer or enjoy your break.
+          <Check size={15} className="shrink-0 text-roamly-green" /> All tasks done. Ride out the timer or enjoy your break.
         </p>
       ) : (
         <div className="mt-2 space-y-1.5">
@@ -2787,7 +2962,7 @@ function Upsell({ onClose, onUpgrade, onBuyCredits }: { onClose: () => void; onU
         <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Unlock with Premium</button>
         {onBuyCredits && (
           <button onClick={onBuyCredits} className="mt-2 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20">
-            Or buy AI upload credits — no subscription
+            Or buy AI upload credits, no subscription
           </button>
         )}
         <button onClick={onClose} className="mt-2 w-full rounded-full py-2 text-sm text-muted-foreground">Maybe later</button>

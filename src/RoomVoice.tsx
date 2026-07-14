@@ -203,7 +203,7 @@ export function useRoomVoice(roomId: string, userId: string, username: string, p
       // offer dance (from whichever side has the smaller id).
       channelRef.current?.track({ username });
     } catch {
-      setError("Couldn't access your microphone — check the browser permission and try again.");
+      setError("Couldn't access your microphone. Check the browser permission and try again.");
     }
   };
 
@@ -290,7 +290,7 @@ export function VoiceDock({ voice, userId, phase, secondsToBreak, isPremium, gat
       )}
 
       {voice.joined && othersInVoice.length === 0 && phase !== "focus" && (
-        <p className="mt-3 text-xs text-muted-foreground">You're the only one in voice — others can hop in from this panel.</p>
+        <p className="mt-3 text-xs text-muted-foreground">You're the only one in voice. Others can hop in from this panel.</p>
       )}
 
       {voice.members.length > 0 && (

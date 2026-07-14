@@ -21,7 +21,7 @@ export function PipTimer({ phaseLabel, ring, timeText, progress, taskTitle, cont
     // m-auto (not justify-center) so the content centers when it fits but
     // top-aligns and scrolls when it doesn't — centering an overflowing flex
     // column clips its top unreachably (same fix as the focus overlay).
-    <div className="flex min-h-screen w-full flex-col bg-background text-foreground">
+    <div className="flex min-h-dvh w-full flex-col bg-background text-foreground">
       <div className="m-auto flex w-full flex-col items-center gap-3 px-4 py-4">
       <span className="font-mono text-[0.65rem] uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
       <TimeDisplay value={timeText} className="font-display text-5xl font-medium tracking-tight" />

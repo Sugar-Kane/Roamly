@@ -49,6 +49,14 @@ export function toEmbedSrc({ type, id }: SpotifyTarget): string {
   return `https://open.spotify.com/embed/${type}/${id}`;
 }
 
+// The iFrame API takes a spotify:type:id URI rather than the embed URL. App
+// stores embeds by src, so recover the URI from it when mounting the API player.
+const EMBED_SRC_RE = /open\.spotify\.com\/embed\/(track|playlist|album|artist|episode|show)\/([A-Za-z0-9]+)/i;
+export function embedSrcToUri(src: string): string | null {
+  const match = src.match(EMBED_SRC_RE);
+  return match ? `spotify:${match[1].toLowerCase()}:${match[2]}` : null;
+}
+
 // Spotify's embed guidance: a single track/episode looks right short (152px);
 // anything with a tracklist (playlist/album/show/artist) needs more room (352px).
 export function embedHeight(type: SpotifyEmbedType): number {

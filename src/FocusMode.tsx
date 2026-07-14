@@ -170,7 +170,7 @@ export function FocusMode({
           <div className="flex max-w-md items-start gap-2 rounded-2xl border border-border bg-card/70 px-4 py-3 text-left">
             <Moon size={16} className="mt-0.5 shrink-0 text-primary" />
             <p className="text-xs text-muted-foreground">
-              A website can't silence your phone — turn on your device's <span className="font-medium text-foreground">Focus / Do Not Disturb</span> for a true deep-work block.
+              A website can't silence your phone. Turn on your device's <span className="font-medium text-foreground">Focus / Do Not Disturb</span> for a true deep-work block.
               <button onClick={dismissNudge} className="ml-1 font-medium text-primary underline-offset-2 hover:underline">Got it</button>
             </p>
           </div>
@@ -196,7 +196,7 @@ export function FocusMode({
             </div>
           )}
           <p className="mt-3 text-center text-xs text-muted-foreground">
-            {focusing ? "Eyes here. Notifications quiet themselves in your device's Focus mode." : "Break — look away, stretch, breathe. Your alerts are back on."}
+            {focusing ? "Eyes here. Notifications quiet themselves in your device's Focus mode." : "Break time. Look away, stretch, breathe. Your alerts are back on."}
           </p>
         </div>
 

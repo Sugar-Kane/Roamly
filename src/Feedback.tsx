@@ -36,7 +36,7 @@ export function FeedbackModal({ userId, page, onClose }: { userId: string; page:
 
   const send = async () => {
     if (message.trim().length < 3) {
-      setError("Tell me a little more — a sentence or two helps a lot.");
+      setError("Tell me a little more. A sentence or two helps a lot.");
       return;
     }
     setBusy(true);
@@ -73,7 +73,7 @@ export function FeedbackModal({ userId, page, onClose }: { userId: string; page:
           <div className="mt-4">
             <h3 className="font-display text-xl font-semibold">Thank you!</h3>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Your feedback went straight to the team — it genuinely shapes what gets fixed and built next.
+              Your feedback went straight to the team. It genuinely shapes what gets fixed and built next.
             </p>
             <button onClick={onClose} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">
               <span className="inline-flex items-center gap-1.5"><Check size={16} /> Done</span>
@@ -116,7 +116,7 @@ export function FeedbackModal({ userId, page, onClose }: { userId: string; page:
               {busy ? "Sending…" : "Send feedback"}
             </button>
             <p className="mt-2.5 text-center text-[11px] leading-snug text-muted-foreground">
-              Sent along automatically: the tab you're on ({page}), whether you're on phone or PC, and your screen size & browser — it makes bugs much easier to reproduce.
+              Sent along automatically: the tab you're on ({page}), whether you're on phone or PC, and your screen size & browser. It makes bugs much easier to reproduce.
             </p>
           </>
         )}

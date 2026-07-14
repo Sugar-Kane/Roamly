@@ -10,7 +10,7 @@ const ACTIVITIES: Activity[] = [
   { id: "eyes", title: "Rest your eyes", instruction: "Look at something far away and soften your focus.", category: "rest", movement: false },
   { id: "breathe", title: "Slow breaths", instruction: "Take three slow, comfortable breaths.", category: "reset", movement: false },
   { id: "walk", title: "Brief walk", instruction: "Walk for a minute if your space and mobility allow.", category: "movement", movement: true },
-  { id: "squat", title: "A few squats", instruction: "Do a few gentle squats if your body's up for it — hold a chair for support.", category: "movement", movement: true },
+  { id: "squat", title: "A few squats", instruction: "Do a few gentle squats if your body's up for it. Hold a chair for support.", category: "movement", movement: true },
   { id: "posture", title: "Reset posture", instruction: "Let your shoulders relax and place both feet comfortably.", category: "mobility", movement: false },
   { id: "hands", title: "Relax your hands", instruction: "Unclench your hands and gently move your fingers.", category: "mobility", movement: false },
 ];

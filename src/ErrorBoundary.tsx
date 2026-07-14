@@ -22,11 +22,11 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (!this.state.crashed) return this.props.children;
     return (
-      <div className="grid min-h-screen place-items-center bg-background p-6 text-center text-foreground">
+      <div className="grid min-h-dvh place-items-center bg-background p-6 text-center text-foreground">
         <div className="max-w-sm">
           <h1 className="font-display text-2xl font-semibold">Something went wrong</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Roamly hit an unexpected error. Reloading usually fixes it — your saved data is safe.
+            Roamly hit an unexpected error. Reloading usually fixes it, and your saved data is safe.
           </p>
           <button onClick={() => window.location.reload()}
             className="mt-5 rounded-full gradient-primary px-6 py-2.5 font-semibold text-white shadow-glow transition active:scale-95">

@@ -26,6 +26,9 @@ export type Profile = {
   ai_credits?: number;
   premium_source?: string | null;
   premium_expires_at?: string | null;
+  // True while a Stripe subscription is set to lapse at period end. Premium
+  // stays active until premium_expires_at; the UI shows "ends on <date>".
+  premium_cancel_at_period_end?: boolean;
   // When true, accepted friends can compare stats without a per-friend request.
   // Optional so the client tolerates the pre-migration schema.
   stats_public?: boolean;
@@ -37,7 +40,7 @@ export async function updateProfileAvatar(userId: string, file: File, previousPa
   if (!supabase) return { error: "Profile pictures aren't available right now." };
   const allowedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
   if (!allowedTypes.has(file.type)) return { error: "Choose a JPG, PNG, or WebP image." };
-  if (file.size > 5 * 1024 * 1024) return { error: "Choose an image smaller than 5 MB." };
+  if (file.size > 15 * 1024 * 1024) return { error: "Choose an image smaller than 15 MB." };
 
   const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
   const path = `${userId}/${crypto.randomUUID()}.${extension}`;
@@ -93,7 +96,12 @@ export type ExamSchedule = {
 // All three RPCs are SECURITY DEFINER and gated by is_admin() server-side, so
 // the client checks here are only for showing/hiding the admin UI — a
 // non-admin calling them directly gets nothing / an error.
-export type AdminUser = { id: string; email: string | null; username: string | null; display_name: string | null; is_premium: boolean };
+export type AdminUser = {
+  id: string; email: string | null; username: string | null; display_name: string | null; is_premium: boolean;
+  // Release 12: credit balances + entitlement expiry, so admins can see every
+  // user's credits. Optional so the UI tolerates a not-yet-migrated backend.
+  ai_credits?: number; ai_uploads_count?: number; ai_uploads_period?: string | null; premium_expires_at?: string | null;
+};
 
 export async function checkIsAdmin(): Promise<boolean> {
   if (!supabase) return false;
@@ -115,7 +123,7 @@ export async function adminGrantPremium(userId: string, months: 1 | 12, reason?:
   if (!error) return { expiresAt: data as string };
   if (error.message.includes("not_admin")) return { error: "You don't have admin access." };
   console.warn("[Roamly] adminGrantPremium failed", error.message);
-  return { error: "Couldn't grant Premium — try again." };
+  return { error: "Couldn't grant Premium. Try again." };
 }
 
 export async function adminRevokePremium(userId: string): Promise<{ revoked?: number; billingCanceled?: boolean; stripeWarning?: string; error?: string }> {
@@ -131,7 +139,7 @@ export async function adminRevokePremium(userId: string): Promise<{ revoked?: nu
     if (!response.ok) return { error: result.error || "Couldn't revoke Premium." };
     return result;
   } catch {
-    return { error: "Couldn't reach billing administration — try again." };
+    return { error: "Couldn't reach billing administration. Try again." };
   }
 }
 
@@ -142,6 +150,12 @@ export async function adminRevokePremium(userId: string): Promise<{ revoked?: nu
 export type AdminOverview = { total_users: number; premium_users: number; active_7d: number; feedback_total: number };
 export type AdminEventStat = { name: string; total: number; users: number; phone: number; pc: number };
 export type AdminDailyActivity = { day: string; events: number; active_users: number };
+export type AdminUsageUser = {
+  id: string; email: string | null; username: string | null; display_name: string | null;
+  is_premium: boolean; ai_credits: number; total_events: number; last_active: string | null;
+  feature_counts: Record<string, number>;
+};
+export type AdminOverviewToday = { events_today: number; active_users_today: number; focus_minutes_today: number };
 export type FeedbackRow = {
   id: string; email: string | null; username: string | null;
   category: string; message: string; repro: string | null;
@@ -176,6 +190,46 @@ export async function adminDailyActivity(days: number): Promise<AdminDailyActivi
   return (data ?? []) as AdminDailyActivity[];
 }
 
+export async function adminUsageUsers(days: number): Promise<AdminUsageUser[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_usage_users", { p_days: days });
+  if (error) { console.warn("[Roamly] adminUsageUsers failed", error.message); return []; }
+  return (data ?? []) as AdminUsageUser[];
+}
+
+export async function adminOverviewToday(): Promise<AdminOverviewToday | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_overview_today");
+  if (error) { console.warn("[Roamly] adminOverviewToday failed", error.message); return null; }
+  return ((data ?? [])[0] as AdminOverviewToday) ?? null;
+}
+
+export async function adminEventStatsToday(): Promise<AdminEventStat[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_event_stats_today");
+  if (error) { console.warn("[Roamly] adminEventStatsToday failed", error.message); return []; }
+  return (data ?? []) as AdminEventStat[];
+}
+
+// Permanent account deletion (admin only). Server cancels Stripe billing first
+// and audits the action; the auth delete cascades through every app table.
+export async function adminDeleteUser(userId: string): Promise<{ ok?: boolean; billingCanceled?: boolean; stripeWarning?: string; error?: string }> {
+  if (!supabase) return { error: "Not available right now." };
+  const { data: auth } = await supabase.auth.getSession();
+  const token = auth.session?.access_token;
+  if (!token) return { error: "Your session expired. Sign in again." };
+  try {
+    const response = await fetch("/api/admin-delete-user", {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ userId }),
+    });
+    const result = await response.json() as { ok?: boolean; billingCanceled?: boolean; stripeWarning?: string; error?: string };
+    if (!response.ok) return { error: result.error || "Couldn't delete the account." };
+    return result;
+  } catch {
+    return { error: "Couldn't reach account administration. Try again." };
+  }
+}
+
 export async function adminListFeedback(limit = 50): Promise<FeedbackRow[]> {
   if (!supabase) return [];
   const { data, error } = await supabase.rpc("admin_list_feedback", { p_limit: limit });
@@ -206,9 +260,9 @@ export async function submitAdSubmission(userId: string, fields: {
     .select("id")
     .single();
   if (!error) return { id: (data as { id: string }).id };
-  if (error.message.includes("does not exist")) return { error: "Ad submissions aren't set up yet — check back soon." };
+  if (error.message.includes("does not exist")) return { error: "Ad submissions aren't set up yet. Check back soon." };
   console.warn("[Roamly] submitAdSubmission failed", error.message);
-  return { error: "Couldn't send that — try again." };
+  return { error: "Couldn't send that. Try again." };
 }
 
 export async function adminListAdSubmissions(limit = 100): Promise<AdSubmissionRow[]> {
@@ -257,7 +311,7 @@ export async function adminFeedbackAction(
     });
     if (res.ok) return null;
     const data = (await res.json().catch(() => ({}))) as { error?: string };
-    return data.error ?? "Couldn't update that ticket — try again.";
+    return data.error ?? "Couldn't update that ticket. Try again.";
   } catch {
     return "Couldn't reach the server. Try again soon.";
   }
@@ -289,9 +343,9 @@ export async function submitFeedback(userId: string, fields: {
     .select("id")
     .single();
   if (!error) return { id: (data as { id: string }).id };
-  if (error.message.includes("does not exist")) return { error: "Feedback isn't set up yet — check back soon." };
+  if (error.message.includes("does not exist")) return { error: "Feedback isn't set up yet. Check back soon." };
   console.warn("[Roamly] submitFeedback failed", error.message);
-  return { error: "Couldn't send that — try again." };
+  return { error: "Couldn't send that. Try again." };
 }
 
 // Best-effort: mirror a just-submitted feedback row to a GitHub issue so it
@@ -327,7 +381,7 @@ export async function sendInvite(email: string, name?: string): Promise<InviteRe
       body: JSON.stringify({ email, name: name?.trim() || undefined }),
     });
     const data = (await res.json().catch(() => ({}))) as InviteResult;
-    if (!res.ok) return { error: data.error ?? "Couldn't send that invite — try again." };
+    if (!res.ok) return { error: data.error ?? "Couldn't send that invite. Try again." };
     return data;
   } catch {
     return { error: "Couldn't reach the server. Try again soon." };
@@ -345,11 +399,12 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   }
   const { data: entitlement, error: entitlementError } = await supabase.rpc("get_my_premium_entitlement");
   if (!entitlementError) {
-    const row = (entitlement as Array<{ is_premium: boolean; source: string | null; expires_at: string | null }> | null)?.[0];
+    const row = (entitlement as Array<{ is_premium: boolean; source: string | null; expires_at: string | null; cancel_at_period_end?: boolean }> | null)?.[0];
     if (row) {
       profile.is_premium = row.is_premium;
       profile.premium_source = row.source;
       profile.premium_expires_at = row.expires_at;
+      profile.premium_cancel_at_period_end = row.cancel_at_period_end === true;
     }
   }
   return profile;
