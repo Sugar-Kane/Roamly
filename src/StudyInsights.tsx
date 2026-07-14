@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarPlus, Check, ChevronLeft, ChevronRight, Clock3, ExternalLink, Lock, LogIn, Pencil, Trash2, Users, X } from "lucide-react";
+import { CalendarPlus, Check, ChevronLeft, ChevronRight, Clock3, Crown, ExternalLink, Lock, LogIn, Pencil, Trash2, Users, X } from "lucide-react";
 import type { Task } from "./data";
 import type { FocusSession } from "./streaks";
 import { MISSED_REASONS, type MissedReason, type PlannedStudyDraft, type PlannedStudyInvite, type PlannedStudySession, type PlannedStudyTarget, type StudyEvent } from "./release3";
@@ -360,11 +360,13 @@ type PlanUpdate = Partial<PlannedStudyDraft> & {
   missed_reason?: MissedReason | null;
 };
 
-export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan, onUpdatePlan, onDeletePlan }: {
+export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, onUpgrade, onCreatePlan, onUpdatePlan, onDeletePlan }: {
   tasks: Task[];
   plans: PlannedStudySession[];
   userId: string | null;
+  isPremium: boolean | null;
   onSignIn: () => void;
+  onUpgrade: () => void;
   onCreatePlan: (row: PlannedStudyDraft) => Promise<PlannedStudySession | null>;
   onUpdatePlan: (id: string, fields: PlanUpdate) => Promise<boolean>;
   onDeletePlan: (id: string) => Promise<boolean>;
@@ -395,7 +397,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan
   );
 
   useEffect(() => {
-    if (!userId) {
+    if (!userId || isPremium !== true) {
       setFriends([]);
       setIncomingInvites([]);
       setInviteActors(new Map());
@@ -419,7 +421,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan
       setInviteActors(profiles);
     })();
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, isPremium]);
 
   const planned = plans
     .filter((plan) => plan.status === "planned")
@@ -534,6 +536,29 @@ export function PlannedStudyPanel({ tasks, plans, userId, onSignIn, onCreatePlan
       <p className="mt-2 text-xs text-muted-foreground">Sign in to plan study days, attach tasks or full categories, invite friends, and sync events across devices and calendars.</p>
       <button onClick={onSignIn} className="mt-3 flex items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow">
         <LogIn size={13} /> Sign in to plan
+      </button>
+    </section>;
+  }
+
+  if (isPremium === null) {
+    return <section aria-label="Loading planned study" className="mt-6 animate-pulse rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+      <div className="h-4 w-32 rounded-full bg-border/60" />
+      <div className="mt-3 h-3 w-3/4 rounded-full bg-border/40" />
+    </section>;
+  }
+
+  if (!isPremium) {
+    return <section className="mt-6 rounded-2xl border border-primary/30 bg-card/80 p-5 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-primary"><Crown size={15} /></span>
+        <div>
+          <h2 className="text-sm font-semibold">Planned study</h2>
+          <p className="text-[11px] font-medium text-primary">Premium feature</p>
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">Upgrade to schedule study days, attach tasks or full categories, invite friends, and sync events across devices and calendars.</p>
+      <button onClick={onUpgrade} className="mt-3 flex items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow">
+        <Crown size={13} /> View Premium
       </button>
     </section>;
   }
