@@ -215,6 +215,11 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByText("5 uploads", { exact: true })).toBeVisible();
   await expect(page.getByText("Upload credits only. This does not unlock Premium.")).toHaveCount(2);
   await expect(page.getByText("Planned study scheduling", { exact: true })).toBeVisible();
+  await expect(page.getByText("No account", { exact: true })).toBeVisible();
+  await expect(page.getByText("Free account", { exact: true })).toBeVisible();
+  await expect(page.getByText("Premium account", { exact: true })).toBeVisible();
+  await expect(page.getByText("5 on this device", { exact: true })).toBeVisible();
+  await expect(page.getByText("Themes", { exact: true })).toHaveCount(0);
 });
 
 test("planned study lives in Tasks and requires an account", async ({ page }) => {
