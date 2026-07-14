@@ -9,10 +9,10 @@ export const PREMIUM_MONTHLY_UPLOAD_QUOTA = 10;
 // Mirrors MAX_UPLOAD_BYTES in api/generate-tasks.ts (the server re-checks, so
 // this is UX, not the safeguard) — bounds a worst-case PDF's AI cost.
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
-const FILE_TOO_LARGE_MSG = "That file is over 12 MB — split big decks into parts and upload them separately.";
+const FILE_TOO_LARGE_MSG = "That file is over 12 MB. Split big decks into parts and upload them separately.";
 
 const CREDITS_EXPLAINER =
-  "Every month you get free AI uploads (3 free, 10 with Premium). Credits are extra uploads you buy once on the Premium page — they never expire and are used automatically after your monthly allowance runs out.";
+  "Every month you get free AI uploads (3 free, 10 with Premium). Credits are extra uploads you buy once on the Premium page. They never expire and are used automatically after your monthly allowance runs out.";
 
 // Keep in sync with ALLOWED_MEDIA_TYPES in api/generate-tasks.ts. Some
 // platforms report an empty MIME for .md/.csv, so the extension map below is
@@ -73,7 +73,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
     setQuotaExceeded(false);
     const mediaType = mediaTypeOf(file);
     if (!mediaType) {
-      setError("Unsupported file type — upload a PDF, photo, Word/PowerPoint file, or plain text (.txt/.md/.csv).");
+      setError("Unsupported file type. Upload a PDF, photo, Word/PowerPoint file, or plain text (.txt/.md/.csv).");
       return;
     }
     if (file.size > MAX_UPLOAD_BYTES) {
@@ -88,7 +88,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       // Upload straight to Storage first — the file never passes through our
       // serverless function, which is capped at a 4.5MB request body by Vercel.
       const storagePath = await uploadStudyMaterial(userId, file);
-      if (!storagePath) { setError("Couldn't upload that file — try again."); setStage("idle"); return; }
+      if (!storagePath) { setError("Couldn't upload that file. Try again."); setStage("idle"); return; }
       setProgress(40);
       setStage("reading");
       // The AI read takes ~5-30s with no progress events — creep the bar toward
@@ -109,7 +109,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
         return;
       }
       if (result.error === "ai_at_capacity") {
-        setError("AI uploads are at capacity this month — they reset on the 1st. You can still add tasks manually.");
+        setError("AI uploads are at capacity this month. They reset on the 1st. You can still add tasks manually.");
         setStage("idle");
         return;
       }
@@ -119,7 +119,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
         return;
       }
       if (!res.ok) {
-        setError(result.error ?? "Something went wrong — try again.");
+        setError(result.error ?? "Something went wrong. Try again.");
         setStage("idle");
         return;
       }
@@ -173,7 +173,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
     return (
       <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
         <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          You've used your monthly AI uploads{isPremium ? "" : ` (${FREE_MONTHLY_UPLOAD_QUOTA} free)`} — and any purchased credits.
+          You've used your monthly AI uploads{isPremium ? "" : ` (${FREE_MONTHLY_UPLOAD_QUOTA} free)`}, and any purchased credits.
           <InfoTip text={CREDITS_EXPLAINER} />
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -211,7 +211,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
           <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
             {stage === "uploading" && "Uploading your file…"}
             {stage === "reading" && "Reading text and using OCR only if needed…"}
-            {stage === "done" && <><Check size={13} className="text-roamly-green" /> Done — {doneCount} task{doneCount === 1 ? "" : "s"} added{processingMode === "ocr_pdf" || processingMode === "ocr_image" ? " using OCR" : ""}.</>}
+            {stage === "done" && <><Check size={13} className="text-roamly-green" /> Done: {doneCount} task{doneCount === 1 ? "" : "s"} added{processingMode === "ocr_pdf" || processingMode === "ocr_image" ? " using OCR" : ""}.</>}
           </p>
           {stage === "done" && (
             <button onClick={() => { setStage("idle"); setProgress(0); }} className="mt-1.5 text-xs text-primary underline-offset-2 hover:underline">

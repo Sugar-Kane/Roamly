@@ -176,7 +176,7 @@ export async function joinRoom(roomId: string, code?: string): Promise<{ room?: 
   if (!error && data?.[0]) return { room: data[0] as LiveRoom };
   if (error?.message.includes("room_access_denied")) return { error: "This private room requires an invitation or valid code." };
   if (error?.message.includes("room_not_found")) return { error: "That room is no longer available." };
-  return { error: "Couldn't join that room — try again." };
+  return { error: "Couldn't join that room. Try again." };
 }
 
 export async function joinRoomByCode(code: string): Promise<{ room?: LiveRoom; error?: string }> {
@@ -184,7 +184,7 @@ export async function joinRoomByCode(code: string): Promise<{ room?: LiveRoom; e
   const { data, error } = await supabase.rpc("join_room_by_code", { p_code: code.trim().toUpperCase() });
   if (!error && data?.[0]) return { room: data[0] as LiveRoom };
   if (error?.message.includes("invalid_invite_code")) return { error: "That invite code isn't valid." };
-  return { error: "Couldn't join that room — try again." };
+  return { error: "Couldn't join that room. Try again." };
 }
 
 export async function deleteRoom(id: string) {
@@ -234,10 +234,10 @@ export async function sendMessage(roomId: string, userId: string, body: string):
   if (!supabase) return "Chat isn't available right now.";
   const { error } = await supabase.from("room_messages").insert({ room_id: roomId, user_id: userId, body });
   if (!error) return null;
-  if (error.message.includes("chat_closed_during_focus")) return "Chat is closed during focus — it opens at the break.";
-  if (error.message.includes("chat_rate_limited")) return "Whoa, slow down a little — you can send more messages in a minute.";
+  if (error.message.includes("chat_closed_during_focus")) return "Chat is closed during focus. It opens at the break.";
+  if (error.message.includes("chat_rate_limited")) return "Whoa, slow down a little. You can send more messages in a minute.";
   console.warn("[Roamly] sendMessage failed", error.message);
-  return "Couldn't send that message — try again.";
+  return "Couldn't send that message. Try again.";
 }
 
 // Room heartbeats: while someone is in a room they upsert a ping every
@@ -288,7 +288,7 @@ export async function sendFriendRequest(targetId: string): Promise<string | null
   if (!error) return null;
   if (error.message.includes("already_exists")) return "You already have a request or friendship with them.";
   console.warn("[Roamly] sendFriendRequest failed", error.message);
-  return "Couldn't send that request — try again.";
+  return "Couldn't send that request. Try again.";
 }
 
 export async function respondFriendRequest(id: string, accept: boolean) {
@@ -332,7 +332,7 @@ export async function inviteToRoom(roomId: string, userId: string): Promise<stri
   if (!error) return null;
   if (error.message.includes("not_friends")) return "You can only invite accepted friends.";
   console.warn("[Roamly] inviteToRoom failed", error.message);
-  return "Couldn't send that invite — try again.";
+  return "Couldn't send that invite. Try again.";
 }
 
 export async function inviteFriendsToPlannedStudy(planId: string, inviterId: string, friendIds: string[]): Promise<string | null> {
@@ -379,7 +379,7 @@ export async function setUsername(username: string): Promise<string | null> {
   if (error.message.includes("invalid_username")) return "3-20 characters: lowercase letters, numbers, underscores.";
   if (error.message.includes("duplicate") || error.message.includes("unique")) return "That username is taken.";
   console.warn("[Roamly] setUsername failed", error.message);
-  return "Couldn't save that username — try again.";
+  return "Couldn't save that username. Try again.";
 }
 
 export async function getPublicProfiles(ids: string[]): Promise<Map<string, PublicProfile>> {

@@ -80,7 +80,7 @@ export async function setStatsPublic(pub: boolean): Promise<string | null> {
   if (!error) return null;
   if (error.message.includes("premium_required")) return "Public sharing is a Premium feature.";
   console.warn("[Roamly] setStatsPublic failed", error.message);
-  return "Couldn't update sharing — try again.";
+  return "Couldn't update sharing. Try again.";
 }
 
 /** Toggle which pet is shown on the timer. */

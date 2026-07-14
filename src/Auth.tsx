@@ -45,7 +45,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
       setLoading(false);
       if (authError) {
         setError(/rate limit/i.test(authError.message) || authError.status === 429
-          ? "Too many sign-up emails right now — wait a few minutes and try again."
+          ? "Too many sign-up emails right now. Wait a few minutes and try again."
           : authError.message);
         return;
       }
@@ -53,7 +53,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
       // when the address is already registered — surface that instead of
       // closing the modal as if it worked.
       if (data.user && data.user.identities?.length === 0) {
-        setError("That email is already registered — sign in instead.");
+        setError("That email is already registered. Sign in instead.");
         setMode("signin");
         return;
       }
@@ -67,7 +67,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
     setLoading(false);
     if (authError) {
       setError(/email not confirmed/i.test(authError.message)
-        ? "Your email isn't verified yet — click the link in your confirmation email (check spam), then sign in."
+        ? "Your email isn't verified yet. Click the link in your confirmation email (check spam), then sign in."
         : authError.message);
       return;
     }
@@ -97,7 +97,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
           Click it to activate your account.
         </p>
         <p className="mt-2 rounded-xl border border-dashed border-border p-2.5 text-center text-xs text-muted-foreground">
-          Nothing there after a minute? <span className="font-medium text-foreground">Check your spam folder</span> — the sender is Roamly.
+          Nothing there after a minute? <span className="font-medium text-foreground">Check your spam folder</span>. The sender is Roamly.
         </p>
         <button onClick={onClose} className="mt-4 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
           Got it

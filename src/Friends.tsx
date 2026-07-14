@@ -91,10 +91,10 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
     setInvitedEmail(addr.toLowerCase());
     setInviteMsg(
       res.status === "friend_request"
-        ? "They're already on Roamly — friend request sent."
+        ? "They're already on Roamly. Friend request sent."
         : res.note === "resent"
-          ? "Invite re-sent — they'll get a fresh email."
-          : "Invite sent — they'll get an email to join."
+          ? "Invite re-sent. They'll get a fresh email."
+          : "Invite sent. They'll get an email to join."
     );
     reload();
   };
@@ -196,7 +196,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
               <div className="min-w-0">
                 <p className="flex items-center gap-1.5 text-xs font-medium"><Crown size={12} className="text-roamly-purple" /> Share stats with friends</p>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {statsPublic ? "Any friend can compare stats with you — no request needed." : "Off — friends must request to compare. Premium."}
+                  {statsPublic ? "Any friend can compare stats with you, no request needed." : "Off: friends must request to compare. Premium."}
                 </p>
               </div>
               <button role="switch" aria-checked={statsPublic} aria-label="Share stats publicly with friends" onClick={toggleStatsPublic}
@@ -220,7 +220,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
                   <>
                     <p className="text-xs text-muted-foreground">No Roamly account uses that email yet.</p>
                     <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={60}
-                      placeholder="Their name — shown on the invite"
+                      placeholder="Their name, shown on the invite"
                       className="mt-2 w-full rounded-xl border border-border bg-card px-3 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
                     <button onClick={() => invite(query.trim(), inviteName)} disabled={inviting}
                       className="mt-2 flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
@@ -302,7 +302,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
             <section className="mt-5">
               <h4 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Your friends</h4>
               {accepted.length === 0 && outgoing.length === 0 && (
-                <p className="mt-2 text-sm text-muted-foreground">No friends yet — search above to add classmates.</p>
+                <p className="mt-2 text-sm text-muted-foreground">No friends yet. Search above to add classmates.</p>
               )}
               <div className="mt-2 space-y-1.5">
                 {accepted.map((f) => {

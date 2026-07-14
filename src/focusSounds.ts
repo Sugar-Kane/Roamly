@@ -29,6 +29,14 @@ let teardown: (() => void) | null = null; // stops this sound's sources/timers
 let currentVolume = 0.5;
 let keeper: HTMLAudioElement | null = null;
 
+// Fired every time a focus sound starts, from ANY path (the sound picker, the
+// timer's auto-play, room music). App subscribes to stop the Spotify/Apple
+// embeds so the two audio sources never play over each other.
+let onPlaybackStart: (() => void) | null = null;
+export function setOnPlaybackStart(cb: (() => void) | null) {
+  onPlaybackStart = cb;
+}
+
 // ---- real recorded tracks (Café music) ----
 // Free-license instrumentals (Kevin MacLeod, CC0/CC-BY — see the manifest for
 // per-track licensing) bundled under /audio/lofi by the fetch-music workflow.
@@ -779,6 +787,7 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   teardown = stop;
   // Real-track stations overwrite this with per-track metadata as they play.
   announcePlayback(FOCUS_SOUNDS.find((s) => s.id === id)?.name ?? "Focus sounds");
+  onPlaybackStart?.();
 }
 
 export function focusSoundActive(): boolean {

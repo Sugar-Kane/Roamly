@@ -78,7 +78,7 @@ export function StudyInsights({ events, daily, plans }: { events: StudyEvent[]; 
         <div><h2 className="text-sm font-semibold">Study breakdown</h2><p className="mt-0.5 text-xs text-muted-foreground">Task and category detail is recorded from Release 3 onward; older time stays Uncategorized.</p></div>
         <div className="flex rounded-full border border-border bg-card p-1">{(Object.keys(RANGE_LABEL) as Range[]).map((r) => <button key={r} onClick={() => setRange(r)} aria-pressed={range === r} className={`rounded-full px-3 py-1 text-xs ${range === r ? "bg-primary text-white" : "text-muted-foreground"}`}>{RANGE_LABEL[r]}</button>)}</div>
       </div>
-      <div className="mt-4 grid grid-cols-3 gap-3"><Metric label="Focus time" value={duration(total)} /><Metric label="Sessions" value={String(sessionCount)} /><Metric label="Average" value={average ? duration(average) : "—"} /></div>
+      <div className="mt-4 grid grid-cols-3 gap-3"><Metric label="Focus time" value={duration(total)} /><Metric label="Sessions" value={String(sessionCount)} /><Metric label="Average" value={average ? duration(average) : "-"} /></div>
       <div className="mt-5 grid gap-5 md:grid-cols-2"><Breakdown title="Study time by category" rows={categories} categorySummary /><Breakdown title="Study time by task" rows={taskRows} /></div>
       <div className="mt-5 grid gap-4 md:grid-cols-3"><Trend title="Daily trend" rows={trendGroups.daily} /><Trend title="Weekly trend" rows={trendGroups.weekly} /><Trend title="Monthly trend" rows={trendGroups.monthly} /></div>
     </section>
@@ -135,7 +135,7 @@ function StudyPostMortem({ plans, range }: { plans: PlannedStudySession[]; range
       <p className="mt-0.5 text-xs text-muted-foreground">Skipped sessions are feedback, not failure. Tag what got in the way and Roamly will turn it into patterns you can use.</p>
     </div>
     <div className="mt-4 grid grid-cols-3 gap-3">
-      <Metric label="Follow-through" value={analysis.completionRate === null ? "—" : `${analysis.completionRate}%`} />
+      <Metric label="Follow-through" value={analysis.completionRate === null ? "-" : `${analysis.completionRate}%`} />
       <Metric label="Completed plans" value={String(analysis.completed)} />
       <Metric label="Tagged misses" value={String(analysis.tagged)} />
     </div>

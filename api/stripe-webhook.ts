@@ -14,6 +14,7 @@ type SubscriptionSnapshot = {
   status: string;
   customer: string | { id: string };
   current_period_end?: number;
+  cancel_at_period_end?: boolean;
   items?: { data?: Array<{ price?: { id?: string }; current_period_end?: number }> };
 };
 
@@ -49,14 +50,25 @@ async function processSubscription(
   };
   // Stripe does not guarantee webhook ordering; p_event_created lets the RPC
   // ignore an out-of-order status change (e.g. a delayed "active" arriving after
-  // a cancel). That parameter only exists after the release-6 migration, so if
-  // this code deploys first, fall back to the pre-migration signature — the
+  // a cancel), and p_cancel_at_period_end (release 12) records a pending cancel
+  // so the app can show "Premium ends on <date>". Each parameter only exists
+  // after its migration, so fall back through the older signatures — the
   // webhook must never start failing just because the DB hasn't migrated yet.
+  const eventCreated = new Date(event.created * 1000).toISOString();
+  const isSignatureError = (e: { code?: string; message: string }) =>
+    e.code === "PGRST202" || /find the function|does not exist/i.test(e.message);
   let { data, error } = await admin.rpc("process_stripe_subscription_event", {
     ...baseParams,
-    p_event_created: new Date(event.created * 1000).toISOString(),
+    p_event_created: eventCreated,
+    p_cancel_at_period_end: snapshot.cancel_at_period_end === true,
   });
-  if (error && (error.code === "PGRST202" || /find the function|does not exist/i.test(error.message))) {
+  if (error && isSignatureError(error)) {
+    ({ data, error } = await admin.rpc("process_stripe_subscription_event", {
+      ...baseParams,
+      p_event_created: eventCreated,
+    }));
+  }
+  if (error && isSignatureError(error)) {
     ({ data, error } = await admin.rpc("process_stripe_subscription_event", baseParams));
   }
   if (error) throw error;

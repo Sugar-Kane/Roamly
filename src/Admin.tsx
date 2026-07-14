@@ -1,17 +1,21 @@
-// Admin dashboard — usage metrics, feedback inbox, client-error log, invites,
+// Admin dashboard: usage metrics, feedback inbox, client-error log, invites,
 // and Premium management. Extracted from App.tsx to keep that file focused.
 // Every data call is a SECURITY DEFINER RPC gated on is_admin() server-side.
-import { useEffect, useState } from "react";
-import { Crown, Search, ExternalLink, Trash2 } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Crown, Search, ExternalLink, Trash2, ChevronDown, ChevronRight, ArrowUpDown } from "lucide-react";
 import {
-  adminSearchUsers, adminGrantPremium, adminRevokePremium, sendInvite,
+  adminSearchUsers, adminGrantPremium, adminRevokePremium, adminDeleteUser, sendInvite,
   adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, adminListErrors,
-  adminUserActivity, adminFeedbackAction,
+  adminUserActivity, adminFeedbackAction, adminUsageUsers, adminOverviewToday, adminEventStatsToday,
   adminListAdSubmissions, adminSetAdSubmissionStatus, adminDeleteAdSubmission,
   type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity,
+  type AdminUsageUser, type AdminOverviewToday,
   type FeedbackRow, type ErrorRow, type UserActivityRow,
   type AdSubmissionRow, type AdStatus,
 } from "./db";
+
+const AdminActivityChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminActivityChart })));
+const DeviceDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 
 // "3m ago" / "2h ago" / "Apr 5" — compact relative time for activity/ticket rows.
 function relTime(iso: string): string {
@@ -48,7 +52,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     setInviteMsg({
       ok: true,
       text: res.status === "friend_request"
-        ? "Already a user — friend request sent."
+        ? "Already a user. Friend request sent."
         : res.note === "resent"
           ? `Invite re-sent to ${inviteEmail.trim()}.`
           : `Invite emailed to ${inviteEmail.trim()}.`,
@@ -80,10 +84,27 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     const result = await adminRevokePremium(u.id);
     setBusyId(null);
     if (result.error) { setError(result.error); return; }
-    // Access is revoked even when Stripe couldn't cancel — surface the
+    // Access is revoked even when Stripe couldn't cancel; surface the
     // follow-up so the admin checks the Stripe dashboard.
     if (result.stripeWarning) setError(`Roamly access revoked. ${result.stripeWarning}`);
     setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: false } : r)));
+  };
+
+  // Permanent, typed-confirmation account deletion. Billing is canceled server-
+  // side first; the auth delete cascades through every app table.
+  const deleteAccount = async (u: AdminUser) => {
+    const label = u.display_name || u.username || u.email || "this user";
+    const typed = window.prompt(
+      `PERMANENTLY delete the account for ${label}?\n\nThis cancels their Stripe billing and erases their profile, tasks, focus history, gamification, rooms, and feedback. It cannot be undone.\n\nType DELETE to confirm.`
+    );
+    if (typed !== "DELETE") return;
+    setBusyId(`${u.id}:delete`);
+    setError(null);
+    const result = await adminDeleteUser(u.id);
+    setBusyId(null);
+    if (result.error) { setError(result.error); return; }
+    if (result.stripeWarning) setError(`Account deleted. ${result.stripeWarning}`);
+    setResults((prev) => prev.filter((r) => r.id !== u.id));
   };
 
   const [tab, setTab] = useState<"usage" | "feedback" | "ads" | "errors" | "users">("usage");
@@ -145,7 +166,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       <h2 className="mt-8 text-sm font-semibold">Manage Premium</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">Everyone's listed below — search to filter by email, username, or name.</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">Everyone's listed below. Search to filter by email, username, or name.</p>
       <div className="mt-3 flex gap-2">
         <input value={query}
           onChange={(e) => {
@@ -170,31 +191,42 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
           <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">{query.trim() ? "No users match that search." : "No users yet."}</p>
         )}
         {results.map((u) => (
-          <div key={u.id} className="flex items-center gap-3 rounded-xl border border-border bg-card/70 p-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{u.display_name || u.username || u.email || "Unnamed user"}</p>
-              <p className="truncate text-xs text-muted-foreground">{u.email}{u.username ? ` · @${u.username}` : ""}</p>
-            </div>
-            {u.is_premium && (
-              <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                <Crown size={11} /> Premium
-              </span>
-            )}
-            <div className="flex shrink-0 gap-1">
+          <div key={u.id} className="rounded-xl border border-border bg-card/70 p-3">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{u.display_name || u.username || u.email || "Unnamed user"}</p>
+                <p className="truncate text-xs text-muted-foreground">{u.email}{u.username ? ` · @${u.username}` : ""}</p>
+                <p className="truncate text-[11px] text-muted-foreground">
+                  {u.ai_credits ?? 0} credit{(u.ai_credits ?? 0) === 1 ? "" : "s"}
+                  {typeof u.ai_uploads_count === "number" ? ` · ${u.ai_uploads_count} upload${u.ai_uploads_count === 1 ? "" : "s"} used${u.ai_uploads_period ? ` in ${u.ai_uploads_period}` : ""}` : ""}
+                  {u.is_premium && u.premium_expires_at ? ` · Premium through ${new Date(u.premium_expires_at).toLocaleDateString()}` : ""}
+                </p>
+              </div>
               {u.is_premium && (
-                <button onClick={() => revoke(u)} disabled={busyId !== null}
-                  className="rounded-full border border-destructive/50 px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50">
-                  {busyId === `${u.id}:revoke` ? "…" : "Revoke"}
-                </button>
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                  <Crown size={11} /> Premium
+                </span>
               )}
-              <button onClick={() => grant(u, 1)} disabled={busyId !== null}
-                className="rounded-full border border-primary/50 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20 disabled:opacity-50">
-                {busyId === `${u.id}:1` ? "…" : "+1 month"}
-              </button>
-              <button onClick={() => grant(u, 12)} disabled={busyId !== null}
-                className="rounded-full gradient-primary px-2.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
-                {busyId === `${u.id}:12` ? "…" : "+1 year"}
-              </button>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                {u.is_premium && (
+                  <button onClick={() => revoke(u)} disabled={busyId !== null}
+                    className="rounded-full border border-destructive/50 px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50">
+                    {busyId === `${u.id}:revoke` ? "…" : "Revoke"}
+                  </button>
+                )}
+                <button onClick={() => grant(u, 1)} disabled={busyId !== null}
+                  className="rounded-full border border-primary/50 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20 disabled:opacity-50">
+                  {busyId === `${u.id}:1` ? "…" : "+1 month"}
+                </button>
+                <button onClick={() => grant(u, 12)} disabled={busyId !== null}
+                  className="rounded-full gradient-primary px-2.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
+                  {busyId === `${u.id}:12` ? "…" : "+1 year"}
+                </button>
+                <button onClick={() => deleteAccount(u)} disabled={busyId !== null} aria-label={`Delete account for ${u.email ?? u.id}`}
+                  className="rounded-full border border-destructive/50 px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50">
+                  {busyId === `${u.id}:delete` ? "…" : <Trash2 size={12} className="inline" />}
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -210,6 +242,7 @@ const EVENT_LABELS: Record<string, string> = {
   view_focus: "Focus tab visits",
   view_tasks: "Tasks tab visits",
   view_rooms: "Rooms tab visits",
+  view_garden: "Garden tab visits",
   view_analytics: "Analytics tab visits",
   view_premium: "Premium page visits",
   view_admin: "Admin page visits",
@@ -232,53 +265,84 @@ const EVENT_LABELS: Record<string, string> = {
   buy_credits: "Credit pack checkout",
 };
 
+type UsageRange = "today" | 7 | 14 | 30 | 90;
+type UserSort = "events" | "last_active" | "credits" | "name" | "premium";
+type FeatureSort = "total" | "users" | "name";
+
 function AdminUsage() {
-  const [days, setDays] = useState(14);
+  const [range, setRange] = useState<UsageRange>(14);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [today, setToday] = useState<AdminOverviewToday | null>(null);
   const [stats, setStats] = useState<AdminEventStat[]>([]);
   const [daily, setDaily] = useState<AdminDailyActivity[]>([]);
+  const [usageUsers, setUsageUsers] = useState<AdminUsageUser[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  useEffect(() => { adminOverview().then(setOverview); }, []);
+  useEffect(() => { adminOverview().then(setOverview); adminOverviewToday().then(setToday); }, []);
   useEffect(() => {
     let alive = true;
     setLoaded(false);
-    Promise.all([adminEventStats(days), adminDailyActivity(days)]).then(([s, d]) => {
+    // "Today" swaps in calendar-day stats; the users rollup uses a rolling
+    // 24h window (days=1), which is the closest the RPC offers.
+    const days = range === "today" ? 1 : range;
+    Promise.all([
+      range === "today" ? adminEventStatsToday() : adminEventStats(days),
+      adminDailyActivity(range === "today" ? 7 : days),
+      adminUsageUsers(days),
+    ]).then(([s, d, u]) => {
       if (!alive) return;
       setStats(s);
       setDaily(d);
+      setUsageUsers(u);
       setLoaded(true);
     });
     return () => { alive = false; };
-  }, [days]);
+  }, [range]);
 
   const tiles = [
     { label: "Students", value: overview?.total_users },
     { label: "Premium", value: overview?.premium_users },
     { label: "Active this week", value: overview?.active_7d },
-    { label: "Feedback", value: overview?.feedback_total },
+    { label: "Active today", value: today?.active_users_today },
+    { label: "Actions today", value: today?.events_today },
+    { label: "Focus minutes today", value: today?.focus_minutes_today },
   ];
+
+  // Device split across the selected window, for the donut.
+  const deviceSplit = useMemo(() => {
+    const phone = stats.reduce((sum, s) => sum + s.phone, 0);
+    const pc = stats.reduce((sum, s) => sum + s.pc, 0);
+    if (phone + pc === 0) return [];
+    return [
+      { name: "Phone / tablet", value: phone, color: "hsl(var(--primary))" },
+      { name: "Computer", value: pc, color: "hsl(var(--primary) / 0.35)" },
+    ];
+  }, [stats]);
+
+  const chartDays = useMemo(() => [...daily].reverse().map((d) => ({
+    day: new Date(`${d.day}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    active_users: d.active_users,
+    events: d.events,
+  })), [daily]);
 
   return (
     <div className="mt-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {tiles.map((t) => (
           <div key={t.label} className="rounded-2xl border border-border bg-card/70 p-3.5">
-            <p className="font-display text-2xl font-semibold">{t.value ?? "—"}</p>
+            <p className="font-display text-2xl font-semibold">{t.value ?? "-"}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{t.label}</p>
           </div>
         ))}
       </div>
 
-      <UserActivitySearch />
-
-      <div className="mt-6 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Feature usage</h2>
+      <div className="mt-5 flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Usage window</h2>
         <div className="flex gap-1">
-          {[7, 14, 30].map((d) => (
-            <button key={d} onClick={() => setDays(d)} aria-pressed={days === d}
-              className={`rounded-full border px-2.5 py-1 text-xs transition ${days === d ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
-              {d}d
+          {(["today", 7, 14, 30, 90] as const).map((r) => (
+            <button key={r} onClick={() => setRange(r)} aria-pressed={range === r}
+              className={`rounded-full border px-2.5 py-1 text-xs transition ${range === r ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+              {r === "today" ? "Today" : `${r}d`}
             </button>
           ))}
         </div>
@@ -287,41 +351,187 @@ function AdminUsage() {
       {!loaded && <p className="mt-3 text-sm text-muted-foreground">Loading usage…</p>}
       {loaded && stats.length === 0 && (
         <p className="mt-3 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
-          No usage recorded yet. Data starts flowing once the metrics update is applied in Supabase and signed-in users start clicking around.
+          No usage recorded {range === "today" ? "today yet" : "in this window"}. Data flows as signed-in users click around.
         </p>
-      )}
-      {stats.length > 0 && (
-        <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card/70">
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            <span>Feature</span><span className="text-right">Uses</span><span className="text-right">Students</span><span className="text-right">📱</span><span className="text-right">💻</span>
-          </div>
-          {stats.map((s) => (
-            <div key={s.name} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
-              <span className="min-w-0 truncate">{EVENT_LABELS[s.name] ?? s.name}</span>
-              <span className="text-right font-mono text-xs">{s.total}</span>
-              <span className="text-right font-mono text-xs">{s.users}</span>
-              <span className="text-right font-mono text-xs text-muted-foreground">{s.phone}</span>
-              <span className="text-right font-mono text-xs text-muted-foreground">{s.pc}</span>
-            </div>
-          ))}
-        </div>
       )}
 
       {daily.length > 0 && (
-        <>
-          <h2 className="mt-6 text-sm font-semibold">Active students per day</h2>
-          <div className="mt-3 overflow-hidden rounded-2xl border border-border bg-card/70">
-            {daily.map((d) => (
-              <div key={d.day} className="flex items-center justify-between border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
-                <span className="text-muted-foreground">
-                  {new Date(`${d.day}T00:00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-                </span>
-                <span className="font-mono text-xs">{d.active_users} student{d.active_users === 1 ? "" : "s"} · {d.events} actions</span>
-              </div>
+        <div className="mt-4 rounded-2xl border border-border bg-card/70 p-4">
+          <h3 className="text-sm font-semibold">Active students per day</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">Solid bars are unique students; lighter bars are total actions.</p>
+          <div className="mt-3 h-44">
+            <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-border/40" />}>
+              <AdminActivityChart days={chartDays} />
+            </Suspense>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-[1fr_180px]">
+        <FeatureTable stats={stats} />
+        {deviceSplit.length > 0 && (
+          <div className="rounded-2xl border border-border bg-card/70 p-4">
+            <h3 className="text-sm font-semibold">Devices</h3>
+            <div className="mt-2 h-36">
+              <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-border/40" />}>
+                <DeviceDonut subjectSplit={deviceSplit} />
+              </Suspense>
+            </div>
+            {deviceSplit.map((d) => (
+              <p key={d.name} className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="h-2 w-2 rounded-full" style={{ background: d.color }} /> {d.name}: {d.value}
+              </p>
             ))}
           </div>
-        </>
-      )}
+        )}
+      </div>
+
+      <UsageUserTable users={usageUsers} rangeLabel={range === "today" ? "last 24 h" : `${range} days`} />
+
+      <UserActivitySearch />
+    </div>
+  );
+}
+
+// Sortable per-feature table for the selected window.
+function FeatureTable({ stats }: { stats: AdminEventStat[] }) {
+  const [sort, setSort] = useState<FeatureSort>("total");
+  const [filter, setFilter] = useState("");
+
+  const shown = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    const rows = stats.filter((s) => !q || (EVENT_LABELS[s.name] ?? s.name).toLowerCase().includes(q));
+    return [...rows].sort((a, b) => sort === "name"
+      ? (EVENT_LABELS[a.name] ?? a.name).localeCompare(EVENT_LABELS[b.name] ?? b.name)
+      : b[sort] - a[sort]);
+  }, [stats, sort, filter]);
+
+  if (stats.length === 0) return null;
+  const sortButton = (key: FeatureSort, label: string, align = "text-right") => (
+    <button onClick={() => setSort(key)} className={`flex items-center gap-0.5 ${align === "text-right" ? "justify-end" : ""} ${sort === key ? "text-primary" : ""}`}>
+      {label} <ArrowUpDown size={10} className="shrink-0 opacity-60" />
+    </button>
+  );
+
+  return (
+    <div className="min-w-0">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">Feature usage</h3>
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter features…"
+          className="w-36 rounded-lg border border-border bg-card px-2.5 py-1 text-xs outline-none focus:border-primary" />
+      </div>
+      <div className="mt-2 overflow-hidden rounded-2xl border border-border bg-card/70">
+        <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {sortButton("name", "Feature", "")}
+          {sortButton("total", "Uses")}
+          {sortButton("users", "Students")}
+          <span className="text-right">📱</span><span className="text-right">💻</span>
+        </div>
+        {shown.map((s) => (
+          <div key={s.name} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-x-4 border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
+            <span className="min-w-0 truncate">{EVENT_LABELS[s.name] ?? s.name}</span>
+            <span className="text-right font-mono text-xs">{s.total}</span>
+            <span className="text-right font-mono text-xs">{s.users}</span>
+            <span className="text-right font-mono text-xs text-muted-foreground">{s.phone}</span>
+            <span className="text-right font-mono text-xs text-muted-foreground">{s.pc}</span>
+          </div>
+        ))}
+        {shown.length === 0 && <p className="px-4 py-3 text-xs text-muted-foreground">No features match that filter.</p>}
+      </div>
+    </div>
+  );
+}
+
+// Every student with their activity in the window: filterable, sortable, and
+// expandable to a per-feature breakdown for that one user.
+function UsageUserTable({ users, rangeLabel }: { users: AdminUsageUser[]; rangeLabel: string }) {
+  const [filter, setFilter] = useState("");
+  const [sort, setSort] = useState<UserSort>("events");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const shown = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    const rows = users.filter((u) => !q
+      || (u.email ?? "").toLowerCase().includes(q)
+      || (u.username ?? "").toLowerCase().includes(q)
+      || (u.display_name ?? "").toLowerCase().includes(q));
+    const nameOf = (u: AdminUsageUser) => (u.display_name || u.username || u.email || "").toLowerCase();
+    return [...rows].sort((a, b) => {
+      switch (sort) {
+        case "name": return nameOf(a).localeCompare(nameOf(b));
+        case "premium": return Number(b.is_premium) - Number(a.is_premium) || b.total_events - a.total_events;
+        case "credits": return b.ai_credits - a.ai_credits || b.total_events - a.total_events;
+        case "last_active": return (b.last_active ?? "").localeCompare(a.last_active ?? "");
+        default: return b.total_events - a.total_events;
+      }
+    });
+  }, [users, filter, sort]);
+
+  if (users.length === 0) return null;
+  const sortButton = (key: UserSort, label: string) => (
+    <button onClick={() => setSort(key)} className={`flex items-center gap-0.5 ${sort === key ? "text-primary" : ""}`}>
+      {label} <ArrowUpDown size={10} className="shrink-0 opacity-60" />
+    </button>
+  );
+
+  return (
+    <div className="mt-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">Students ({rangeLabel})</h3>
+          <p className="text-[11px] text-muted-foreground">Tap a row for that student's per-feature breakdown.</p>
+        </div>
+        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter students…"
+          className="w-44 rounded-lg border border-border bg-card px-2.5 py-1 text-xs outline-none focus:border-primary" />
+      </div>
+      <div className="mt-2 overflow-x-auto rounded-2xl border border-border bg-card/70">
+        <div className="min-w-[540px]">
+          <div className="grid grid-cols-[1.6fr_auto_auto_auto_auto] items-center gap-x-4 border-b border-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {sortButton("name", "Student")}
+            {sortButton("premium", "Plan")}
+            {sortButton("credits", "Credits")}
+            {sortButton("events", "Actions")}
+            {sortButton("last_active", "Last active")}
+          </div>
+          {shown.map((u) => {
+            const open = openId === u.id;
+            const features = Object.entries(u.feature_counts ?? {}).sort((a, b) => b[1] - a[1]);
+            return (
+              <div key={u.id} className="border-b border-border/50 last:border-b-0">
+                <button onClick={() => setOpenId(open ? null : u.id)}
+                  className="grid w-full grid-cols-[1.6fr_auto_auto_auto_auto] items-center gap-x-4 px-4 py-2 text-left text-sm transition hover:bg-secondary/40">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {open ? <ChevronDown size={12} className="shrink-0 text-muted-foreground" /> : <ChevronRight size={12} className="shrink-0 text-muted-foreground" />}
+                    <span className="min-w-0 truncate">{u.display_name || u.username || u.email || "Unnamed"}</span>
+                  </span>
+                  <span className="text-right text-xs">{u.is_premium ? <Crown size={12} className="inline text-primary" /> : <span className="text-muted-foreground">Free</span>}</span>
+                  <span className="text-right font-mono text-xs">{u.ai_credits}</span>
+                  <span className="text-right font-mono text-xs">{u.total_events}</span>
+                  <span className="text-right font-mono text-[11px] text-muted-foreground">{u.last_active ? relTime(u.last_active) : "-"}</span>
+                </button>
+                {open && (
+                  <div className="bg-secondary/30 px-4 py-2.5">
+                    <p className="truncate text-[11px] text-muted-foreground">{u.email}{u.username ? ` · @${u.username}` : ""}</p>
+                    {features.length === 0 ? (
+                      <p className="mt-1 text-xs text-muted-foreground">No activity in this window.</p>
+                    ) : (
+                      <div className="mt-1.5 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                        {features.map(([name, count]) => (
+                          <div key={name} className="flex items-center justify-between gap-3 text-xs">
+                            <span className="min-w-0 truncate text-muted-foreground">{EVENT_LABELS[name] ?? name}</span>
+                            <span className="font-mono">{count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {shown.length === 0 && <p className="px-4 py-3 text-xs text-muted-foreground">No students match that filter.</p>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -349,7 +559,7 @@ function UserActivitySearch() {
   return (
     <div className="mt-6 rounded-2xl border border-border bg-card/70 p-4">
       <h2 className="text-sm font-semibold">Search a user's activity</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">See what a specific student clicks on — search by email, username, or name.</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">See what a specific student clicks on. Search by email, username, or name.</p>
       <div className="mt-3 flex gap-2">
         <div className="relative min-w-0 flex-1">
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -374,7 +584,7 @@ function UserActivitySearch() {
           {who && (
             <p className="mt-3 text-xs text-muted-foreground">
               Showing <span className="font-medium text-foreground">{who.name || who.username || who.email}</span>
-              {who.email ? ` · ${who.email}` : ""} — {rows.length} recent action{rows.length === 1 ? "" : "s"}
+              {who.email ? ` · ${who.email}` : ""}: {rows.length} recent action{rows.length === 1 ? "" : "s"}
             </p>
           )}
           <div className="mt-2 max-h-96 overflow-y-auto rounded-xl border border-border">
@@ -406,30 +616,39 @@ const FEEDBACK_STYLE: Record<string, { label: string; cls: string }> = {
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   open: { label: "Open", cls: "bg-primary/10 text-primary" },
   in_progress: { label: "In progress", cls: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
-  done: { label: "Done", cls: "bg-roamly-green/10 text-roamly-green" },
+  done: { label: "Done · archived", cls: "bg-roamly-green/10 text-roamly-green" },
 };
 const STATUS_ORDER = ["open", "in_progress", "done"] as const;
 
+// Done tickets are treated as ARCHIVED: the default view shows only active
+// work (open + in progress), and marking a ticket done moves it to the
+// Archived filter immediately, keeping the inbox focused.
 function AdminFeedback() {
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [filter, setFilter] = useState<"all" | "open" | "in_progress" | "done">("all");
+  const [filter, setFilter] = useState<"active" | "open" | "in_progress" | "archived">("active");
 
   const load = () => adminListFeedback(100).then((r) => { setRows(r); setLoaded(true); });
   useEffect(() => { load(); }, []);
 
-  const shown = filter === "all" ? rows : rows.filter((r) => r.status === filter);
+  const shown = rows.filter((r) =>
+    filter === "active" ? r.status !== "done"
+      : filter === "archived" ? r.status === "done"
+        : r.status === filter);
 
   const patchRow = (id: string, fields: Partial<FeedbackRow>) =>
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...fields } : r)));
 
+  const FILTER_LABEL: Record<typeof filter, string> = { active: "Active", open: "Open", in_progress: "In progress", archived: "Archived" };
+  const archivedCount = rows.filter((r) => r.status === "done").length;
+
   return (
     <div className="mt-5">
       <div className="flex flex-wrap gap-1.5">
-        {(["all", "open", "in_progress", "done"] as const).map((id) => (
+        {(["active", "open", "in_progress", "archived"] as const).map((id) => (
           <button key={id} onClick={() => setFilter(id)} aria-pressed={filter === id}
             className={`rounded-full border px-3 py-1 text-xs font-medium transition ${filter === id ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
-            {id === "all" ? "All" : STATUS_META[id].label}
+            {FILTER_LABEL[id]}{id === "archived" && archivedCount > 0 ? ` (${archivedCount})` : ""}
           </button>
         ))}
       </div>
@@ -438,9 +657,11 @@ function AdminFeedback() {
         {!loaded && <p className="text-sm text-muted-foreground">Loading feedback…</p>}
         {loaded && shown.length === 0 && (
           <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
-            {filter === "all"
-              ? "No feedback yet. Users can send it from their profile menu → Send feedback."
-              : `No ${STATUS_META[filter].label.toLowerCase()} tickets.`}
+            {filter === "active"
+              ? "No active tickets. Users can send feedback from their profile menu → Send feedback."
+              : filter === "archived"
+                ? "Nothing archived yet. Tickets land here when they're marked done."
+                : `No ${FILTER_LABEL[filter].toLowerCase()} tickets.`}
           </p>
         )}
         {shown.map((f) => (
@@ -591,7 +812,7 @@ function FeedbackTicket({ f, onPatch, onDelete }: {
       {/* Reply */}
       <div className="mt-2.5">
         <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={2}
-          placeholder="Internal note / reply — also posted on the GitHub issue if linked…"
+          placeholder="Internal note / reply, also posted on the GitHub issue if linked…"
           className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
         <div className="mt-1.5 flex items-center gap-2">
           <button onClick={sendReply} disabled={busy === "reply" || !reply.trim()}

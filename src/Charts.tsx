@@ -27,3 +27,20 @@ export function SubjectDonut({ subjectSplit }: { subjectSplit: { name: string; v
     </ResponsiveContainer>
   );
 }
+
+// Admin dashboard: active students per day. Same themed bar treatment as
+// WeekChart, but with a labeled tooltip carrying both students and events.
+export function AdminActivityChart({ days }: { days: { day: string; active_users: number; events: number }[] }) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={days}>
+        <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+        <Tooltip cursor={{ fill: "hsl(var(--primary) / 0.08)" }}
+          contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, color: "hsl(var(--card-foreground))" }}
+          formatter={(value, key) => [value ?? 0, key === "active_users" ? "Students" : "Actions"]} />
+        <Bar dataKey="active_users" radius={[6, 6, 0, 0]} fill="hsl(var(--primary))" />
+        <Bar dataKey="events" radius={[6, 6, 0, 0]} fill="hsl(var(--primary) / 0.35)" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}

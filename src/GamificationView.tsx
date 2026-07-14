@@ -38,7 +38,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
   return (
     <div className="mx-auto max-w-4xl">
       <h1 className="flex items-center gap-2 font-display text-3xl font-semibold"><Sprout size={26} className="text-roamly-green" /> Garden</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Level up by studying — earn pets, grow plants, and unlock rewards.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Level up by studying. Earn pets, grow plants, and unlock rewards.</p>
 
       {/* Level + XP + live companion preview */}
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">

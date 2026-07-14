@@ -37,7 +37,7 @@ export function AdBreakPrompt({ active, onAdvertise, onGoPremium }: {
         <h3 className="font-display text-sm font-semibold">Advertise on Roamly</h3>
       </div>
       <p className="mt-1 text-xs leading-snug text-muted-foreground">
-        Reach focused students on their break. Submit a TikTok, reel, business video, or image ad — we review each one.
+        Reach focused students on their break. Submit a TikTok, reel, business video, or image ad. We review each one.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button onClick={onAdvertise}
@@ -97,7 +97,7 @@ export function AdSubmitModal({ userId, onClose }: { userId: string; onClose: ()
 
       {done ? (
         <div className="mt-4">
-          <h3 className="font-display text-xl font-semibold">Thanks — we got it!</h3>
+          <h3 className="font-display text-xl font-semibold">Thanks, we got it!</h3>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Our team reviews every ad and will reach out at the email you gave us to sort out the details and billing.
           </p>
@@ -108,7 +108,7 @@ export function AdSubmitModal({ userId, onClose }: { userId: string; onClose: ()
       ) : (
         <>
           <h3 className="mt-4 font-display text-xl font-semibold">Advertise on Roamly</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Tell us about your ad — we review every submission before it runs.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Tell us about your ad. We review every submission before it runs.</p>
 
           <p className="mt-4 text-xs font-medium text-muted-foreground">Ad type</p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">

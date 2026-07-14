@@ -112,10 +112,10 @@ function HowRoomsWork() {
         <button onClick={dismiss} className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">Got it</button>
       </div>
       <ol className="mt-2.5 space-y-2 text-sm text-muted-foreground">
-        <li className="flex gap-2"><span className="font-semibold text-primary">1.</span> With an account, pick a room and hit Join — the timer inside is already running, and everyone in the room shares it.</li>
+        <li className="flex gap-2"><span className="font-semibold text-primary">1.</span> With an account, pick a room and hit Join. The timer inside is already running, and everyone in the room shares it.</li>
         <li className="flex gap-2"><span className="font-semibold text-primary">2.</span> Focus together in silence. Music plays if you want it; chat stays locked so nobody can distract you.</li>
-        <li className="flex gap-2"><span className="font-semibold text-primary">3.</span> When the break hits, chat and voice open — say hi, compare notes, then the next focus block starts automatically.</li>
-        <li className="flex gap-2"><span className="font-semibold text-primary">4.</span> Premium members can host public or private rooms — private ones come with an invite code, and invited friends join without one.</li>
+        <li className="flex gap-2"><span className="font-semibold text-primary">3.</span> When the break hits, chat and voice open. Say hi, compare notes, then the next focus block starts automatically.</li>
+        <li className="flex gap-2"><span className="font-semibold text-primary">4.</span> Premium members can host public or private rooms. Private ones come with an invite code, and invited friends join without one.</li>
       </ol>
       <p className="mt-2.5 text-xs text-muted-foreground">
         Always-on rooms never stop, so there's always one to drop into.
@@ -332,7 +332,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
       <div className="flex items-end justify-between">
         <div>
           <h1 className="flex items-center gap-2 font-display text-3xl font-semibold">Study rooms
-            <InfoTip text="With an account, pick any room and hit Join — every room runs one shared timer, so everyone focuses and breaks together. The always-on rooms never stop; jump in whenever. Chat and voice unlock during breaks. Premium members can host their own public or private rooms." />
+            <InfoTip text="With an account, pick any room and hit Join. Every room runs one shared timer, so everyone focuses and breaks together. The always-on rooms never stop; jump in whenever. Chat and voice unlock during breaks. Premium members can host their own public or private rooms." />
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">Live sessions with a shared timer. Chat and voice open during breaks.</p>
         </div>
@@ -399,7 +399,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
               ? "No rooms match your search."
               : friendsRooms.length > 0
                 ? "No other hosted rooms right now."
-                : "No hosted rooms right now — start one and your friends get notified."}
+                : "No hosted rooms right now. Start one and your friends get notified."}
           </p>
         ) : (
           <>
@@ -484,7 +484,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
     void label;
     const room = await createRoom(hostId, { name: name.trim(), topic: topic.trim() || "Open study", cap, music, visibility, ...method });
     setSaving(false);
-    if (!room) { setError("Couldn't create the room — try again."); return; }
+    if (!room) { setError("Couldn't create the room. Try again."); return; }
     onCreated(room);
   };
 
@@ -497,9 +497,9 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
         </div>
         <p className="mt-1 text-xs text-muted-foreground">The timer starts the moment you create it, and your friends get notified.</p>
         <div className="mt-4 space-y-3">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Room name — e.g. Pharm Power Hour" maxLength={60}
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Room name, e.g. Pharm Power Hour" maxLength={60}
             className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Topic (optional) — e.g. Beta-blockers review" maxLength={80}
+          <input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Topic (optional), e.g. Beta-blockers review" maxLength={80}
             className="w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
           <div className="grid grid-cols-2 gap-2" aria-label="Room visibility">
             {(["public", "private"] as const).map((value) => <button key={value} onClick={() => setVisibility(value)} aria-pressed={visibility === value}
@@ -733,7 +733,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         <div className="min-w-0">
           <h1 className="truncate font-display text-3xl font-semibold">{room.name}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {room.is_system ? `Always on · ${room.focus_min}/${room.short_min} rhythm — study anything` : room.topic}
+            {room.is_system ? `Always on · ${room.focus_min}/${room.short_min} rhythm · study anything` : room.topic}
           </p>
           {room.visibility === "private" && room.invite_code && <p className="mt-1 font-mono text-xs text-primary">Private invite code: {room.invite_code}</p>}
         </div>
@@ -1019,7 +1019,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold"><MessageCircle size={15} className="text-primary" /> Break-time chat</h2>
         {chatOpen ? (
-          <span className="rounded-full bg-roamly-green/10 px-2.5 py-1 text-[11px] font-medium text-roamly-green">{compact ? "Open" : "Open — it's break time"}</span>
+          <span className="rounded-full bg-roamly-green/10 px-2.5 py-1 text-[11px] font-medium text-roamly-green">{compact ? "Open" : "Open, it's break time"}</span>
         ) : (
           <span className="flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
             <Lock size={11} /> Opens at break · {fmt(secondsToBreak)}
@@ -1050,7 +1050,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
       <div className="mt-3 flex gap-2">
         <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()}
           disabled={!chatOpen} maxLength={500}
-          placeholder={chatOpen ? "Message the room…" : compact ? "Chat opens at the break" : `Chat opens in ${fmt(secondsToBreak)} — keep focusing`}
+          placeholder={chatOpen ? "Message the room…" : compact ? "Chat opens at the break" : `Chat opens in ${fmt(secondsToBreak)}. Keep focusing`}
           className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-60" />
         <button onClick={send} disabled={!chatOpen || !draft.trim() || sending} aria-label="Send"
           className="grid w-11 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95 disabled:opacity-40">
@@ -1093,7 +1093,7 @@ function InviteModal({ roomId, myId, onClose }: { roomId: string; myId: string; 
           <button onClick={onClose} aria-label="Close" className="text-muted-foreground hover:text-foreground"><X size={18} /></button>
         </div>
         {loaded && friends.length === 0 && (
-          <p className="mt-3 text-sm text-muted-foreground">No friends yet — add classmates from the Friends panel first.</p>
+          <p className="mt-3 text-sm text-muted-foreground">No friends yet. Add classmates from the Friends panel first.</p>
         )}
         <div className="mt-3 space-y-1.5">
           {friends.map((f) => {
