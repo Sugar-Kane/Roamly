@@ -259,6 +259,7 @@ function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (v
   const commitDate = (day: number) => {
     const base = selected ?? { hour: Math.min(23, today.getHours() + 1), minute: 0 };
     onChange(localDateTimeValue(visibleMonth.getFullYear(), visibleMonth.getMonth(), day, base.hour, base.minute));
+    setOpen(false);
   };
   const commitTime = (hour: number, minute: number) => {
     const base = selected ?? { year: today.getFullYear(), month: today.getMonth(), day: today.getDate() };
@@ -340,6 +341,7 @@ function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (v
               <button type="button" onClick={() => {
                 setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
                 onChange(localDateTimeValue(today.getFullYear(), today.getMonth(), today.getDate(), hour24, minute));
+                setOpen(false);
               }} className="rounded-full px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10">Today</button>
               <button type="button" onClick={() => onChange("")} className="rounded-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-background/60">Clear</button>
             </div>
