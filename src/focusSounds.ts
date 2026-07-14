@@ -28,6 +28,8 @@ let masterGain: GainNode | null = null;
 let teardown: (() => void) | null = null; // stops this sound's sources/timers
 let currentVolume = 0.5;
 let keeper: HTMLAudioElement | null = null;
+let chimeOscillators: OscillatorNode[] = [];
+let chimeCleanupTimer: number | null = null;
 
 // Fired every time a focus sound starts, from ANY path (the sound picker, the
 // timer's auto-play, room music). App subscribes to stop the Spotify/Apple
@@ -197,7 +199,7 @@ function clearPlayback(state: MediaSessionPlaybackState = "none") {
 // No-op while something is actively playing. Everything re-acquires on the
 // next Start tap (unlockAudio/startFocusSound run inside user gestures).
 export function releaseAudioSession() {
-  if (masterGain) return; // a sound is playing — the session is legitimately held
+  if (masterGain || chimeOscillators.length > 0) return; // music or a completion chime still needs the session
   if (keeper) {
     keeper.pause();
     keeper.removeAttribute("src");
@@ -218,6 +220,7 @@ export function releaseAudioSession() {
 // The page going away is the one moment we can't rely on React cleanup.
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", () => {
+    stopChime();
     teardown?.();
     masterGain = null;
     teardown = null;
@@ -715,26 +718,55 @@ export function stopFocusSound(fadeSeconds = 0.6) {
   teardown = null;
 }
 
+// Stop any currently scheduled completion chime. The same shared chime engine
+// is used by solo timers, always-on group rooms, and user-hosted rooms.
+export function stopChime() {
+  if (chimeCleanupTimer !== null) {
+    window.clearTimeout(chimeCleanupTimer);
+    chimeCleanupTimer = null;
+  }
+  for (const oscillator of chimeOscillators) {
+    try { oscillator.stop(); } catch { /* already stopped */ }
+    try { oscillator.disconnect(); } catch { /* already disconnected */ }
+  }
+  chimeOscillators = [];
+}
+
 // End-of-phase chime, played through the SAME unlocked AudioContext + keeper as
-// the focus sounds — so it survives the iOS silent switch (a separate context
-// with no keeper element gets muted). Two soft rising sine notes.
+// the focus sounds so it survives the iOS silent switch. Four soft two-note
+// pulses are spaced across roughly five seconds. Because every timer path calls
+// this same function, solo timers, always-on group rooms, and hosted rooms all
+// get the identical completion sound without stacking multiple sequences.
 export function playChime() {
   const audio = audioCtx();
   if (!audio) return;
+  stopChime();
   keeper?.play().catch(() => { /* not unlocked yet; harmless */ });
   const start = audio.currentTime + 0.02;
-  const notes: [number, number][] = [[528, start], [660, start + 0.18]];
-  for (const [freq, at] of notes) {
-    const o = audio.createOscillator();
-    const g = audio.createGain();
-    o.type = "sine";
-    o.frequency.value = freq;
-    o.connect(g); g.connect(audio.destination);
-    g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.2, at + 0.04);
-    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.9);
-    o.start(at); o.stop(at + 0.95);
+  const repeatOffsets = [0, 1.3, 2.6, 3.9];
+  for (const offset of repeatOffsets) {
+    const notes: [number, number][] = [[528, start + offset], [660, start + offset + 0.18]];
+    for (const [freq, at] of notes) {
+      const o = audio.createOscillator();
+      const g = audio.createGain();
+      o.type = "sine";
+      o.frequency.value = freq;
+      o.connect(g); g.connect(audio.destination);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.2, at + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.9);
+      o.start(at); o.stop(at + 0.95);
+      chimeOscillators.push(o);
+    }
   }
+  chimeCleanupTimer = window.setTimeout(() => {
+    for (const oscillator of chimeOscillators) {
+      try { oscillator.disconnect(); } catch { /* already disconnected */ }
+    }
+    chimeOscillators = [];
+    chimeCleanupTimer = null;
+    releaseAudioSession();
+  }, 5100);
 }
 
 export function setFocusVolume(volume: number) {
