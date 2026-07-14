@@ -268,6 +268,12 @@ test("Spotify and Apple Music choices are visible without opening a popup", asyn
   await expect(dock.getByRole("button", { name: "Spotify", exact: true })).toBeVisible();
   await expect(dock.getByRole("button", { name: "Apple Music", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Exercise one dock switch end to end: select the non-default service and
+  // confirm the toggle state, the embedded player, and the saved preference.
+  await dock.getByRole("button", { name: "Apple Music", exact: true }).click();
+  await expect(dock.getByRole("button", { name: "Apple Music", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(dock.locator('iframe[title="Music player"]')).toHaveAttribute("src", /embed\.music\.apple\.com/);
+  expect(await page.evaluate(() => localStorage.getItem("roamly-music-service"))).toBe("apple");
 });
 
 test("starting the timer counts down", async ({ page }) => {
