@@ -157,10 +157,10 @@ test("completion sound preference persists", async ({ page }) => {
 test("premium feature prompts sign-in when logged out", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Select timer" }).click();
-  // Pick a premium method → upsell → Try Premium → auth modal (signed out).
+  // Pick a premium method → upsell → Premium CTA → auth modal (signed out).
   await page.getByRole("button", { name: /PANCE Drill/ }).click();
   await expect(page.getByText("This is a Premium feature")).toBeVisible();
-  await page.getByRole("button", { name: "Try Premium free" }).click();
+  await page.getByRole("button", { name: "Unlock with Premium" }).click();
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 });
 
@@ -213,8 +213,7 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Choose annual" })).toBeVisible();
   await expect(page.getByText("2 uploads", { exact: true })).toBeVisible();
   await expect(page.getByText("5 uploads", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Includes 3 days Premium/)).toBeVisible();
-  await expect(page.getByText(/Includes 7 days Premium/)).toBeVisible();
+  await expect(page.getByText("Upload credits only. This does not unlock Premium.")).toHaveCount(2);
   await expect(page.getByText("Planned study scheduling", { exact: true })).toBeVisible();
 });
 

@@ -6,8 +6,8 @@ import { createClient } from "@supabase/supabase-js";
 // Price objects are needed; the existing STRIPE_PRICE_ID stays for the
 // subscription alone.
 const CREDIT_PACKS = {
-  small: { credits: 2, cents: 100, premiumDays: 3, name: "2 Roamly upload credits" },
-  large: { credits: 5, cents: 300, premiumDays: 7, name: "5 Roamly upload credits" },
+  small: { credits: 2, cents: 100, name: "2 Roamly upload credits" },
+  large: { credits: 5, cents: 300, name: "5 Roamly upload credits" },
 } as const;
 type PackId = keyof typeof CREDIT_PACKS;
 type PlanId = "monthly" | "annual";
@@ -129,7 +129,6 @@ export async function POST(request: Request): Promise<Response> {
             supabase_user_id: user.id,
             pack_id: packId!,
             credits: String(pack.credits),
-            premium_days: String(pack.premiumDays),
           },
         }
       : {

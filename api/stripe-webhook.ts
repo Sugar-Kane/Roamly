@@ -90,14 +90,12 @@ export async function POST(request: Request): Promise<Response> {
 
       if (session.mode === "payment") {
         const credits = Number.parseInt(session.metadata?.credits ?? "", 10);
-        const premiumDays = Number.parseInt(session.metadata?.premium_days ?? "", 10);
-        if (!Number.isFinite(credits) || !Number.isFinite(premiumDays) || !session.id) throw new Error("invalid_credit_metadata");
+        if (!Number.isFinite(credits) || credits <= 0 || !session.id) throw new Error("invalid_credit_metadata");
         const { data, error } = await admin.rpc("process_stripe_credit_event", {
           p_event_id: event.id,
           p_event_type: event.type,
           p_user: userId,
           p_credits: credits,
-          p_premium_days: premiumDays,
           p_external_ref: session.id,
         });
         if (error) throw error;

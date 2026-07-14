@@ -9,7 +9,7 @@ import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc,
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, startPremiumTrial, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
+import { fetchProfile, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { loadPref, savePref } from "./storage";
@@ -138,11 +138,7 @@ export default function App() {
         clearMigratedGuestData();
       }
 
-      let nextProfile = await fetchProfile(userId);
-      if (session?.user.email_confirmed_at && !nextProfile?.is_premium) {
-        const trialReady = await startPremiumTrial();
-        if (trialReady) nextProfile = await fetchProfile(userId);
-      }
+      const nextProfile = await fetchProfile(userId);
       if (cancelled) return;
       setProfile(nextProfile);
 
@@ -2452,7 +2448,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
             </>
           ) : (
             <p className="mt-1 text-xs text-muted-foreground">
-              Premium comes from {profile?.premium_source === "trial" ? "your 30-day trial" : profile?.premium_source === "credit_purchase" ? "a credit purchase" : "an account grant"}.
+              Premium comes from an internal account grant.
               {profile?.premium_expires_at ? ` Access lasts through ${new Date(profile.premium_expires_at).toLocaleDateString()}.` : ""}
             </p>
           )}
@@ -2497,15 +2493,15 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
-            { id: "small" as const, credits: 2, price: "$1", premium: "3 days Premium" },
-            { id: "large" as const, credits: 5, price: "$3", premium: "7 days Premium" },
+            { id: "small" as const, credits: 2, price: "$1" },
+            { id: "large" as const, credits: 5, price: "$3" },
           ].map((p) => (
             <div key={p.id} className="rounded-2xl border border-border bg-card/70 p-4">
               <div className="flex items-baseline justify-between">
                 <span className="text-sm font-semibold">{p.credits} uploads</span>
                 <span className="font-display text-xl font-bold">{p.price}</span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Includes {p.premium}; never shortens an existing entitlement.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Upload credits only. This does not unlock Premium.</p>
               <button onClick={() => onSubscribe(p.id)} disabled={checkoutLoading}
                 className="mt-3 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20 active:scale-95 disabled:opacity-60">
                 {session ? (checkoutLoading ? "Redirecting…" : "Buy with Stripe") : "Sign in to buy"}
@@ -2591,7 +2587,7 @@ function Upsell({ onClose, onUpgrade, onBuyCredits }: { onClose: () => void; onU
         <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary shadow-glow"><Crown className="text-white" /></div>
         <h3 className="mt-4 font-display text-xl font-semibold">This is a Premium feature</h3>
         <p className="mt-1.5 text-sm text-muted-foreground">Unlock premium methods, themes, full analytics, 10 AI note uploads a month, and hosting your own study rooms.</p>
-        <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Try Premium free</button>
+        <button onClick={onUpgrade} className="mt-5 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95">Unlock with Premium</button>
         {onBuyCredits && (
           <button onClick={onBuyCredits} className="mt-2 w-full rounded-full border border-primary/50 bg-primary/10 py-2 text-sm font-semibold text-primary transition hover:bg-primary/20">
             Or buy AI upload credits — no subscription
