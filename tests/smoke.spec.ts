@@ -78,6 +78,7 @@ test("sign-up form rejects a weak password", async ({ page }) => {
 test("a task can be added locally", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  await expect(page.getByRole("switch", { name: "Complete tasks automatically" })).toHaveAttribute("aria-checked", "true");
   await page.getByPlaceholder(/Add a study task/).fill("Smoke test task");
   await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
@@ -214,6 +215,7 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByText("5 uploads", { exact: true })).toBeVisible();
   await expect(page.getByText(/Includes 3 days Premium/)).toBeVisible();
   await expect(page.getByText(/Includes 7 days Premium/)).toBeVisible();
+  await expect(page.getByText("Planned study scheduling", { exact: true })).toBeVisible();
 });
 
 test("planned study lives in Tasks and requires an account", async ({ page }) => {
