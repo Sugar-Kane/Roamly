@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2 } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2 } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, type FocusSoundId } from "./focusSounds";
@@ -46,7 +46,7 @@ export default function App() {
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [activeTask, setActiveTask] = useState<string | null>(() => loadGuestTasks()[0]?.id ?? null);
   const [estimateReachedTask, setEstimateReachedTask] = useState<string | null>(null);
-  const [autoCompleteEstimates, setAutoCompleteEstimates] = useState(() => loadPref("roamly-auto-complete-estimates") === "1");
+  const [autoCompleteEstimates, setAutoCompleteEstimates] = useState(() => loadPref("roamly-auto-complete-estimates") !== "0");
   const [showUpsell, setShowUpsell] = useState(false);
   // User-editable values for the Custom method (minutes).
   const [custom, setCustom] = useState({ focus: 30, short: 7, long: 20, cycles: 4 });
@@ -863,9 +863,14 @@ function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn
         </button>
         <ThemeMenu themeId={themeId} setThemeId={setThemeId} />
         {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} onOpenPlannedStudy={onOpenPlannedStudy} />}
-        {/* Everyone who isn't premium gets a one-tap path to the plan page —
-            guests land there too and hit the sign-in gate only at checkout. */}
-        {!isPremium && (
+        {/* Wait for a signed-in profile before rendering plan status so a
+            Premium member never sees an upgrade prompt flash during load. */}
+        {isPremium ? (
+          <button onClick={onOpenPremium} aria-label="Premium account"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-primary/40 bg-primary/10 font-semibold text-primary transition hover:bg-primary/15 active:scale-95 sm:flex sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs">
+            <Crown size={15} /> <span className="hidden sm:inline">Premium</span>
+          </button>
+        ) : (!session || profile) && (
           <button onClick={onOpenPremium} aria-label="Try Premium"
             className="grid h-9 w-9 shrink-0 place-items-center rounded-full gradient-primary font-semibold text-white shadow-glow transition active:scale-95 sm:flex sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs">
             <Crown size={15} /> <span className="hidden sm:inline">Try Premium</span>
@@ -900,6 +905,106 @@ function SignInPrompt({ onSignIn, message }: any) {
 function localTodayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function parseLocalDate(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]) - 1, day: Number(match[3]) };
+}
+
+function localDateValue(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function ThemedDatePicker({ value, min, onChange }: { value: string; min?: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = parseLocalDate(value);
+  const today = new Date();
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date(selected?.year ?? today.getFullYear(), selected?.month ?? today.getMonth(), 1));
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    const nextSelected = parseLocalDate(value);
+    if (nextSelected) setVisibleMonth(new Date(nextSelected.year, nextSelected.month, 1));
+  }, [value]);
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const leading = new Date(year, month, 1).getDay();
+  const dayCount = new Date(year, month + 1, 0).getDate();
+  const display = selected
+    ? new Date(selected.year, selected.month, selected.day).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+    : "Choose exam date";
+
+  return (
+    <div ref={rootRef} className="relative min-w-0">
+      <button type="button" onClick={() => setOpen((current) => !current)} aria-label="Exam date" aria-haspopup="dialog" aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-left text-sm text-foreground transition hover:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/30">
+        <span className={selected ? "truncate" : "truncate text-muted-foreground"}>{display}</span>
+        <CalendarClock size={16} className="shrink-0 text-primary" />
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Choose exam date"
+          className="absolute left-0 top-full z-50 mt-2 w-[min(22rem,calc(100vw-3rem))] rounded-2xl border border-border bg-card p-4 text-foreground shadow-xl">
+          <div className="flex items-center justify-between">
+            <button type="button" onClick={() => setVisibleMonth(new Date(year, month - 1, 1))} aria-label="Previous month"
+              className="grid h-8 w-8 place-items-center rounded-full border border-border bg-background/50 text-muted-foreground transition hover:border-primary/50 hover:text-primary">
+              <ChevronLeft size={16} />
+            </button>
+            <span className="font-display text-sm font-semibold">{visibleMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
+            <button type="button" onClick={() => setVisibleMonth(new Date(year, month + 1, 1))} aria-label="Next month"
+              className="grid h-8 w-8 place-items-center rounded-full border border-border bg-background/50 text-muted-foreground transition hover:border-primary/50 hover:text-primary">
+              <ChevronRight size={16} />
+            </button>
+          </div>
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            {["S", "M", "T", "W", "T", "F", "S"].map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
+          </div>
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {Array.from({ length: leading }, (_, index) => <span key={`blank-${index}`} />)}
+            {Array.from({ length: dayCount }, (_, index) => {
+              const day = index + 1;
+              const dateValue = localDateValue(year, month, day);
+              const chosen = selected?.year === year && selected.month === month && selected.day === day;
+              const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
+              const disabled = !!min && dateValue < min;
+              return <button key={day} type="button" disabled={disabled} onClick={() => onChange(dateValue)} aria-pressed={chosen}
+                className={`grid h-9 place-items-center rounded-xl text-sm transition ${chosen ? "gradient-primary font-semibold text-white shadow-glow" : isToday ? "border border-primary/50 bg-primary/10 font-semibold text-primary" : "hover:bg-primary/10 hover:text-primary"} disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-foreground`}>
+                {day}
+              </button>;
+            })}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="flex gap-1">
+              <button type="button" onClick={() => {
+                setVisibleMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                onChange(localDateValue(today.getFullYear(), today.getMonth(), today.getDate()));
+              }} className="rounded-full px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10">Today</button>
+              <button type="button" onClick={() => onChange("")} className="rounded-full px-3 py-1.5 text-xs text-muted-foreground hover:bg-background/60">Clear</button>
+            </div>
+            <button type="button" onClick={() => setOpen(false)} className="rounded-full gradient-primary px-4 py-1.5 text-xs font-semibold text-white shadow-glow">Done</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // The board exams PA (and med) students most often count down to. "Custom…"
@@ -1008,8 +1113,7 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
                   className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
               )}
             </div>
-            <input type="date" value={draftDate} min={todayStr} onChange={(event) => setDraftDate(event.target.value)} aria-label="Exam date"
-              className="min-w-0 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
+            <ThemedDatePicker value={draftDate} min={todayStr} onChange={setDraftDate} />
             <div className="flex items-center gap-2">
               <button onClick={save} disabled={saving || !draftDate || draftDate < todayStr || (examPick === "custom" && !customName.trim())}
                 className="rounded-xl gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow disabled:opacity-40">
@@ -1872,7 +1976,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
       </p>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/70 px-3 py-2.5">
         <span className="min-w-0"><span className="block text-sm font-medium">Complete tasks automatically</span><span className="block text-[11px] text-muted-foreground">When on, a task is checked off as soon as it reaches its planned focus-session count.</span></span>
-        <button role="switch" aria-checked={autoCompleteEstimates} onClick={onToggleAutoComplete} className={`relative h-6 w-11 shrink-0 rounded-full transition ${autoCompleteEstimates ? "bg-primary" : "bg-border"}`}>
+        <button role="switch" aria-label="Complete tasks automatically" aria-checked={autoCompleteEstimates} onClick={onToggleAutoComplete} className={`relative h-6 w-11 shrink-0 rounded-full transition ${autoCompleteEstimates ? "bg-primary" : "bg-border"}`}>
           <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${autoCompleteEstimates ? "left-[22px]" : "left-0.5"}`} />
         </button>
       </div>
@@ -1904,7 +2008,10 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
           <UploadTasksPanel profile={profile} session={session} onImported={addImportedTasks} onUpgrade={onSubscribe} onBuyCredits={onBuyCredits} />
         </div>
       )}
-      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null} onSignIn={onSignIn} onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
+        isPremium={session ? (profile ? !!profile.is_premium : null) : false}
+        onSignIn={onSignIn} onUpgrade={onBuyCredits}
+        onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
       {/* On phones the task input takes the full row and the subject + add
           button drop to a second line; side-by-side from sm up. */}
       <div className="mt-6 flex flex-wrap gap-2">
@@ -2245,12 +2352,13 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   // so it has no customer to open the billing portal for. Only offer "Manage
   // subscription" when there's an actual Stripe customer behind the account.
   const hasStripeSubscription = !!profile?.stripe_subscription_id;
-  const perks = ["10 AI note uploads each month", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods"];
+  const perks = ["Planned study scheduling", "10 AI note uploads each month", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "Premium UI themes", "PANCE & Marathon methods"];
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
   // [feature, free, premium] — strings render as text, booleans as ✓/—.
   const compare: [string, string | boolean, string | boolean][] = [
     ["Price", "$0", "$3 monthly or $30 yearly"],
     ["AI note uploads", "3 a month", "10 a month"],
+    ["Planned study", false, true],
     ["Extra upload credits", "Buy anytime", "Buy anytime"],
     ["Timer methods", "Core methods", "+ PANCE Drill & Marathon"],
     ["Study rooms", "Join any room", "Join + host up to 3"],
