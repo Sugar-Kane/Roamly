@@ -20,8 +20,25 @@ export type RivePetDef = {
   inputs: { walk?: string; sleep?: string }; // boolean input names
 };
 
+// Vetted marketplace candidates (all CC BY — credit the author when enabling;
+// verified 2026-07-14, clean single-character artboards, public CDN hosted):
+//  * dog — "Interactive Dog Mascot" by PraneethKawyaThathsara (~874 KB)
+//    https://rive.app/marketplace/27226-51415-interactive-dog-mascot-for-mobile-apps-rive-state-machine/
+//    file: https://public.rive.app/community/runtime-files/27226-51415-interactive-dog-mascot-for-mobile-apps-rive-state-machine.riv
+//    stateMachine: "State Machine 1"
+//  * rabbit — "Interactive Bunny Character" by raivu (~258 KB)
+//    https://rive.app/marketplace/24876-46460-interactive-bunny-character/
+//    file: https://public.rive.app/community/runtime-files/24876-46460-interactive-bunny-character.riv
+//    stateMachine: "State Machine 1"
+//  * bird — "Idle bird" by kiranironhide.ironhide (~116 KB)
+//    https://rive.app/marketplace/5762-11268-idle-bird/
+//    file: https://public.rive.app/community/runtime-files/5762-11268-idle-bird.riv
+//    stateMachine: "State Machine 1"
+// To enable one: download the file into public/rive/<species>.riv, add the
+// entry below, and check its boolean input names in the Rive editor (entries
+// with no matching inputs still play their default state-machine loop).
 export const RIVE_PETS: Partial<Record<PetSpecies, RivePetDef>> = {
-  // dog: { src: "/rive/dog.riv", stateMachine: "Pet", inputs: { walk: "walk", sleep: "sleep" } },
+  // dog: { src: "/rive/dog.riv", stateMachine: "State Machine 1", inputs: {} },
 };
 
 export const hasRivePets = (): boolean => Object.keys(RIVE_PETS).length > 0;
