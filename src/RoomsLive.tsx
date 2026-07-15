@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2, HelpCircle, PictureInPicture2 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
-  fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
+  fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, roomStationAt, notifyFriendsOfRoom, inviteToRoom,
   fetchMessages, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
   setRoomMusic, joinRoom, joinRoomByCode, roomNowMs, syncServerClock, fetchRoomOccupancy,
   type LiveRoom, type RoomMessage, type PublicProfile,
@@ -613,7 +613,10 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   const [showInvite, setShowInvite] = useState(false);
   const info = roomPhaseAt(room, now);
   const isHost = room.host_id === userId;
-  const music = ((room.music || "lofi") as FocusSoundId);
+  // Always-on rooms cycle stations automatically — a different one each
+  // focus block, the same one for every member (shared block counter, no
+  // server write). Hosted rooms keep playing whatever the host picked.
+  const music: FocusSoundId = room.is_system ? roomStationAt(room, now) : ((room.music || "lofi") as FocusSoundId);
   const canPickMusic = isHost && !room.is_system;
   // One voice instance for the whole room screen: the dock (normal view) and
   // the compact controls (focus overlay) are two surfaces over this hook, so
@@ -705,13 +708,22 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
+    // You are always in the room you're looking at: seed yourself so the list
+    // never sits on "Connecting…" while presence joins (or quietly fails and
+    // auto-retries) — the empty list read as a dead room.
+    setMembers([{ id: userId, username }]);
     const ch = client.channel(`room:${room.id}`, { config: { private: true, presence: { key: userId } } });
     ch.on("presence", { event: "sync" }, () => {
       const state = ch.presenceState<{ username: string }>();
-      setMembers(Object.entries(state).map(([id, metas]) => ({ id, username: metas[0]?.username ?? "student" })));
+      const list = Object.entries(state).map(([id, metas]) => ({ id, username: metas[0]?.username ?? "student" }));
+      if (!list.some((m) => m.id === userId)) list.unshift({ id: userId, username });
+      setMembers(list);
     });
     ch.subscribe((status) => {
       if (status === "SUBSCRIBED") ch.track({ username });
+      // The channel keeps rejoining on its own; log so a broken policy or
+      // auth token is visible instead of an eternally-lonely member list.
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("[Roamly] room presence subscribe failed", room.id, status);
     });
     return () => { client.removeChannel(ch); };
   }, [room.id, userId, username]);
@@ -897,7 +909,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           <div className="flex items-center gap-2">
             {!canPickMusic && (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <Lock size={11} /> {musicName}{room.is_system ? " · always on" : ""}
+                <Lock size={11} /> {musicName}{room.is_system ? " · rotates each block" : ""}
               </span>
             )}
             {/* Mutes just the music for you — the voice/mic controls below are
@@ -929,7 +941,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           </>
         ) : (
           <p className="mt-1 text-xs text-muted-foreground">
-            {room.is_system ? "Always-on rooms play lofi beats for everyone." : "The host sets this room's music."}
+            {room.is_system ? "Always-on rooms cycle the music stations automatically — a new one each focus block, the same for everyone." : "The host sets this room's music."}
           </p>
         )}
       </section>
@@ -974,7 +986,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
                 {musicMuted ? <VolumeX size={13} /> : <Volume2 size={13} />} {musicMuted ? "Music muted" : "Music on"}
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · always on" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · rotates each block" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
           </div>
         }
         extra={

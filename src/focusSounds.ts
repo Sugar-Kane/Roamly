@@ -2,21 +2,21 @@
 // audio (unlike the Spotify/Apple embeds), the timer can control it
 // perfectly: start on focus, fade out at the break.
 //
-// Every option is actual music, and recorded tracks do not repeat for 7 days:
+// Every option is actual music:
 //  - "melody", "beats", "piano", "ambient", and "rain" are generative WebAudio — they synthesize a
 //    fresh, non-looping performance each session, so they never repeat.
 //  - "lofi" (Café) and "calm" are real free-license recordings (Kevin MacLeod)
 //    bundled under /audio/lofi. A local 7-day listening history removes every
-//    recently heard track from the shuffle. When that pool is exhausted, the
-//    station switches to a fresh generative performance instead of repeating.
+//    recently heard track from the shuffle; once the whole catalog has been
+//    heard, the station reshuffles the full pool and replays it.
 
 export type FocusSoundId =
   | "melody" | "lofi" | "calm" | "beats" | "piano" | "ambient" | "rain";
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
   { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
-  { id: "lofi", name: "Café music", hint: "25 real tracks · 7-day no-repeat memory" },
-  { id: "calm", name: "Calm music", hint: "18 real tracks · 7-day no-repeat memory" },
+  { id: "lofi", name: "Café music", hint: "25 real tracks · shuffled, no repeats until you've heard them all" },
+  { id: "calm", name: "Calm music", hint: "18 real tracks · shuffled, no repeats until you've heard them all" },
   { id: "beats", name: "Lo-fi beats", hint: "Live chillhop groove" },
   { id: "piano", name: "Piano", hint: "Gentle drifting piano" },
   { id: "ambient", name: "Ambient drift", hint: "Endless evolving soundscape" },
@@ -710,21 +710,29 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
 
   let stopped = false;
   let order: MusicTrack[] = [];
-  let fallbackStop: (() => void) | null = null;
   const nextTrack = () => {
     if (stopped) return;
     const pool = tracksFor(category);
-    if (pool.length === 0) return;
+    // The element may still be carrying the PREVIOUS build's track (a
+    // handed-over teardown deliberately no-ops, see the token note above),
+    // so any path that won't set a fresh src must silence it — otherwise
+    // two musics play at once (the room "double café music" bug).
+    if (pool.length === 0) { el.pause(); return; }
     if (order.length === 0) {
       order = tracksOutsideCooldown(pool);
-      if (order.length === 0) {
-        fallbackStop = category === "lofi" ? buildLofi(audio, out) : buildPiano(audio, out);
-        announcePlayback(category === "lofi" ? "Fresh café session" : "Fresh calm session", "Roamly Focus");
-        return;
-      }
+      // Heard the whole catalog recently? Reshuffle the full pool and replay
+      // it — the station keeps playing real tracks forever.
+      if (order.length === 0) order = [...pool];
       for (let i = order.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [order[i], order[j]] = [order[j], order[i]];
+      }
+      // On a replay pass, don't draw the very track that's still loaded from
+      // last time as the first pick.
+      const next = order[order.length - 1];
+      if (order.length > 1 && el.src && el.src.endsWith(next.file)) {
+        order[order.length - 1] = order[0];
+        order[0] = next;
       }
     }
     const track = order.pop()!;
@@ -740,7 +748,6 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
     stopped = true;
     if (musicToken !== token) return; // a newer music build already took over
     el.onended = null;
-    fallbackStop?.();
     el.pause();
     el.removeAttribute("src");
     try { el.load(); } catch { /* flush the buffered track */ }

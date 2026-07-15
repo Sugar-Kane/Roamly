@@ -72,6 +72,31 @@ export async function syncServerClock(): Promise<void> {
   if (best && Math.abs(best.offset) > 1500) clockOffsetMs = best.offset;
 }
 
+// Global 0-based focus-block counter since the room started — full cycles
+// never reset it. Every member derives the same number (same started_at,
+// same synced clock), so it can seed shared per-block choices like the
+// rotating always-on station without any server round-trip.
+export function roomBlockNumber(room: LiveRoom, atMs: number = roomNowMs()): number {
+  const f = room.focus_min * 60;
+  const total = room.cycles * f + (room.cycles - 1) * room.short_min * 60 + room.long_min * 60;
+  const elapsed = Math.floor((atMs - new Date(room.started_at).getTime()) / 1000);
+  const cycleNum = Math.floor(elapsed / total);
+  return cycleNum * room.cycles + (roomPhaseAt(room, atMs).focusIndex - 1);
+}
+
+// Always-on rooms rotate through the built-in stations, one per focus block:
+// variety without anyone touching a picker, and identical for every member
+// because it's derived from the shared block counter. The room id offsets
+// the rotation so the system rooms aren't all playing the same station at
+// the same time.
+const STATION_ROTATION = ["lofi", "piano", "calm", "beats", "melody", "rain", "ambient"] as const;
+export function roomStationAt(room: LiveRoom, atMs: number = roomNowMs()): (typeof STATION_ROTATION)[number] {
+  let hash = 0;
+  for (let i = 0; i < room.id.length; i++) hash = (hash * 31 + room.id.charCodeAt(i)) | 0;
+  const idx = ((hash + roomBlockNumber(room, atMs)) % STATION_ROTATION.length + STATION_ROTATION.length) % STATION_ROTATION.length;
+  return STATION_ROTATION[idx];
+}
+
 export function roomPhaseAt(room: LiveRoom, atMs: number = roomNowMs()): RoomPhaseInfo {
   const f = room.focus_min * 60;
   const s = room.short_min * 60;
