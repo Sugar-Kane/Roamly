@@ -21,9 +21,11 @@ test("Garden tab is locked for guests and routes to sign-in", async ({ page }) =
   // Neither the collection nor companion controls are exposed to guests.
   await expect(page.getByRole("heading", { name: "Companions" })).toHaveCount(0);
   await expect(page.getByRole("switch", { name: "Show companions on the timer" })).toHaveCount(0);
-  // The lock screen's sign-in button opens the auth modal.
+  // The lock screen's sign-in button opens the auth surface. The Playwright
+  // preview build has no Supabase env, so that's the "Accounts unavailable"
+  // notice; with a configured backend it's the real sign-in form.
   await page.getByRole("button", { name: "Sign in" }).last().click();
-  await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: /Welcome back|Accounts unavailable/ })).toBeVisible();
 });
 
 test("companions are off the timer by default", async ({ page }) => {
