@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2, HelpCircle, PictureInPicture2 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, notifyFriendsOfRoom, inviteToRoom,
   fetchMessages, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
-  setRoomMusic, joinRoom, joinRoomByCode, roomNowMs, syncServerClock,
+  setRoomMusic, joinRoom, joinRoomByCode, roomNowMs, syncServerClock, fetchRoomOccupancy,
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
@@ -157,7 +157,16 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
 function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, completionSoundEnabled, onInRoom, leaveSignal, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [active, setActive] = useState<LiveRoom | null>(null);
-  const [occupancy, setOccupancy] = useState<Map<string, number>>(new Map());
+  // Two head-count sources, merged for display: heartbeat counts (polled RPC,
+  // deterministic, covers every room) and realtime presence (instant but
+  // best-effort — it can fail silently). Show whichever is higher.
+  const [presenceCounts, setPresenceCounts] = useState<Map<string, number>>(new Map());
+  const [heartbeatCounts, setHeartbeatCounts] = useState<Map<string, number>>(new Map());
+  const occupancy = useMemo(() => {
+    const merged = new Map(heartbeatCounts);
+    for (const [id, count] of presenceCounts) merged.set(id, Math.max(merged.get(id) ?? 0, count));
+    return merged;
+  }, [presenceCounts, heartbeatCounts]);
   const [showCreate, setShowCreate] = useState(false);
   const [query, setQuery] = useState("");
   const [showAllHosted, setShowAllHosted] = useState(false);
@@ -199,9 +208,27 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     return () => { client.removeChannel(channel); };
   }, [reload]);
 
+  // Authoritative head-counts: poll the room_occupancy RPC (heartbeat rows
+  // fresher than 60s) for EVERY rendered room, on load and every 20s — the
+  // same cadence occupants write heartbeats. This is what fixed lobby cards
+  // being stuck at 0 for other users when presence silently failed.
+  const allRoomIdsKey = rooms.map((r) => r.id).join(",");
+  useEffect(() => {
+    if (!supabase || active || !allRoomIdsKey) return;
+    const ids = allRoomIdsKey.split(",");
+    let alive = true;
+    const poll = () => {
+      fetchRoomOccupancy(ids).then((counts) => { if (alive) setHeartbeatCounts(counts); });
+    };
+    poll();
+    const iv = window.setInterval(poll, 20_000);
+    return () => { alive = false; window.clearInterval(iv); };
+  }, [allRoomIdsKey, active]);
+
   // Live head-counts: observe presence channels without joining them — but
   // only for rooms the lobby actually renders (system + newest hosted), so a
-  // pile of stale rooms can't burn a realtime connection per room.
+  // pile of stale rooms can't burn a realtime connection per room. Presence
+  // is a liveness bonus on top of the heartbeat poll above.
   const watchedRooms = [
     ...rooms.filter((r) => r.is_system),
     ...rooms.filter((r) => !r.is_system).slice(0, 15),
@@ -214,18 +241,41 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
       const ch = client.channel(`room:${room.id}`, { config: { private: true } });
       ch.on("presence", { event: "sync" }, () => {
         const count = Object.keys(ch.presenceState()).length;
-        setOccupancy((prev) => new Map(prev).set(room.id, count));
-        // Track how long each hosted room has been empty, for the 2-min reap.
-        if (!room.is_system) {
-          if (count > 0) emptySince.current.delete(room.id);
-          else if (!emptySince.current.has(room.id)) emptySince.current.set(room.id, Date.now());
+        setPresenceCounts((prev) => new Map(prev).set(room.id, count));
+      });
+      // These subscribes used to swallow CHANNEL_ERROR/TIMED_OUT silently
+      // (e.g. an auth-token race right after mount), permanently freezing the
+      // card at 0. Log and retry once; beyond that the heartbeat poll covers.
+      let retried = false;
+      const onStatus = (status: string) => {
+        if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && !retried) {
+          retried = true;
+          console.warn("[Roamly] lobby presence subscribe failed", room.id, status);
+          window.setTimeout(() => {
+            void ch.unsubscribe().then(() => { ch.subscribe(onStatus); }).catch(() => { /* channel removed */ });
+          }, 1200);
         }
-      }).subscribe();
+      };
+      ch.subscribe(onStatus);
       return ch;
     });
     return () => { channels.forEach((ch) => client.removeChannel(ch)); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomIdsKey, active]);
+
+  // Track how long each hosted room has been empty, for the 2-min reap below.
+  // Driven by the MERGED counts (heartbeats + presence), not presence alone:
+  // a hosted room whose presence channel silently failed is neither flagged
+  // empty while people are inside (which leaned on the server's heartbeat
+  // guard to refuse the reap) nor left untracked once it truly empties.
+  useEffect(() => {
+    for (const room of rooms) {
+      if (room.is_system) continue;
+      const count = occupancy.get(room.id) ?? 0;
+      if (count > 0) emptySince.current.delete(room.id);
+      else if (!emptySince.current.has(room.id)) emptySince.current.set(room.id, Date.now());
+    }
+  }, [rooms, occupancy]);
 
   // Auto-end hosted rooms that have sat empty for 2 minutes. reap_room's own
   // age guard makes this safe even if a room only just went empty.
@@ -606,10 +656,10 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   // Dim the room music over the last ~5s of a focus block (once per block).
   const duckedRef = useRef(false);
   useEffect(() => {
-    if (info.phase === "focus" && info.secondsLeft <= 6 && !duckedRef.current) {
+    if (info.phase === "focus" && info.secondsLeft <= 4 && !duckedRef.current) {
       duckedRef.current = true;
-      duckFocusSound(5);
-    } else if (info.phase !== "focus" || info.secondsLeft > 6) {
+      duckFocusSound(3);
+    } else if (info.phase !== "focus" || info.secondsLeft > 4) {
       duckedRef.current = false;
     }
   }, [info.secondsLeft, info.phase]);
@@ -709,12 +759,14 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
 
   // Chime on every shared-timer phase boundary (study session ending and break
   // ending), matching the personal timer. prevPhase seeds to the current phase
-  // so entering a room doesn't chime.
+  // so entering a room doesn't chime. A finished focus block gets the short
+  // transition chime; a finished break gets the single long tone.
   const prevPhase = useRef(info.phase);
   useEffect(() => {
     if (prevPhase.current !== info.phase) {
+      const finished = prevPhase.current;
       prevPhase.current = info.phase;
-      if (completionSoundEnabled) playChime();
+      if (completionSoundEnabled) playChime(finished === "focus" ? "transition" : "breakEnd");
     }
   }, [info.phase, completionSoundEnabled]);
 

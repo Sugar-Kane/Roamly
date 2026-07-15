@@ -1,7 +1,82 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, Mail, LogIn } from "lucide-react";
 import { supabase, supabaseEnabled } from "./supabaseClient";
 import { Modal } from "./Modal";
+
+// ---- Cloudflare Turnstile (bot protection on sign-up / sign-in) ----
+// Renders only when VITE_TURNSTILE_SITE_KEY is configured; without it the auth
+// form works exactly as before (dev, tests, and pre-setup deploys unaffected).
+// The token is passed as Supabase Auth's captchaToken and verified by
+// Supabase's Attack Protection (configure Turnstile + secret key there).
+const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY as string | undefined;
+
+type TurnstileApi = {
+  render: (el: HTMLElement, opts: Record<string, unknown>) => string;
+  reset: (id?: string) => void;
+  remove: (id: string) => void;
+};
+declare global {
+  interface Window { turnstile?: TurnstileApi; onRoamlyTurnstileLoad?: () => void }
+}
+
+let turnstileLoader: Promise<void> | null = null;
+function loadTurnstile(): Promise<void> {
+  if (!turnstileLoader) {
+    turnstileLoader = new Promise((resolve) => {
+      if (window.turnstile) { resolve(); return; }
+      window.onRoamlyTurnstileLoad = () => resolve();
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onRoamlyTurnstileLoad";
+      script.async = true;
+      // If the script can't load, resolve anyway: the widget simply won't
+      // render, and Supabase will reject the attempt with a captcha error the
+      // form surfaces (rather than the form hanging forever).
+      script.onerror = () => resolve();
+      document.head.appendChild(script);
+    });
+  }
+  return turnstileLoader;
+}
+
+function TurnstileWidget({ onToken, resetSignal }: { onToken: (token: string | null) => void; resetSignal: number }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
+  const onTokenRef = useRef(onToken);
+  onTokenRef.current = onToken;
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadTurnstile().then(() => {
+      if (cancelled || !hostRef.current || !window.turnstile) return;
+      widgetIdRef.current = window.turnstile.render(hostRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        theme: "auto",
+        callback: (token: string) => onTokenRef.current(token),
+        "expired-callback": () => onTokenRef.current(null),
+        "error-callback": () => onTokenRef.current(null),
+      });
+    });
+    return () => {
+      cancelled = true;
+      if (widgetIdRef.current && window.turnstile) {
+        try { window.turnstile.remove(widgetIdRef.current); } catch { /* already gone */ }
+      }
+      widgetIdRef.current = null;
+    };
+  }, []);
+
+  // Tokens are single-use: a failed submit consumes one, so the form bumps
+  // resetSignal to issue a fresh challenge.
+  useEffect(() => {
+    if (resetSignal === 0) return;
+    if (widgetIdRef.current && window.turnstile) {
+      try { window.turnstile.reset(widgetIdRef.current); } catch { /* ignore */ }
+    }
+    onTokenRef.current(null);
+  }, [resetSignal]);
+
+  return <div ref={hostRef} className="mt-2.5 flex justify-center" />;
+}
 
 export function AuthPanel({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -12,6 +87,16 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
   // Set after a successful sign-up while email confirmation is pending — the
   // modal must NOT close silently, or the user has no idea an email was sent.
   const [confirmSentTo, setConfirmSentTo] = useState<string | null>(null);
+  // Turnstile token for signUp/signInWithPassword; null when the widget is
+  // absent (no site key) or awaiting completion.
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
+
+  const failCaptcha = (message: string) => {
+    setError(message);
+    // A consumed/failed token can't be reused; get a fresh challenge.
+    if (TURNSTILE_SITE_KEY) setCaptchaReset((n) => n + 1);
+  };
 
   if (!supabaseEnabled || !supabase) {
     return (
@@ -40,13 +125,15 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
       const { data, error: authError } = await client.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: window.location.origin },
+        options: { emailRedirectTo: window.location.origin, ...(captchaToken ? { captchaToken } : {}) },
       });
       setLoading(false);
       if (authError) {
-        setError(/rate limit/i.test(authError.message) || authError.status === 429
-          ? "Too many sign-up emails right now. Wait a few minutes and try again."
-          : authError.message);
+        failCaptcha(/captcha/i.test(authError.message)
+          ? "Please complete the verification and try again."
+          : /rate limit/i.test(authError.message) || authError.status === 429
+            ? "Too many sign-up emails right now. Wait a few minutes and try again."
+            : authError.message);
         return;
       }
       // Supabase returns a fake user with no identities (and sends no email)
@@ -63,12 +150,18 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
       onClose();
       return;
     }
-    const { error: authError } = await client.auth.signInWithPassword({ email, password });
+    const { error: authError } = await client.auth.signInWithPassword({
+      email,
+      password,
+      ...(captchaToken ? { options: { captchaToken } } : {}),
+    });
     setLoading(false);
     if (authError) {
-      setError(/email not confirmed/i.test(authError.message)
-        ? "Your email isn't verified yet. Click the link in your confirmation email (check spam), then sign in."
-        : authError.message);
+      failCaptcha(/captcha/i.test(authError.message)
+        ? "Please complete the verification and try again."
+        : /email not confirmed/i.test(authError.message)
+          ? "Your email isn't verified yet. Click the link in your confirmation email (check spam), then sign in."
+          : authError.message);
       return;
     }
     onClose();
@@ -123,6 +216,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
           onKeyDown={(e) => e.key === "Enter" && submit()}
           className="w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
       </div>
+      {TURNSTILE_SITE_KEY && <TurnstileWidget onToken={setCaptchaToken} resetSignal={captchaReset} />}
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
       <button onClick={submit} disabled={loading} className="mt-4 flex w-full items-center justify-center gap-2 rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">
         <Mail size={16} /> {mode === "signup" ? "Sign up" : "Sign in"}

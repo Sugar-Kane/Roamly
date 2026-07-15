@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import JSZip from "jszip";
+import { limitOrResponse } from "./_ratelimit";
 
 // Inlined structured logger (kept local so this function bundles standalone).
 // Vercel's per-function bundler doesn't reliably trace the shared ./_log
@@ -111,6 +112,10 @@ export async function POST(request: Request): Promise<Response> {
   if (userError || !userData.user) {
     return jsonResponse({ error: "Invalid session" }, 401);
   }
+
+  // Short-window burst guard (Upstash; no-op until configured).
+  const rl = await limitOrResponse("ai-upload", userData.user.id, 5, 60);
+  if (rl) return rl;
   const user = userData.user;
 
   let body: { storagePath?: string; mediaType?: string };
@@ -339,6 +344,9 @@ export async function POST(request: Request): Promise<Response> {
     const message = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 4096,
+      // Greedy sampling: re-uploading the same document should produce the
+      // same task list, not a new random variation each time.
+      temperature: 0,
       system:
         "You extract a concrete study task list from uploaded lecture slides, syllabi, or notes for a Physician Assistant (PA) student. " +
         "Return one task per distinct topic or section you find (e.g. 'Review heart failure pathways', 'Practice 20 questions on beta-blockers') — skip cover pages, tables of contents, and filler. " +

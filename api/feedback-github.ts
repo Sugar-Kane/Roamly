@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { limitOrResponse } from "./_ratelimit";
 
 // Inlined structured logger (kept local so this function bundles standalone).
 // Never log secrets, tokens, or message bodies — ids and outcomes only.
@@ -44,6 +45,10 @@ export async function POST(request: Request): Promise<Response> {
   const admin = createClient(supabaseUrl, serviceRoleKey);
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
+
+  // Short-window burst guard (Upstash; no-op until configured).
+  const rl = await limitOrResponse("feedback-github", userData.user.id, 5, 60);
+  if (rl) return rl;
 
   let body: { id?: string };
   try { body = await request.json(); } catch { return json({ error: "Invalid request body" }, 400); }

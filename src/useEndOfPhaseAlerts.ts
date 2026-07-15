@@ -61,7 +61,9 @@ export function useEndOfPhaseAlerts() {
   }, [supported]);
 
   const notify = useCallback((finishedPhase: Phase) => {
-    if (soundEnabled) playChime();
+    // A finished focus block gets the short transition chime; a finished break
+    // gets the single long tone so "back to work" is unmistakable.
+    if (soundEnabled) playChime(finishedPhase === "focus" ? "transition" : "breakEnd");
     if (supported && Notification.permission === "granted") {
       try {
         new Notification("Roamly Focus", { body: PHASE_MESSAGE[finishedPhase] });

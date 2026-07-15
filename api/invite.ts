@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { limitOrResponse } from "./_ratelimit";
 
 // Inlined structured logger (kept local so this function bundles standalone).
 // Vercel's per-function bundler doesn't reliably trace the shared ./_log
@@ -46,6 +47,10 @@ export async function POST(request: Request): Promise<Response> {
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
   const inviter = userData.user;
+
+  // Short-window burst guard (Upstash; no-op until configured).
+  const rl = await limitOrResponse("invite", inviter.id, 5, 60);
+  if (rl) return rl;
 
   let body: { email?: string; name?: string };
   try { body = await request.json(); } catch { return json({ error: "Invalid request body" }, 400); }

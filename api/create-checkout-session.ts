@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { limitOrResponse } from "./_ratelimit";
 
 // One-time AI-upload credit packs. Amounts live server-side only — the client
 // names a pack, never a price. Inline price_data means no Stripe-dashboard
@@ -47,6 +48,10 @@ export async function POST(request: Request): Promise<Response> {
     });
   }
   const user = userData.user;
+
+  // Short-window burst guard (Upstash; no-op until configured).
+  const rl = await limitOrResponse("checkout", user.id, 10, 60);
+  if (rl) return rl;
 
   // Optional body: { pack: "small" | "large" } switches this to a one-time
   // credit-pack purchase. No body (or no pack) → the subscription flow.

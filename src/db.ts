@@ -117,6 +117,18 @@ export async function adminSearchUsers(query: string): Promise<AdminUser[]> {
   return (data ?? []) as AdminUser[];
 }
 
+// Admins add or remove ONE purchased credit at a time (server-enforced ±1,
+// floored at zero, ledgered + audited). Returns the new balance.
+export async function adminAdjustCredits(userId: string, delta: 1 | -1): Promise<{ balance?: number; error?: string }> {
+  if (!supabase) return { error: "Not available right now." };
+  const { data, error } = await supabase.rpc("admin_adjust_credits", { p_user: userId, p_delta: delta });
+  if (!error) return { balance: Number(data) };
+  if (error.message.includes("not_admin")) return { error: "You don't have admin access." };
+  if (error.message.includes("no_credits")) return { error: "That user has no credits to remove." };
+  console.warn("[Roamly] adminAdjustCredits failed", error.message);
+  return { error: "Couldn't adjust credits. Try again." };
+}
+
 export async function adminGrantPremium(userId: string, months: 1 | 12, reason?: string): Promise<{ expiresAt?: string; error?: string }> {
   if (!supabase) return { error: "Not available right now." };
   const { data, error } = await supabase.rpc("admin_grant_premium", { p_user: userId, p_months: months, p_reason: reason?.trim() || null });
