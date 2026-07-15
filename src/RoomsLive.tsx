@@ -757,18 +757,42 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     return () => { client.removeChannel(ch); };
   }, [room.id, room.is_system]);
 
-  // Chime on every shared-timer phase boundary (study session ending and break
-  // ending), matching the personal timer. prevPhase seeds to the current phase
-  // so entering a room doesn't chime. A finished focus block gets the short
-  // transition chime; a finished break gets the single long tone.
-  const prevPhase = useRef(info.phase);
+  // Start the appropriate completion chime three seconds before every shared
+  // timer boundary. RoomView is used by both always-on and hosted rooms.
+  //
+  // The phase key prevents duplicate playback from re-renders or synchronized
+  // room updates. A user entering a room with <=3 seconds remaining does not
+  // immediately hear a stale end-of-phase chime.
+  const chimePhaseKeyRef = useRef<string | null>(null);
+  const previousRoomSecondsRef = useRef(info.secondsLeft);
+
   useEffect(() => {
-    if (prevPhase.current !== info.phase) {
-      const finished = prevPhase.current;
-      prevPhase.current = info.phase;
-      if (completionSoundEnabled) playChime(finished === "focus" ? "transition" : "breakEnd");
+    const phaseKey = `${info.phase}-${info.focusIndex}`;
+    const previousSeconds = previousRoomSecondsRef.current;
+
+    if (
+      completionSoundEnabled &&
+      chimePhaseKeyRef.current !== phaseKey &&
+      previousSeconds > 3 &&
+      info.secondsLeft <= 3 &&
+      info.secondsLeft > 0
+    ) {
+      chimePhaseKeyRef.current = phaseKey;
+      playChime(info.phase === "focus" ? "transition" : "breakEnd");
     }
-  }, [info.phase, completionSoundEnabled]);
+
+    previousRoomSecondsRef.current = info.secondsLeft;
+
+    // A new phase gets a new key and may chime when it later crosses 3 seconds.
+    if (info.secondsLeft > 3 && chimePhaseKeyRef.current !== phaseKey) {
+      chimePhaseKeyRef.current = null;
+    }
+  }, [
+    info.secondsLeft,
+    info.phase,
+    info.focusIndex,
+    completionSoundEnabled,
+  ]);
 
   // Ending is host-only and blocked during focus, so a host can't pull the room
   // out from under people who are mid-session.

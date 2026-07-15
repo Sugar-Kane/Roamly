@@ -299,7 +299,7 @@ export default function App() {
   // the classic "own your start" behavior.
   const [autoFlow, setAutoFlow] = useState(() => loadPref("roamly-autostart") === "1");
   const toggleAutoFlow = () => setAutoFlow((v) => { savePref("roamly-autostart", v ? "0" : "1"); return !v; });
-  const timer = useTimer(method, handlePhaseComplete, autoFlow);
+  const timer = useTimer(method, handlePhaseComplete, autoFlow, alerts.playEndingChime);
   const countUp = useCountUpTimer();
 
   // Companions on the timer: which pets/plant to draw, and the "too distracting"

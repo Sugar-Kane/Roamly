@@ -11,7 +11,12 @@ export type Phase = "focus" | "short" | "long";
 // correct across backgrounding (and simply reads 0 when the phase elapsed
 // while the tab was hidden). Mirrors how rooms already derive phase from
 // wall-clock time. Public API is unchanged.
-export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase) => void, autoAdvance = false) {
+export function useTimer(
+  method: Method,
+  onPhaseComplete?: (finishedPhase: Phase) => void,
+  autoAdvance = false,
+  onPhaseEnding?: (endingPhase: Phase) => void,
+) {
   const [phase, setPhase] = useState<Phase>("focus");
   const [running, setRunning] = useState(false);
   const [completedFocus, setCompletedFocus] = useState(0);
@@ -21,10 +26,12 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
   const deadlineRef = useRef<number | null>(null); // ms epoch the phase ends
   const [, forceRender] = useState(0);
   const onPhaseCompleteRef = useRef(onPhaseComplete);
+  const onPhaseEndingRef = useRef(onPhaseEnding);
   // Ref-mirrored so flipping the preference never restarts the tick effect.
   const autoAdvanceRef = useRef(autoAdvance);
 
   useEffect(() => { onPhaseCompleteRef.current = onPhaseComplete; }, [onPhaseComplete]);
+  useEffect(() => { onPhaseEndingRef.current = onPhaseEnding; }, [onPhaseEnding]);
   useEffect(() => { autoAdvanceRef.current = autoAdvance; }, [autoAdvance]);
 
   const phaseLength = useCallback(
@@ -70,9 +77,22 @@ export function useTimer(method: Method, onPhaseComplete?: (finishedPhase: Phase
   useEffect(() => {
     if (!running || deadlineRef.current == null) return;
     let done = false; // fire the boundary exactly once across interval + refocus
+    let endingAlerted = false; // fire the 3-second chime exactly once per phase
+    let previousLeft = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
+
     const check = () => {
       if (done) return;
       const left = Math.max(0, Math.ceil((deadlineRef.current! - Date.now()) / 1000));
+
+      // Trigger when crossing the 3-second threshold instead of requiring an
+      // exact `left === 3`, which protects against timer throttling/skipped ticks.
+      if (!endingAlerted && previousLeft > 3 && left <= 3 && left > 0) {
+        endingAlerted = true;
+        onPhaseEndingRef.current?.(phase);
+      }
+
+      previousLeft = left;
+
       if (left <= 0) {
         done = true;
         window.clearInterval(iv);

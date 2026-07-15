@@ -60,10 +60,14 @@ export function useEndOfPhaseAlerts() {
     Notification.requestPermission().then(setPermission);
   }, [supported]);
 
+  const playEndingChime = useCallback((endingPhase: Phase) => {
+    if (!soundEnabled) return;
+    playChime(endingPhase === "focus" ? "transition" : "breakEnd");
+  }, [soundEnabled]);
+
   const notify = useCallback((finishedPhase: Phase) => {
-    // A finished focus block gets the short transition chime; a finished break
-    // gets the single long tone so "back to work" is unmistakable.
-    if (soundEnabled) playChime(finishedPhase === "focus" ? "transition" : "breakEnd");
+    // The sound already starts three seconds before the boundary. At zero,
+    // only deliver the notification/title alert so the chime cannot duplicate.
     if (supported && Notification.permission === "granted") {
       try {
         new Notification("Roamly Focus", { body: PHASE_MESSAGE[finishedPhase] });
@@ -78,5 +82,5 @@ export function useEndOfPhaseAlerts() {
     if (!enabled) stopChime();
   }, []);
 
-  return { permission, requestPermission, notify, soundEnabled, setSoundEnabled };
+  return { permission, requestPermission, notify, playEndingChime, soundEnabled, setSoundEnabled };
 }
