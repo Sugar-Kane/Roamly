@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import mammoth from "mammoth";
 import JSZip from "jszip";
-import { limitOrResponse } from "./_ratelimit";
+import { limitOrResponse } from "./_ratelimit.js";
 
 // Inlined structured logger (kept local so this function bundles standalone).
 // Vercel's per-function bundler doesn't reliably trace the shared ./_log

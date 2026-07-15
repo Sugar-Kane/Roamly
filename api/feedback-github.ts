@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { limitOrResponse } from "./_ratelimit";
+import { limitOrResponse } from "./_ratelimit.js";
 
 // Inlined structured logger (kept local so this function bundles standalone).
 // Never log secrets, tokens, or message bodies — ids and outcomes only.
