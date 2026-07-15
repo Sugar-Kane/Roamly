@@ -64,6 +64,7 @@ export function useFocusMotivation(
   // late AI response verify it still belongs to the current session.
   const sessionRef = useRef<number | null>(null);
   const seqRef = useRef(0);
+  const sessionStartedAtRef = useRef(0);
   const getContextRef = useRef(getContext);
   getContextRef.current = getContext;
 
@@ -78,6 +79,7 @@ export function useFocusMotivation(
     if (sessionRef.current !== null) return; // resume / re-render of the same session
     const id = ++seqRef.current;
     sessionRef.current = id;
+    sessionStartedAtRef.current = Date.now();
     setMessage(MOTIVATION_FALLBACKS[Math.floor(Math.random() * MOTIVATION_FALLBACKS.length)]);
     if (!signedIn) return; // guests keep the local message
     void (async () => {
@@ -100,9 +102,12 @@ export function useFocusMotivation(
 
   // A reset parks the timer back at the full duration: that cancels the
   // session, so the next Start counts as new (and clears the old message).
+  // The age guard matters: a PAUSE inside the first second of a block also
+  // reads as "parked at the full duration" (seconds are ceiled), and resume
+  // must never regenerate — so a session this young is always kept.
   const atFullDuration = !timer.running && timer.phase === "focus" && timer.secondsLeft === focusTotalSeconds;
   useEffect(() => {
-    if (atFullDuration && sessionRef.current !== null) {
+    if (atFullDuration && sessionRef.current !== null && Date.now() - sessionStartedAtRef.current > 1500) {
       sessionRef.current = null;
       setMessage(null);
     }
