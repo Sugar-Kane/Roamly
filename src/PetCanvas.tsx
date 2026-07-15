@@ -234,10 +234,14 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
       const useRive = !!a.riv && a.riv.ready && !a.riv.failed;
       // Rive files animate their own gait — only emoji pets get the fake bob.
       const bob = !useRive && moving ? Math.abs(Math.sin(a.hop)) * 4 : 0;
-      // Napping on a real bed lifts the pet slightly onto the mattress.
-      const bedLift = a.mode === "sleep" && slotEmoji("bed") ? petSize() * 0.14 : 0;
+      // Napping on a real bed lifts the pet onto the mattress AND shifts it
+      // toward the bed's middle: the bed glyph's left side is the headboard,
+      // so a glyph-centered pet looks like it's sleeping on the pillow.
+      const onBed = a.mode === "sleep" && !!slotEmoji("bed");
+      const bedLift = onBed ? size * 0.15 : 0;
+      const bedShift = onBed ? size * 0.3 : 0;
       ctx!.save();
-      ctx!.translate(a.x, floor - bob - bedLift);
+      ctx!.translate(a.x + bedShift, floor - bob - bedLift);
       if (a.facing === -1) ctx!.scale(-1, 1);
       if (useRive) {
         a.riv!.setWalking(a.mode === "walk");
@@ -267,7 +271,7 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
       if (a.mode === "sleep") {
         ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
         ctx!.textAlign = "center";
-        ctx!.fillText("💤", a.x + size * 0.4, floor - size * 0.7);
+        ctx!.fillText("💤", a.x + bedShift + size * 0.4, floor - size * 0.7);
       }
       if (a.mode === "eat" && Math.abs(a.x - bowlX()) < 24) {
         ctx!.font = `${Math.round(size * 0.32)}px ${EMOJI_FONT}`;
@@ -329,12 +333,17 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
     resize();
     syncActors();
 
-    // Static path: one frame, no loop. Park pets evenly along the floor.
+    // Static path: one frame, no loop. Park pets evenly along the floor —
+    // except sleeping pets with a bed, which park ON their bed.
     if (stateRef.current.reduceMotion) {
       const pad = 24;
-      actors.forEach((a, i) => { a.x = pad + (i + 0.5) * ((width - pad * 2) / Math.max(1, actors.length)); a.mode = stateRef.current.asleep ? "sleep" : "idle"; });
+      const park = (a: Actor, i: number) => {
+        a.mode = stateRef.current.asleep ? "sleep" : "idle";
+        a.x = a.mode === "sleep" && slotEmoji("bed") ? a.bedX : pad + (i + 0.5) * ((width - pad * 2) / Math.max(1, actors.length));
+      };
+      actors.forEach(park);
       render(false);
-      const ro = new ResizeObserver(() => { resize(); actors.forEach((a, i) => { a.x = pad + (i + 0.5) * ((width - pad * 2) / Math.max(1, actors.length)); }); render(false); });
+      const ro = new ResizeObserver(() => { resize(); actors.forEach(park); render(false); });
       ro.observe(canvas);
       return () => ro.disconnect();
     }
