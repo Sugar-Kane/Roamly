@@ -281,6 +281,44 @@ test("optional break tasks join the focus-mode checklist on breaks", async ({ pa
   await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(0);
 });
 
+test("focus motivation shows per session, survives pause, and skip clears it without confetti", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  const line = overlay.getByTestId("focus-motivation");
+  await expect(line).toBeVisible();
+  const text = (await line.textContent())!;
+  expect(text.length).toBeGreaterThan(10);
+  // Pausing and resuming is the same session: the message must not change.
+  await overlay.getByRole("button", { name: "Pause", exact: true }).click();
+  await overlay.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(line).toHaveText(text);
+  // Skipping is not a successful completion: no confetti, message gone.
+  await overlay.getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(page.getByTestId("confetti")).toHaveCount(0);
+  await expect(overlay.getByTestId("focus-motivation")).toHaveCount(0);
+});
+
+test("confetti fires only when a focus block completes naturally", async ({ page }) => {
+  await page.clock.install();
+  await goHome(page);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  // A reset never celebrates.
+  await overlay.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByTestId("focus-overlay").getByRole("button", { name: "Exit focus mode" }).click();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(page.getByTestId("confetti")).toHaveCount(0);
+  // Run a full 25-minute block down to 00:00: the one true completion path.
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await page.clock.fastForward("25:05");
+  await expect(page.getByTestId("confetti")).toBeVisible();
+  // Completion behavior is untouched: the timer moved on to the break.
+  await expect(page.getByTestId("focus-overlay").getByText("Short break")).toBeVisible();
+});
+
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
   for (const width of [320, 375, 390, 430, 768, 1280]) {

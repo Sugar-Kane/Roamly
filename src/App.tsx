@@ -37,6 +37,8 @@ import { GamificationView, UnlockToast } from "./GamificationView";
 import { usePetSleep } from "./usePetSleep";
 const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 import { HealthyBreakActivities, useBreakActivityPicks, type Activity } from "./HealthyBreakActivities";
+import { useFocusMotivation, buildMotivationContext, MotivationLine } from "./useFocusMotivation";
+import { ConfettiBurst } from "./Confetti";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
 
@@ -267,9 +269,18 @@ export default function App() {
     void fetchGamification().then((g) => { if (g) setServerGam(g); });
   }, [view, session?.user.id]);
 
+  // Bumped once per NATURALLY completed focus block; ConfettiBurst plays one
+  // celebration per bump (and skips itself under reduced motion).
+  const [confettiBurst, setConfettiBurst] = useState(0);
+
   const handlePhaseComplete = useCallback((finishedPhase: Phase) => {
     alerts.notify(finishedPhase);
     if (finishedPhase !== "focus") return;
+    // useTimer fires this callback ONLY when a phase runs down to 00:00
+    // naturally (skip/reset never reach it), so this is the one true
+    // "focus block completed" moment — celebrate it. Purely additive:
+    // sounds, notifications, tracking, and auto-flow all continue below.
+    setConfettiBurst((n) => n + 1);
     track("focus_block_done");
     // Credit the completed Pomodoro to whichever task was active when the phase finished.
     const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
@@ -301,6 +312,16 @@ export default function App() {
   const toggleAutoFlow = () => setAutoFlow((v) => { savePref("roamly-autostart", v ? "0" : "1"); return !v; });
   const timer = useTimer(method, handlePhaseComplete, autoFlow, alerts.playEndingChime);
   const countUp = useCountUpTimer();
+
+  // One AI-personalized motivational line per new focus session, from context
+  // the app already holds (active task, nearest exam, open-task subjects).
+  // The hook owns session detection and duplicate-request prevention.
+  const motivationContext = useCallback(() => buildMotivationContext({
+    activeTask: activeTask ? tasks.find((t) => t.id === activeTask) : null,
+    exams: examSchedules,
+    tasks,
+  }), [activeTask, tasks, examSchedules]);
+  const motivation = useFocusMotivation(timer, method.focus * 60, !!session, motivationContext);
 
   // Companions on the timer: which pets/plant to draw, and the "too distracting"
   // sleep state (they nap until the focus block ends). Hidden entirely when the
@@ -878,7 +899,8 @@ export default function App() {
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               pipSupported={pipSupported} pipActive={!!pipWindow}
               onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
-              companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep} />
+              companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
+              motivation={motivation} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
@@ -928,6 +950,8 @@ export default function App() {
         </main>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
+      {/* Above the focus-mode overlay (z-120) and modals; pointer-events none. */}
+      <ConfettiBurst burst={confettiBurst} reduceMotion={a11y.reduceMotion} />
       <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} hidden={view !== "focus" || immersive || !!pipWindow}
         stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
       <FocusMode open={immersive} phase={timer.phase}
@@ -968,6 +992,7 @@ export default function App() {
           </>
         }
         companions={petStageNode}
+        motivation={timer.phase === "focus" ? motivation : null}
         extra={
           // Order per user feedback: 1) Tasks, 2) built-in Music, 3) the
           // Spotify/Apple embed — so the two music boxes sit together under the
@@ -1482,7 +1507,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, motivation }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1529,6 +1554,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
             <TimeDisplay value={fmt(timer.secondsLeft)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
             <span className="mt-1 text-sm text-muted-foreground">{method.name}</span>
+            {timer.phase === "focus" && <MotivationLine text={motivation} className="lg:mx-0 lg:text-left" />}
           </div>
 
           <div className="flex flex-1 flex-col gap-5">
