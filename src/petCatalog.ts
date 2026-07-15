@@ -17,7 +17,11 @@ export type PetSpecies =
 
 export type PetDef = { id: string; species: PetSpecies; name: string; unlock_sessions: number; sort: number };
 export type RewardKind = "plant" | "tree" | "accessory" | "theme";
-export type RewardDef = { id: string; kind: RewardKind; name: string; unlock_level: number; meta: { emoji?: string }; sort: number };
+// Every accessory is functional on the pet stage, keyed by its slot (one
+// active per slot): bed = pets nap on it during focus, toy = pets kick it
+// around, bowl = pets wander over for snacks, hat/face = worn by the pets.
+export type AccessorySlot = "bed" | "hat" | "face" | "toy" | "bowl";
+export type RewardDef = { id: string; kind: RewardKind; name: string; unlock_level: number; meta: { emoji?: string; slot?: AccessorySlot }; sort: number };
 export type AchievementDef = { id: string; name: string; hint: string; xp: number; sort: number };
 
 export const PET_CATALOG: PetDef[] = [
@@ -44,31 +48,41 @@ export const PET_CATALOG: PetDef[] = [
 export const REWARD_CATALOG: RewardDef[] = [
   { id: "sprout", kind: "plant", name: "Sprout", unlock_level: 1, meta: { emoji: "🌱" }, sort: 1 },
   { id: "succulent", kind: "plant", name: "Succulent", unlock_level: 2, meta: { emoji: "🪴" }, sort: 2 },
-  { id: "pet_bed", kind: "accessory", name: "Cozy Pet Bed", unlock_level: 3, meta: { emoji: "🛏️" }, sort: 3 },
+  { id: "pet_bed", kind: "accessory", name: "Cozy Pet Bed", unlock_level: 3, meta: { emoji: "🛏️", slot: "bed" }, sort: 3 },
   { id: "fern", kind: "plant", name: "Fern", unlock_level: 4, meta: { emoji: "🌿" }, sort: 4 },
   { id: "bonsai", kind: "tree", name: "Bonsai", unlock_level: 5, meta: { emoji: "🎍" }, sort: 5 },
   { id: "sunflower", kind: "plant", name: "Sunflower", unlock_level: 6, meta: { emoji: "🌻" }, sort: 6 },
-  { id: "party_hat", kind: "accessory", name: "Party Hat", unlock_level: 7, meta: { emoji: "🎉" }, sort: 7 },
+  { id: "ball", kind: "accessory", name: "Bouncy Ball", unlock_level: 7, meta: { emoji: "🎾", slot: "toy" }, sort: 7 },
   { id: "maple_sapling", kind: "tree", name: "Maple Sapling", unlock_level: 8, meta: { emoji: "🍁" }, sort: 8 },
   { id: "monstera", kind: "plant", name: "Monstera", unlock_level: 9, meta: { emoji: "🌴" }, sort: 9 },
   { id: "forest_theme", kind: "theme", name: "Forest Theme", unlock_level: 10, meta: { emoji: "🌲" }, sort: 10 },
-  { id: "crown", kind: "accessory", name: "Golden Crown", unlock_level: 11, meta: { emoji: "👑" }, sort: 11 },
+  { id: "crown", kind: "accessory", name: "Golden Crown", unlock_level: 11, meta: { emoji: "👑", slot: "hat" }, sort: 11 },
   { id: "oak", kind: "tree", name: "Mighty Oak", unlock_level: 12, meta: { emoji: "🌳" }, sort: 12 },
-  { id: "midnight_theme", kind: "theme", name: "Midnight Theme", unlock_level: 14, meta: { emoji: "🌙" }, sort: 13 },
-  { id: "cherry_blossom", kind: "tree", name: "Cherry Blossom", unlock_level: 15, meta: { emoji: "🌸" }, sort: 14 },
-  { id: "cactus", kind: "plant", name: "Desert Cactus", unlock_level: 16, meta: { emoji: "🌵" }, sort: 15 },
-  { id: "study_cap", kind: "accessory", name: "Study Cap", unlock_level: 17, meta: { emoji: "🧢" }, sort: 16 },
-  { id: "mushroom_grove", kind: "plant", name: "Mushroom Grove", unlock_level: 18, meta: { emoji: "🍄" }, sort: 17 },
-  { id: "wishing_bamboo", kind: "tree", name: "Wishing Bamboo", unlock_level: 19, meta: { emoji: "🎋" }, sort: 18 },
-  { id: "rainbow_theme", kind: "theme", name: "Rainbow Theme", unlock_level: 20, meta: { emoji: "🌈" }, sort: 19 },
-  { id: "cool_shades", kind: "accessory", name: "Cool Shades", unlock_level: 21, meta: { emoji: "🕶️" }, sort: 20 },
-  { id: "hibiscus", kind: "plant", name: "Hibiscus", unlock_level: 22, meta: { emoji: "🌺" }, sort: 21 },
-  { id: "evergreen", kind: "tree", name: "Evergreen", unlock_level: 24, meta: { emoji: "🎄" }, sort: 22 },
-  { id: "lotus", kind: "plant", name: "Lotus", unlock_level: 25, meta: { emoji: "🪷" }, sort: 23 },
-  { id: "top_hat", kind: "accessory", name: "Top Hat", unlock_level: 26, meta: { emoji: "🎩" }, sort: 24 },
-  { id: "grape_arbor", kind: "tree", name: "Grape Arbor", unlock_level: 28, meta: { emoji: "🍇" }, sort: 25 },
-  { id: "galaxy_theme", kind: "theme", name: "Galaxy Theme", unlock_level: 30, meta: { emoji: "🌌" }, sort: 26 },
+  { id: "snack_bowl", kind: "accessory", name: "Snack Bowl", unlock_level: 13, meta: { emoji: "🥣", slot: "bowl" }, sort: 13 },
+  { id: "midnight_theme", kind: "theme", name: "Midnight Theme", unlock_level: 14, meta: { emoji: "🌙" }, sort: 14 },
+  { id: "cherry_blossom", kind: "tree", name: "Cherry Blossom", unlock_level: 15, meta: { emoji: "🌸" }, sort: 15 },
+  { id: "cactus", kind: "plant", name: "Desert Cactus", unlock_level: 16, meta: { emoji: "🌵" }, sort: 16 },
+  { id: "study_cap", kind: "accessory", name: "Study Cap", unlock_level: 17, meta: { emoji: "🧢", slot: "hat" }, sort: 17 },
+  { id: "mushroom_grove", kind: "plant", name: "Mushroom Grove", unlock_level: 18, meta: { emoji: "🍄" }, sort: 18 },
+  { id: "wishing_bamboo", kind: "tree", name: "Wishing Bamboo", unlock_level: 19, meta: { emoji: "🎋" }, sort: 19 },
+  { id: "rainbow_theme", kind: "theme", name: "Rainbow Theme", unlock_level: 20, meta: { emoji: "🌈" }, sort: 20 },
+  { id: "cool_shades", kind: "accessory", name: "Cool Shades", unlock_level: 21, meta: { emoji: "🕶️", slot: "face" }, sort: 21 },
+  { id: "hibiscus", kind: "plant", name: "Hibiscus", unlock_level: 22, meta: { emoji: "🌺" }, sort: 22 },
+  { id: "evergreen", kind: "tree", name: "Evergreen", unlock_level: 24, meta: { emoji: "🎄" }, sort: 23 },
+  { id: "lotus", kind: "plant", name: "Lotus", unlock_level: 25, meta: { emoji: "🪷" }, sort: 24 },
+  { id: "top_hat", kind: "accessory", name: "Top Hat", unlock_level: 26, meta: { emoji: "🎩", slot: "hat" }, sort: 25 },
+  { id: "grape_arbor", kind: "tree", name: "Grape Arbor", unlock_level: 28, meta: { emoji: "🍇" }, sort: 26 },
+  { id: "galaxy_theme", kind: "theme", name: "Galaxy Theme", unlock_level: 30, meta: { emoji: "🌌" }, sort: 27 },
 ];
+
+// User-facing blurb for what each accessory slot does on the stage.
+export const SLOT_HINT: Record<AccessorySlot, string> = {
+  bed: "Pets nap on it during focus",
+  toy: "Pets kick it around between sessions",
+  bowl: "Pets wander over for a snack",
+  hat: "Worn by your pets",
+  face: "Worn by your pets",
+};
 
 export const ACHIEVEMENT_CATALOG: AchievementDef[] = [
   { id: "first_focus", name: "First focus", hint: "Finish one focus session", xp: 20, sort: 1 },

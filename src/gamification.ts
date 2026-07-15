@@ -11,12 +11,12 @@ import type { StudyEvent } from "./release3";
 import { type FocusSession, computeStreak } from "./streaks";
 import {
   ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG,
-  earnedAchievementIds, growthStage, type RewardKind, type StudyMetrics,
+  earnedAchievementIds, growthStage, type AccessorySlot, type RewardKind, type StudyMetrics,
 } from "./petCatalog";
 
 export type GamAchievement = { id: string; name: string; hint: string; xp: number; sort: number; earned: boolean; earned_at: string | null };
 export type GamPet = { id: string; species: string; name: string; unlock_sessions: number; sort: number; owned: boolean; is_active: boolean };
-export type GamReward = { id: string; kind: RewardKind; name: string; unlock_level: number; meta: { emoji?: string }; sort: number; owned: boolean; is_active: boolean; growth_points: number };
+export type GamReward = { id: string; kind: RewardKind; name: string; unlock_level: number; meta: { emoji?: string; slot?: AccessorySlot }; sort: number; owned: boolean; is_active: boolean; growth_points: number };
 
 export type Gamification = {
   xp: number;
@@ -39,13 +39,17 @@ export type GamSyncResult = {
   new_rewards: string[];
 };
 
-// The active pets + active plant/tree to draw on the companion stage (shared by
-// the Garden preview and the timer overlay).
-export function stageProps(g: Gamification): { pets: { id: string; species: string }[]; plant: { emoji: string; stage: number } | null } {
+// The active pets + active plant/tree + equipped accessories to draw on the
+// companion stage (shared by the Garden preview and the timer overlay).
+export type StageAccessory = { slot: AccessorySlot; emoji: string };
+export function stageProps(g: Gamification): { pets: { id: string; species: string }[]; plant: { emoji: string; stage: number } | null; accessories: StageAccessory[] } {
   const pets = g.pets.filter((p) => p.owned && p.is_active).map((p) => ({ id: p.id, species: p.species }));
   const active = g.rewards.find((r) => r.owned && r.is_active && (r.kind === "plant" || r.kind === "tree"));
   const plant = active ? { emoji: active.meta.emoji ?? "🌱", stage: growthStage(active.growth_points) } : null;
-  return { pets, plant };
+  const accessories = g.rewards
+    .filter((r) => r.owned && r.is_active && r.kind === "accessory" && r.meta.slot)
+    .map((r) => ({ slot: r.meta.slot as AccessorySlot, emoji: r.meta.emoji ?? "🎁" }));
+  return { pets, plant, accessories };
 }
 
 // XP curve — mirrors public.level_for_xp / public.xp_for_level in the migration.
@@ -138,11 +142,18 @@ export function computeLocalGamification(sessions: FocusSession[], events: Study
 
   const owned = REWARD_CATALOG.filter((r) => r.unlock_level <= level);
   const firstPlant = owned.find((r) => r.kind === "plant" || r.kind === "tree");
+  // Guests can't customize, so auto-equip the best owned accessory per slot —
+  // otherwise the functional accessories would never appear for them.
+  const bestPerSlot = new Map<string, string>();
+  for (const r of owned) {
+    if (r.kind === "accessory" && r.meta.slot) bestPerSlot.set(r.meta.slot, r.id); // catalog is level-ordered, so last wins
+  }
+  const autoEquipped = new Set(bestPerSlot.values());
   const rewards: GamReward[] = REWARD_CATALOG.map((r) => {
     const isOwned = r.unlock_level <= level;
     const isActivePlant = firstPlant?.id === r.id;
     return {
-      ...r, owned: isOwned, is_active: isActivePlant,
+      ...r, owned: isOwned, is_active: isActivePlant || autoEquipped.has(r.id),
       growth_points: isActivePlant ? m.sessionCount : 0,
     };
   });
