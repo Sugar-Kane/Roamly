@@ -214,6 +214,7 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await page.getByRole("button", { name: /buy AI upload credits/i }).click();
   await expect(page.getByText("$3", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("$30", { exact: true })).toBeVisible();
+  await expect(page.getByText("$2", { exact: true })).toBeVisible(); // 5-credit upload pack
   await expect(page.getByRole("button", { name: "Choose monthly" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose annual" })).toBeVisible();
   await expect(page.getByText("2 uploads", { exact: true })).toBeVisible();

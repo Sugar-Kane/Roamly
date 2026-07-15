@@ -2843,7 +2843,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {[
             { id: "small" as const, credits: 2, price: "$1" },
-            { id: "large" as const, credits: 5, price: "$3" },
+            { id: "large" as const, credits: 5, price: "$2" },
           ].map((p) => (
             <div key={p.id} className="rounded-2xl border border-border bg-card/70 p-4">
               <div className="flex items-baseline justify-between">
