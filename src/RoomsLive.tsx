@@ -705,13 +705,22 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
+    // You are always in the room you're looking at: seed yourself so the list
+    // never sits on "Connecting…" while presence joins (or quietly fails and
+    // auto-retries) — the empty list read as a dead room.
+    setMembers([{ id: userId, username }]);
     const ch = client.channel(`room:${room.id}`, { config: { private: true, presence: { key: userId } } });
     ch.on("presence", { event: "sync" }, () => {
       const state = ch.presenceState<{ username: string }>();
-      setMembers(Object.entries(state).map(([id, metas]) => ({ id, username: metas[0]?.username ?? "student" })));
+      const list = Object.entries(state).map(([id, metas]) => ({ id, username: metas[0]?.username ?? "student" }));
+      if (!list.some((m) => m.id === userId)) list.unshift({ id: userId, username });
+      setMembers(list);
     });
     ch.subscribe((status) => {
       if (status === "SUBSCRIBED") ch.track({ username });
+      // The channel keeps rejoining on its own; log so a broken policy or
+      // auth token is visible instead of an eternally-lonely member list.
+      else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") console.warn("[Roamly] room presence subscribe failed", room.id, status);
     });
     return () => { client.removeChannel(ch); };
   }, [room.id, userId, username]);

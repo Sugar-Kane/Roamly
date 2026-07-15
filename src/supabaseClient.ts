@@ -29,6 +29,18 @@ export const supabase: SupabaseClient | null = supabaseEnabled
 // no longer exists, clear only this device's cached session immediately.
 if (supabase && typeof window !== "undefined") {
   const client = supabase;
+
+  // supabase-js only forwards the user's JWT to the realtime socket on
+  // SIGNED_IN / TOKEN_REFRESHED. A page that loads with a RESTORED session
+  // fires INITIAL_SESSION, which it ignores — so every private realtime
+  // channel (room presence, room voice) subscribes as anon, gets rejected
+  // by the `to authenticated` policies, and stays dead until the first
+  // token refresh up to an hour later. That was the rooms' perpetual
+  // "Connecting…". Forward the token ourselves.
+  client.auth.onAuthStateChange((event, session) => {
+    if (event === "INITIAL_SESSION" && session) void client.realtime.setAuth(session.access_token);
+  });
+
   let validationInFlight: Promise<void> | null = null;
 
   const validateStoredSession = (): Promise<void> => {

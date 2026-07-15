@@ -714,10 +714,16 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
   const nextTrack = () => {
     if (stopped) return;
     const pool = tracksFor(category);
-    if (pool.length === 0) return;
+    if (pool.length === 0) { el.pause(); return; }
     if (order.length === 0) {
       order = tracksOutsideCooldown(pool);
       if (order.length === 0) {
+        // The element may still be carrying the PREVIOUS build's track (a
+        // handed-over teardown deliberately no-ops, see the token note
+        // above). Every path that won't set a fresh src must silence it,
+        // or the generative stand-in layers on top of the old track and
+        // two musics play at once — the room "double café music" bug.
+        el.pause();
         fallbackStop = category === "lofi" ? buildLofi(audio, out) : buildPiano(audio, out);
         announcePlayback(category === "lofi" ? "Fresh café session" : "Fresh calm session", "Roamly Focus");
         return;
