@@ -1515,8 +1515,15 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         </button>
         {timerMode === "pomodoro" ? (
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:gap-10">
-          <div className="relative flex shrink-0 flex-col items-center lg:items-start">
-            {companions && <div className="pointer-events-none absolute inset-x-0 -top-14 h-14">{companions}</div>}
+          <div className="flex shrink-0 flex-col items-center lg:items-start">
+            {/* Companions live in their own card (not floating over the Select
+                timer button) so pets/plants/accessories never overlap other UI. */}
+            {companions && (
+              <div className="mb-4 w-full rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Companions</span>
+                <div className="pointer-events-none h-16 w-full">{companions}</div>
+              </div>
+            )}
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
             <TimeDisplay value={fmt(timer.secondsLeft)} className="font-display text-7xl font-medium tracking-tight sm:text-8xl" />
             <span className="mt-1 text-sm text-muted-foreground">{method.name}</span>
