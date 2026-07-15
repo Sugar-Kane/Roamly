@@ -3,23 +3,44 @@
 // Renders the user's active pets roaming around a little floor with their
 // active plant/tree growing at one end. Pets pick random idle behaviors
 // (wander, pause, sit) and — when asleep — walk to a bed and nap until the
-// timer is up. Art is emoji glyphs drawn onto the canvas: cross-platform,
-// zero-asset, and animated purely by moving/scaling the glyphs each frame.
+// timer is up.
+//
+// Art comes from two sources, per species:
+//  * A Rive state-machine animation (skeletal idle/walk/sleep) when the
+//    species has an entry in RIVE_PETS. Each Rive artboard renders into its
+//    own small offscreen canvas (the Rive runtime drives it) and the stage
+//    loop composites that canvas at the actor's position/facing each frame.
+//  * Emoji glyphs otherwise — cross-platform, zero-asset, animated purely by
+//    moving/scaling the glyph. Also the automatic fallback while a .riv file
+//    loads or if it fails.
 //
 // Motion is a first-class accessibility concern here: when reduceMotion is set
 // (the a11y toggle, prefers-reduced-motion, or the parent hiding it) we draw a
-// single static frame and never start the rAF loop. The loop is also paused
-// while the tab is hidden. Lazy-loaded by App like the charts bundle.
+// single static emoji frame and never start the rAF loop or the Rive runtime.
+// The loop is also paused while the tab is hidden. Lazy-loaded by App like the
+// charts bundle; the Rive runtime is dynamic-imported only when a manifest
+// species is actually on stage, so emoji-only users never download it.
 
 import { useEffect, useRef } from "react";
 import { PET_ART, type PetSpecies } from "./petCatalog";
+import { RIVE_PETS } from "./petRive";
 
 export type StagePet = { id: string; species: string };
 export type StagePlant = { emoji: string; stage: number } | null;
 
+type RiveHandle = {
+  canvas: HTMLCanvasElement;
+  ready: boolean;
+  failed: boolean;
+  cleanup: () => void;
+  setWalking: (on: boolean) => void;
+  setSleeping: (on: boolean) => void;
+};
+
 type Actor = {
   id0: string; // the owning pet id, so actors track active-pet toggles
   emoji: string;
+  riv: RiveHandle | null; // null = emoji rendering
   x: number;
   vx: number;
   facing: 1 | -1;
@@ -30,9 +51,53 @@ type Actor = {
 };
 
 const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+const RIVE_SURFACE = 128; // offscreen render size (px) per Rive pet
 
 function petEmoji(species: string): string {
   return PET_ART[species as PetSpecies]?.emoji ?? "🐾";
+}
+
+// Boot a Rive artboard into an offscreen canvas. Returns a handle immediately;
+// `ready` flips once loaded, `failed` on any error (the actor keeps drawing
+// its emoji in both cases until `ready`).
+function createRiveHandle(species: PetSpecies): RiveHandle | null {
+  const def = RIVE_PETS[species];
+  if (!def) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = RIVE_SURFACE;
+  canvas.height = RIVE_SURFACE;
+  const handle: RiveHandle = {
+    canvas,
+    ready: false,
+    failed: false,
+    cleanup: () => {},
+    setWalking: () => {},
+    setSleeping: () => {},
+  };
+  import("@rive-app/canvas-lite")
+    .then(({ Rive }) => {
+      if (handle.failed) return; // cleaned up before the runtime arrived
+      const rive = new Rive({
+        src: def.src,
+        canvas,
+        autoplay: true,
+        stateMachines: def.stateMachine,
+        onLoad: () => {
+          rive.resizeDrawingSurfaceToCanvas();
+          const inputs = rive.stateMachineInputs(def.stateMachine) ?? [];
+          const byName = (n?: string) => (n ? inputs.find((i) => i.name === n) : undefined);
+          const walk = byName(def.inputs.walk);
+          const sleep = byName(def.inputs.sleep);
+          handle.setWalking = (on) => { if (walk) walk.value = on; };
+          handle.setSleeping = (on) => { if (sleep) sleep.value = on; };
+          handle.ready = true;
+        },
+        onLoadError: () => { handle.failed = true; },
+      });
+      handle.cleanup = () => { handle.failed = true; handle.ready = false; rive.cleanup(); };
+    })
+    .catch(() => { handle.failed = true; });
+  return handle;
 }
 
 // A tiny seeded PRNG so behavior varies per pet without Math.random (which is
@@ -79,7 +144,10 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
       const want = stateRef.current.pets;
       // Drop actors whose pet is no longer active.
       for (let i = actors.length - 1; i >= 0; i--) {
-        if (!want.some((p) => p.id === actors[i]!.id0)) actors.splice(i, 1);
+        if (!want.some((p) => p.id === actors[i]!.id0)) {
+          actors[i]!.riv?.cleanup();
+          actors.splice(i, 1);
+        }
       }
       want.forEach((p, i) => {
         if (actors.some((a) => a.id0 === p.id)) return;
@@ -87,6 +155,8 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
         actors.push({
           id0: p.id,
           emoji: petEmoji(p.species),
+          // Rive only animates; the static reduce-motion frame stays emoji.
+          riv: stateRef.current.reduceMotion ? null : createRiveHandle(p.species as PetSpecies),
           x: pad + rand(rng) * Math.max(1, width - pad * 2),
           vx: 0,
           facing: rand(rng) > 0.5 ? 1 : -1,
@@ -115,14 +185,22 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
     function drawActor(a: Actor, moving: boolean) {
       const size = petSize();
       const floor = height - 6;
-      const bob = moving ? Math.abs(Math.sin(a.hop)) * 4 : 0;
+      const useRive = !!a.riv && a.riv.ready && !a.riv.failed;
+      // Rive files animate their own gait — only emoji pets get the fake bob.
+      const bob = !useRive && moving ? Math.abs(Math.sin(a.hop)) * 4 : 0;
       ctx!.save();
       ctx!.translate(a.x, floor - bob);
       if (a.facing === -1) ctx!.scale(-1, 1);
-      ctx!.font = `${size}px ${EMOJI_FONT}`;
-      ctx!.textAlign = "center";
-      ctx!.textBaseline = "alphabetic";
-      ctx!.fillText(a.emoji, 0, 0);
+      if (useRive) {
+        a.riv!.setWalking(a.mode === "walk");
+        a.riv!.setSleeping(a.mode === "sleep");
+        ctx!.drawImage(a.riv!.canvas, -size / 2, -size, size, size);
+      } else {
+        ctx!.font = `${size}px ${EMOJI_FONT}`;
+        ctx!.textAlign = "center";
+        ctx!.textBaseline = "alphabetic";
+        ctx!.fillText(a.emoji, 0, 0);
+      }
       ctx!.restore();
       if (a.mode === "sleep") {
         ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
@@ -207,6 +285,7 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisible);
       ro.disconnect();
+      for (const a of actors) a.riv?.cleanup();
     };
     // Re-arm only when switching between animated and static rendering; all
     // other prop changes are read live from stateRef inside the loop.

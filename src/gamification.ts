@@ -111,6 +111,7 @@ function metricsFrom(sessions: FocusSession[], events: StudyEvent[], doneTasks: 
     sessionCount: events.length,
     doneTasks,
     hasRoomSession: events.some((e) => e.session_kind === "room"),
+    roomSessionCount: events.filter((e) => e.session_kind === "room").length,
   };
 }
 
