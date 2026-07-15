@@ -8,7 +8,7 @@ import { limitOrResponse } from "./_ratelimit";
 // subscription alone.
 const CREDIT_PACKS = {
   small: { credits: 2, cents: 100, name: "2 Roamly upload credits" },
-  large: { credits: 5, cents: 300, name: "5 Roamly upload credits" },
+  large: { credits: 5, cents: 200, name: "5 Roamly upload credits" },
 } as const;
 type PackId = keyof typeof CREDIT_PACKS;
 type PlanId = "monthly" | "annual";

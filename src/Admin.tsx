@@ -203,7 +203,11 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
         )}
         {results.map((u) => (
           <div key={u.id} className="rounded-xl border border-border bg-card/70 p-3">
-            <div className="flex items-center gap-3">
+            {/* Stacks on phones (identity row, then actions) so the name/email
+                block is never crushed to zero width by the buttons; from sm it
+                lays back out as a single row. */}
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex min-w-0 items-start gap-2 sm:flex-1 sm:items-center">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{u.display_name || u.username || u.email || "Unnamed user"}</p>
                 <p className="truncate text-xs text-muted-foreground">{u.email}{u.username ? ` · @${u.username}` : ""}</p>
@@ -225,7 +229,8 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
                   <Crown size={11} /> Premium
                 </span>
               )}
-              <div className="flex shrink-0 flex-wrap justify-end gap-1">
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-1 sm:justify-end">
                 {u.is_premium && (
                   <button onClick={() => revoke(u)} disabled={busyId !== null}
                     className="rounded-full border border-destructive/50 px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50">

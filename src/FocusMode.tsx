@@ -124,7 +124,7 @@ export function FocusMode({
   controls?: ReactNode;
   music?: ReactNode;
   extra?: ReactNode;
-  companions?: ReactNode; // pet/plant stage drawn over the timer
+  companions?: ReactNode; // pet/plant stage, shown in its own card above the timer
 }) {
   useImmersive(open);
   const [showNudge, setShowNudge] = useState(() => loadPref("roamly-dnd-nudge-seen") !== "1");
@@ -176,8 +176,16 @@ export function FocusMode({
           </div>
         )}
 
-        <div className="relative flex flex-col items-center">
-          {companions && <div className="pointer-events-none absolute inset-x-0 -top-16 h-16 sm:-top-20 sm:h-20">{companions}</div>}
+        {/* Companions get their own in-flow card so pets/plants never crowd
+            the Exit button or the timer digits, especially on phones. */}
+        {companions && (
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Companions</span>
+            <div className="pointer-events-none h-16 w-full sm:h-20">{companions}</div>
+          </div>
+        )}
+
+        <div className="flex flex-col items-center">
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
           <TimeDisplay value={timeText} className="font-display text-[20vw] font-medium tracking-tight sm:text-[15vw] lg:text-[8.5rem] xl:text-[10rem]" />
           {title && <span className="mt-2 max-w-[80vw] truncate text-base text-foreground">{title}</span>}
@@ -200,7 +208,7 @@ export function FocusMode({
           </p>
         </div>
 
-        {controls && <div className="flex items-center justify-center gap-3">{controls}</div>}
+        {controls && <div className="flex flex-wrap items-center justify-center gap-3">{controls}</div>}
         </div>
 
         {/* RIGHT: music + tasks/panels. On desktop this column caps to the
