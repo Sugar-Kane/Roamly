@@ -254,9 +254,14 @@ function buildMelody(audio: AudioContext, out: GainNode): () => void {
   const timers: number[] = [];
   const oscs: OscillatorNode[] = [];
 
+  // Per-session character: a random key, a random opening chord, and a random
+  // pad pace — so two Melody sessions never open on the same sound.
+  const transpose = Math.pow(2, Math.round(rand(-3, 3)) / 12);
+  const CHORD_SECONDS = rand(10, 15);
+
   // Chord pad: Am → F → C → G voicings, one gain per chord, crossfaded on a
   // slow loop. All 12 oscillators run continuously; only the ramps move.
-  const padLp = audio.createBiquadFilter(); padLp.type = "lowpass"; padLp.frequency.value = 800;
+  const padLp = audio.createBiquadFilter(); padLp.type = "lowpass"; padLp.frequency.value = rand(650, 950);
   padLp.connect(out);
   const chords: number[][] = [
     [220.0, 261.63, 329.63], // Am
@@ -264,14 +269,15 @@ function buildMelody(audio: AudioContext, out: GainNode): () => void {
     [196.0, 261.63, 329.63], // C (2nd inversion-ish)
     [196.0, 246.94, 293.66], // G
   ];
+  let chordIdx = Math.floor(Math.random() * chords.length);
   const chordGains: GainNode[] = chords.map((freqs, i) => {
     const g = audio.createGain();
-    g.gain.value = i === 0 ? 0.11 : 0.0001;
+    g.gain.value = i === chordIdx ? 0.11 : 0.0001;
     g.connect(padLp);
     for (const f of freqs) {
       // Detuned pair per voice for warmth.
       for (const det of [0.9985, 1.0015]) {
-        const o = audio.createOscillator(); o.type = "triangle"; o.frequency.value = f * det;
+        const o = audio.createOscillator(); o.type = "triangle"; o.frequency.value = f * transpose * det;
         const vg = audio.createGain(); vg.gain.value = 0.33;
         o.connect(vg); vg.connect(g); o.start();
         oscs.push(o);
@@ -279,8 +285,6 @@ function buildMelody(audio: AudioContext, out: GainNode): () => void {
     }
     return g;
   });
-  let chordIdx = 0;
-  const CHORD_SECONDS = 12;
   const nextChord = () => {
     const from = chordGains[chordIdx];
     chordIdx = (chordIdx + 1) % chords.length;
@@ -296,8 +300,9 @@ function buildMelody(audio: AudioContext, out: GainNode): () => void {
   };
   timers.push(window.setTimeout(nextChord, CHORD_SECONDS * 1000));
 
-  // Lead: A-minor pentatonic, mostly stepwise motion so it reads as a tune.
-  const scale = [440.0, 523.25, 587.33, 659.25, 783.99, 880.0]; // A C D E G A
+  // Lead: A-minor pentatonic (in the session key), mostly stepwise motion so
+  // it reads as a tune.
+  const scale = [440.0, 523.25, 587.33, 659.25, 783.99, 880.0].map((f) => f * transpose); // A C D E G A
   let noteIdx = Math.floor(Math.random() * scale.length);
   const note = () => {
     // Prefer a neighbor step; occasionally leap or repeat.
@@ -375,9 +380,11 @@ function buildPiano(audio: AudioContext, out: GainNode): () => void {
     [[261.63, 329.63, 392.0], [196.0, 246.94, 293.66], [220.0, 261.63, 329.63], [174.61, 220.0, 261.63]], // C G Am F
   ];
   const progression = PROGRESSIONS[Math.floor(Math.random() * PROGRESSIONS.length)];
-  const transpose = Math.pow(2, Math.round(rand(-2, 2)) / 12);
+  const transpose = Math.pow(2, Math.round(rand(-4, 4)) / 12);
 
-  let bar = 0;
+  // Start mid-progression at random so the opening chord differs even between
+  // sessions that landed on the same progression and key.
+  let bar = Math.floor(Math.random() * progression.length);
   const playBar = () => {
     const chord = progression[bar % progression.length].map((f) => f * transpose);
     const t0 = audio.currentTime + 0.05;
@@ -404,7 +411,15 @@ function buildAmbient(audio: AudioContext, out: GainNode): () => void {
   const timers: number[] = [];
   const rootChoices = [110, 123.47, 130.81, 146.83, 164.81];
   const root = rootChoices[Math.floor(Math.random() * rootChoices.length)];
-  const intervals = [1, 1.5, 2, 2.5];
+  // Random chord flavor per session (add9-ish, minor, open fifths, maj7) so
+  // the drone doesn't open identically every time a root repeats.
+  const INTERVAL_SETS = [
+    [1, 1.5, 2, 2.5],
+    [1, 1.2, 1.5, 2],
+    [1, 1.5, 2, 3],
+    [1, 1.25, 1.5, 1.875],
+  ];
+  const intervals = INTERVAL_SETS[Math.floor(Math.random() * INTERVAL_SETS.length)];
   const warm = audio.createBiquadFilter();
   warm.type = "lowpass";
   warm.frequency.value = rand(650, 1100);
@@ -448,23 +463,62 @@ function buildAmbient(audio: AudioContext, out: GainNode): () => void {
   };
 }
 
+// Rainfall texture. The old version was one narrow bandpass over white noise,
+// which is the recipe for "TV static". Real rain reads as rain because of two
+// things this recreates: a dark, breathing wash (not a flat bright hiss) and
+// irregular individual droplet plips on top.
+function buildRainLayer(audio: AudioContext, out: GainNode): () => void {
+  const timers: number[] = [];
+  const noise = noiseBuffer(audio, "white");
+
+  // Bed: highpass removes rumble, a low lowpass removes the static-y top end,
+  // and a slow random "gust" walk keeps the density moving like weather.
+  const bed = audio.createBufferSource(); bed.buffer = noise; bed.loop = true;
+  const bedHp = audio.createBiquadFilter(); bedHp.type = "highpass"; bedHp.frequency.value = 300;
+  const bedLp = audio.createBiquadFilter(); bedLp.type = "lowpass"; bedLp.frequency.value = rand(950, 1300); bedLp.Q.value = 0.4;
+  const bedGain = audio.createGain(); bedGain.gain.value = 0.018;
+  bed.connect(bedHp); bedHp.connect(bedLp); bedLp.connect(bedGain); bedGain.connect(out);
+  bed.start(0, rand(0, 3.5)); // random loop phase per session
+  const gust = () => {
+    bedGain.gain.setTargetAtTime(rand(0.012, 0.026), audio.currentTime, rand(0.8, 1.6));
+    timers.push(window.setTimeout(gust, rand(2500, 6000)));
+  };
+  gust();
+
+  // Droplets: short resonant plips at random pitch, pan, and spacing.
+  const droplet = () => {
+    const s = audio.createBufferSource(); s.buffer = noise;
+    const bp = audio.createBiquadFilter(); bp.type = "bandpass";
+    bp.frequency.value = rand(700, 3200); bp.Q.value = rand(6, 14);
+    const g = audio.createGain();
+    const t = audio.currentTime;
+    const decay = rand(0.02, 0.06);
+    g.gain.setValueAtTime(rand(0.02, 0.05), t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+    let tail: AudioNode = g;
+    if (audio.createStereoPanner) {
+      const pan = audio.createStereoPanner(); pan.pan.value = rand(-0.7, 0.7);
+      g.connect(pan); tail = pan;
+    }
+    s.connect(bp); bp.connect(g); tail.connect(out);
+    s.start(t); s.stop(t + decay + 0.02);
+    timers.push(window.setTimeout(droplet, rand(70, 260)));
+  };
+  droplet();
+
+  return () => {
+    timers.forEach((t) => window.clearTimeout(t));
+    try { bed.stop(); } catch { /* stopped */ }
+    bed.disconnect(); bedHp.disconnect(); bedLp.disconnect(); bedGain.disconnect();
+  };
+}
+
 function buildRainyPiano(audio: AudioContext, out: GainNode): () => void {
   const pianoStop = buildPiano(audio, out);
-  const rain = audio.createBufferSource();
-  rain.buffer = noiseBuffer(audio, "white");
-  rain.loop = true;
-  const rainBand = audio.createBiquadFilter();
-  rainBand.type = "bandpass";
-  rainBand.frequency.value = rand(1800, 2600);
-  rainBand.Q.value = 0.35;
-  const rainGain = audio.createGain();
-  rainGain.gain.value = 0.025;
-  rain.connect(rainBand); rainBand.connect(rainGain); rainGain.connect(out);
-  rain.start();
+  const rainStop = buildRainLayer(audio, out);
   return () => {
     pianoStop();
-    try { rain.stop(); } catch { /* stopped */ }
-    rain.disconnect(); rainBand.disconnect(); rainGain.disconnect();
+    rainStop();
   };
 }
 
@@ -476,10 +530,12 @@ function buildLofi(audio: AudioContext, out: GainNode): () => void {
 
   const noise = noiseBuffer(audio, "white");
 
-  // Vinyl bed: faint hiss plus sparse crackle pops.
+  // Vinyl bed: faint hiss plus sparse crackle pops. The hiss sits low and
+  // dark (narrow band, well under the music) so it reads as vinyl warmth,
+  // not radio static.
   const hiss = audio.createBufferSource(); hiss.buffer = noise; hiss.loop = true;
-  const hissBp = audio.createBiquadFilter(); hissBp.type = "bandpass"; hissBp.frequency.value = 4500; hissBp.Q.value = 0.5;
-  const hissG = audio.createGain(); hissG.gain.value = 0.012;
+  const hissBp = audio.createBiquadFilter(); hissBp.type = "bandpass"; hissBp.frequency.value = 2800; hissBp.Q.value = 1.1;
+  const hissG = audio.createGain(); hissG.gain.value = 0.006;
   hiss.connect(hissBp); hissBp.connect(hissG); hissG.connect(out); hiss.start();
   const crackleTimers: number[] = [];
   const crackle = () => {
