@@ -2,8 +2,16 @@
 //
 // Renders the user's active pets roaming around a little floor with their
 // active plant/tree growing at one end. Pets pick random idle behaviors
-// (wander, pause, sit) and — when asleep — walk to a bed and nap until the
-// timer is up.
+// (wander, pause, sit, snack) and — when asleep — walk to a bed and nap until
+// the timer is up.
+//
+// Equipped accessories (one per slot, from stageProps) are functional:
+//  * bed — each pet gets a little bed; sleeping pets nap ON it instead of the
+//    floor (without one they just curl up where they stand).
+//  * toy — a ball sits on the floor; walking pets kick it and it rolls,
+//    decelerates, and bounces off the stage edges.
+//  * bowl — pets occasionally wander over to the snack bowl and pause to eat.
+//  * hat / face — drawn on every pet (head or eye-line), emoji and Rive alike.
 //
 // Art comes from two sources, per species:
 //  * A Rive state-machine animation (skeletal idle/walk/sleep) when the
@@ -22,11 +30,12 @@
 // species is actually on stage, so emoji-only users never download it.
 
 import { useEffect, useRef } from "react";
-import { PET_ART, type PetSpecies } from "./petCatalog";
+import { PET_ART, type AccessorySlot, type PetSpecies } from "./petCatalog";
 import { RIVE_PETS } from "./petRive";
 
 export type StagePet = { id: string; species: string };
 export type StagePlant = { emoji: string; stage: number } | null;
+export type StageAccessory = { slot: AccessorySlot; emoji: string };
 
 type RiveHandle = {
   canvas: HTMLCanvasElement;
@@ -44,7 +53,7 @@ type Actor = {
   x: number;
   vx: number;
   facing: 1 | -1;
-  mode: "idle" | "walk" | "sit" | "sleep";
+  mode: "idle" | "walk" | "sit" | "sleep" | "eat";
   until: number; // seconds remaining in the current behavior
   hop: number; // running phase for the walk bob
   bedX: number;
@@ -107,17 +116,18 @@ function rand(state: { s: number }): number {
   return state.s / 0xffffffff;
 }
 
-export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
+export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, className }: {
   pets: StagePet[];
   plant: StagePlant;
+  accessories?: StageAccessory[];
   asleep: boolean;
   reduceMotion: boolean;
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Latest props for the animation loop without re-arming it every render.
-  const stateRef = useRef({ pets, plant, asleep, reduceMotion });
-  stateRef.current = { pets, plant, asleep, reduceMotion };
+  const stateRef = useRef({ pets, plant, accessories, asleep, reduceMotion });
+  stateRef.current = { pets, plant, accessories, asleep, reduceMotion };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -129,6 +139,13 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
     const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
     const actors: Actor[] = [];
     const rng = { s: 20260714 };
+    // Toy-ball state; placed on first frame the toy is equipped.
+    const ball = { x: 0, vx: 0, placed: false };
+
+    const slotEmoji = (slot: AccessorySlot): string | null =>
+      stateRef.current.accessories.find((a) => a.slot === slot)?.emoji ?? null;
+    // The snack bowl sits left of the plant so the two never overlap.
+    const bowlX = () => width - 52;
 
     function resize() {
       const rect = canvas!.getBoundingClientRect();
@@ -163,7 +180,7 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
           mode: "idle",
           until: 0.5 + rand(rng) * 1.5,
           hop: rand(rng) * Math.PI * 2,
-          bedX: 30 + i * 34,
+          bedX: 30 + i * 40,
         });
       });
     }
@@ -182,14 +199,45 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
       ctx!.globalAlpha = 1;
     }
 
+    // Furniture layer: beds (one per pet), snack bowl, and the toy ball —
+    // drawn before the actors so pets always render on top of their gear.
+    function drawFurniture() {
+      const floor = height - 6;
+      const size = petSize();
+      ctx!.textAlign = "center";
+      ctx!.textBaseline = "alphabetic";
+      const bed = slotEmoji("bed");
+      if (bed) {
+        ctx!.font = `${Math.round(size * 0.95)}px ${EMOJI_FONT}`;
+        ctx!.globalAlpha = 0.9;
+        for (const a of actors) ctx!.fillText(bed, a.bedX, floor);
+        ctx!.globalAlpha = 1;
+      }
+      const bowl = slotEmoji("bowl");
+      if (bowl) {
+        ctx!.font = `${Math.round(size * 0.5)}px ${EMOJI_FONT}`;
+        ctx!.fillText(bowl, bowlX(), floor);
+      }
+      const toy = slotEmoji("toy");
+      if (toy) {
+        if (!ball.placed) { ball.x = width * 0.4; ball.vx = 0; ball.placed = true; }
+        ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
+        ctx!.fillText(toy, ball.x, floor);
+      } else {
+        ball.placed = false;
+      }
+    }
+
     function drawActor(a: Actor, moving: boolean) {
       const size = petSize();
       const floor = height - 6;
       const useRive = !!a.riv && a.riv.ready && !a.riv.failed;
       // Rive files animate their own gait — only emoji pets get the fake bob.
       const bob = !useRive && moving ? Math.abs(Math.sin(a.hop)) * 4 : 0;
+      // Napping on a real bed lifts the pet slightly onto the mattress.
+      const bedLift = a.mode === "sleep" && slotEmoji("bed") ? petSize() * 0.14 : 0;
       ctx!.save();
-      ctx!.translate(a.x, floor - bob);
+      ctx!.translate(a.x, floor - bob - bedLift);
       if (a.facing === -1) ctx!.scale(-1, 1);
       if (useRive) {
         a.riv!.setWalking(a.mode === "walk");
@@ -201,11 +249,30 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
         ctx!.textBaseline = "alphabetic";
         ctx!.fillText(a.emoji, 0, 0);
       }
+      // Worn accessories ride the same transform, so they flip and bob with
+      // the pet — a hat sits on the head, shades sit on the eye line.
+      const hat = slotEmoji("hat");
+      if (hat) {
+        ctx!.font = `${Math.round(size * 0.48)}px ${EMOJI_FONT}`;
+        ctx!.textAlign = "center";
+        ctx!.fillText(hat, 0, -size * 0.82);
+      }
+      const face = slotEmoji("face");
+      if (face) {
+        ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
+        ctx!.textAlign = "center";
+        ctx!.fillText(face, 0, -size * 0.42);
+      }
       ctx!.restore();
       if (a.mode === "sleep") {
         ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
         ctx!.textAlign = "center";
         ctx!.fillText("💤", a.x + size * 0.4, floor - size * 0.7);
+      }
+      if (a.mode === "eat" && Math.abs(a.x - bowlX()) < 24) {
+        ctx!.font = `${Math.round(size * 0.32)}px ${EMOJI_FONT}`;
+        ctx!.textAlign = "center";
+        ctx!.fillText("♪", a.x + size * 0.35, floor - size * 0.8);
       }
     }
 
@@ -220,9 +287,11 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
       a.until -= dt;
       if (a.until <= 0) {
         const roll = rand(rng);
+        const hasBowl = !!slotEmoji("bowl");
         if (roll < 0.45) { a.mode = "walk"; a.vx = (18 + rand(rng) * 26) * (rand(rng) > 0.5 ? 1 : -1); a.facing = a.vx < 0 ? -1 : 1; a.until = 1 + rand(rng) * 2.5; }
-        else if (roll < 0.8) { a.mode = "idle"; a.vx = 0; a.until = 0.8 + rand(rng) * 2; }
-        else { a.mode = "sit"; a.vx = 0; a.until = 1 + rand(rng) * 2.5; }
+        else if (roll < 0.75) { a.mode = "idle"; a.vx = 0; a.until = 0.8 + rand(rng) * 2; }
+        else if (roll < 0.9 || !hasBowl) { a.mode = "sit"; a.vx = 0; a.until = 1 + rand(rng) * 2.5; }
+        else { a.mode = "eat"; a.until = 3 + rand(rng) * 2; } // amble to the bowl, snack until the timer rolls over
       }
       if (a.mode === "walk") {
         a.x += a.vx * dt;
@@ -230,11 +299,30 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
         if (a.x < pad) { a.x = pad; a.vx = Math.abs(a.vx); a.facing = 1; }
         if (a.x > width - pad) { a.x = width - pad; a.vx = -Math.abs(a.vx); a.facing = -1; }
       }
+      if (a.mode === "eat") {
+        const dx = bowlX() - 16 - a.x; // stand just left of the bowl
+        if (Math.abs(dx) > 3) { a.facing = dx < 0 ? -1 : 1; a.x += Math.sign(dx) * Math.min(Math.abs(dx), 60 * dt); a.hop += dt * 9; }
+      }
+      // Walking pets kick the ball when they run into it.
+      if (ball.placed && a.mode === "walk" && Math.abs(a.x - ball.x) < petSize() * 0.35) {
+        ball.vx = (ball.x >= a.x ? 1 : -1) * (50 + Math.abs(a.vx));
+      }
+    }
+
+    function stepBall(dt: number) {
+      if (!ball.placed || ball.vx === 0) return;
+      const pad = 16;
+      ball.x += ball.vx * dt;
+      ball.vx *= Math.max(0, 1 - 1.8 * dt); // friction
+      if (Math.abs(ball.vx) < 4) ball.vx = 0;
+      if (ball.x < pad) { ball.x = pad; ball.vx = Math.abs(ball.vx) * 0.7; }
+      if (ball.x > width - pad) { ball.x = width - pad; ball.vx = -Math.abs(ball.vx) * 0.7; }
     }
 
     function render(moving: boolean) {
       ctx!.clearRect(0, 0, width, height);
       drawPlant();
+      drawFurniture();
       for (const a of actors) drawActor(a, moving && a.mode === "walk");
     }
 
@@ -265,6 +353,7 @@ export function PetStage({ pets, plant, asleep, reduceMotion, className }: {
         syncActors();
         const sleeping = stateRef.current.asleep;
         for (const a of actors) step(a, acc, sleeping);
+        stepBall(acc);
         render(true);
         acc = 0;
       }

@@ -12,7 +12,7 @@ import { Sprout, PawPrint, Trophy, Lock, Check, Star, Sparkles } from "lucide-re
 import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
 import { stageProps, type Gamification, type GamSyncResult } from "./gamification";
-import { ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, growthStage, type PetSpecies } from "./petCatalog";
+import { ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, SLOT_HINT, growthStage, type PetSpecies } from "./petCatalog";
 
 const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 
@@ -60,7 +60,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
             <p className="grid h-full place-items-center text-xs text-muted-foreground">Companions are hidden on your timer.</p>
           ) : stage.pets.length > 0 || stage.plant ? (
             <Suspense fallback={null}>
-              <PetStage pets={stage.pets} plant={stage.plant} asleep={false} reduceMotion={reduceMotion} className="absolute inset-0 h-full w-full" />
+              <PetStage pets={stage.pets} plant={stage.plant} accessories={stage.accessories} asleep={false} reduceMotion={reduceMotion} className="absolute inset-0 h-full w-full" />
             </Suspense>
           ) : (
             <p className="grid h-full place-items-center text-xs text-muted-foreground">Your companions will appear here.</p>
@@ -136,16 +136,20 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
       {/* Level rewards */}
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold"><Star size={15} className="text-roamly-blue" /> Level rewards</h2>
-        <p className="mt-1 text-xs text-muted-foreground">Plants and trees grow as you study; cosmetics and themes unlock at new levels.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Plants and trees grow as you study; accessories go to work on your pet stage; themes unlock at new levels.</p>
         <div className="mt-3 space-y-1.5">
           {g.rewards.map((r) => {
             const growable = r.kind === "plant" || r.kind === "tree";
+            const usable = r.kind === "accessory" && !!r.meta.slot;
             const stg = growable ? growthStage(r.growth_points) : 0;
             return (
               <div key={r.id} className={`flex items-center gap-3 rounded-xl border p-2.5 ${r.owned ? "border-border bg-card/60" : "border-border bg-card/40 opacity-70"}`}>
                 <span className={`text-xl ${r.owned ? "" : "grayscale"}`} aria-hidden="true">{r.meta.emoji ?? "🎁"}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-semibold">{r.name} <span className="font-normal text-muted-foreground">· {KIND_LABEL[r.kind] ?? r.kind}</span></p>
+                  {usable && r.meta.slot && (
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">{SLOT_HINT[r.meta.slot]}</p>
+                  )}
                   {r.owned && growable && (
                     <div className="mt-1 flex gap-0.5" aria-label={`Growth ${stg + 1} of ${GROWTH_STAGES}`}>
                       {Array.from({ length: GROWTH_STAGES }).map((_, i) => (
@@ -159,6 +163,11 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
                     <button onClick={() => onToggle("reward", r.id, !r.is_active)}
                       className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium transition ${r.is_active ? "bg-roamly-green/15 text-roamly-green" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
                       {r.is_active ? "Growing ✓" : "Grow here"}
+                    </button>
+                  ) : usable && canCustomize ? (
+                    <button onClick={() => onToggle("reward", r.id, !r.is_active)}
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium transition ${r.is_active ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
+                      {r.is_active ? "In use ✓" : "Use"}
                     </button>
                   ) : (
                     <Check size={14} className="shrink-0 text-roamly-green" />

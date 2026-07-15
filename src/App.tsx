@@ -310,7 +310,7 @@ export default function App() {
   const showCompanions = companionsOn && (companionStage.pets.length > 0 || !!companionStage.plant);
   const petStageNode = showCompanions ? (
     <Suspense fallback={null}>
-      <PetStage pets={companionStage.pets} plant={companionStage.plant} asleep={petSleep.asleep} reduceMotion={a11y.reduceMotion} className="h-full w-full" />
+      <PetStage pets={companionStage.pets} plant={companionStage.plant} accessories={companionStage.accessories} asleep={petSleep.asleep} reduceMotion={a11y.reduceMotion} className="h-full w-full" />
     </Suspense>
   ) : null;
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
@@ -561,16 +561,22 @@ export default function App() {
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
 
-  // Pick which pet/plant is shown on the timer (signed-in only). Only one
-  // plant/tree grows at a time, so activating one turns the others off.
+  // Pick which pet/plant/accessory is shown on the timer (signed-in only).
+  // Only one plant/tree grows at a time, and only one accessory fits each
+  // slot (bed/hat/face/toy/bowl), so activating one turns its rivals off.
   const onToggleCompanion = useCallback(async (kind: "pet" | "reward", id: string, active: boolean) => {
     if (!session?.user.id) return;
     if (kind === "pet") {
       await setPetActive(id, active);
     } else {
       if (active) {
-        const others = (serverGam?.rewards ?? []).filter((r) => r.is_active && (r.kind === "plant" || r.kind === "tree") && r.id !== id);
-        await Promise.all(others.map((r) => setRewardActive(r.id, false)));
+        const target = (serverGam?.rewards ?? []).find((r) => r.id === id);
+        const rivals = (serverGam?.rewards ?? []).filter((r) => {
+          if (!r.is_active || r.id === id) return false;
+          if (target?.kind === "accessory") return r.kind === "accessory" && r.meta.slot === target.meta.slot;
+          return r.kind === "plant" || r.kind === "tree";
+        });
+        await Promise.all(rivals.map((r) => setRewardActive(r.id, false)));
       }
       await setRewardActive(id, active);
     }
