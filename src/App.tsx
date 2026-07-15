@@ -36,7 +36,7 @@ import { computeLocalGamification, fetchGamification, syncGamification, setPetAc
 import { GamificationView, UnlockToast } from "./GamificationView";
 import { usePetSleep } from "./usePetSleep";
 const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
-import { HealthyBreakActivities } from "./HealthyBreakActivities";
+import { HealthyBreakActivities, useBreakActivityPicks, type Activity } from "./HealthyBreakActivities";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
 
@@ -976,9 +976,11 @@ export default function App() {
           <div className="space-y-4">
             <AdBreakPrompt active={timer.phase !== "focus" && !isPremium}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)} />
+            {/* During breaks the checklist itself carries the optional green
+                break tasks, so no separate break card is needed here. */}
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask}
-              estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached} />
-            <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} compact />
+              estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached}
+              breakActive={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
             <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
           </div>
@@ -1630,7 +1632,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         )}
       </section>
 
-      <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-main-${timer.phase}-${timer.completedFocus}`} />
+      {/* Same breakKey as the focus-mode checklist, so both surfaces suggest
+          the same two activities during a given break. */}
+      <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
       <AdBreakPrompt active={timer.phase !== "focus" && !isPremium} onAdvertise={onAdvertise} onGoPremium={onGoPremium} />
 
       <FocusSoundsPanel sounds={sounds} />
@@ -2865,10 +2869,17 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
 }
 
 
-function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimateReachedTask, onResolveEstimate }: any) {
+function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimateReachedTask, onResolveEstimate, breakActive = false, breakKey = "" }: any) {
   // A just-completed task lingers briefly in its "done" state before dropping
   // out, so checking it off gives visible feedback instead of a vanishing row.
   const [justDone, setJustDone] = useState<string | null>(null);
+  // Optional healthy-break suggestions folded into the checklist during
+  // breaks: green so they read as different from real tasks, ticking them is
+  // entirely optional, and they vanish when the break ends. A fresh random
+  // pair (never last break's) arrives each break via breakKey.
+  const breakPicks = useBreakActivityPicks(!!breakActive, breakKey);
+  const [breakDone, setBreakDone] = useState<string[]>([]);
+  useEffect(() => { setBreakDone([]); }, [breakKey]);
   const open = sortTasks(tasks).filter((t: Task) => !t.done || t.id === justDone)
     .sort((a: Task, b: Task) => Number(b.id === activeTask) - Number(a.id === activeTask))
     .slice(0, 4);
@@ -2886,11 +2897,30 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimate
     window.setTimeout(() => setJustDone(null), 900);
   };
 
-  if (tasks.length === 0) return null;
+  if (tasks.length === 0 && breakPicks.length === 0) return null;
   return (
     <div className="rounded-2xl border border-border bg-card/70 p-3">
-      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Studying</span>
-      {open.length === 0 ? (
+      <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{breakPicks.length > 0 ? "On a break" : "Studying"}</span>
+      {breakPicks.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {breakPicks.map((a: Activity) => {
+            const done = breakDone.includes(a.id);
+            return (
+              <div key={a.id}
+                className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 transition ${done ? "border-roamly-green bg-roamly-green/10" : "border-roamly-green/40 bg-roamly-green/5"}`}>
+                <button onClick={() => setBreakDone((v) => (done ? v.filter((id) => id !== a.id) : [...v, a.id]))}
+                  aria-pressed={done} aria-label={`Mark optional break task ${a.title} done`}
+                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${done ? "border-roamly-green bg-roamly-green" : "border-roamly-green/50 hover:border-roamly-green"}`}>
+                  {done && <Check size={14} className="text-white" />}
+                </button>
+                <span className={`min-w-0 flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`} title={a.instruction}>{a.title}</span>
+                <span className="shrink-0 rounded-full bg-roamly-green/10 px-2 py-0.5 text-[10px] font-semibold text-roamly-green">Optional</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {tasks.length === 0 ? null : open.length === 0 ? (
         <p className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
           <Check size={15} className="shrink-0 text-roamly-green" /> All tasks done. Ride out the timer or enjoy your break.
         </p>

@@ -259,6 +259,28 @@ test("Release 3 break activities are optional and interactive", async ({ page })
   await expect(options.first()).toHaveAttribute("aria-pressed", "true");
 });
 
+test("optional break tasks join the focus-mode checklist on breaks", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  await page.getByPlaceholder(/Add a study task/).fill("Break test task");
+  await page.getByLabel("New subject name").fill("Testing");
+  await page.getByRole("button", { name: "Add task", exact: true }).click();
+  await page.getByRole("button", { name: "Focus", exact: true }).click();
+  // Start drops into focus mode; Skip inside the overlay reaches the break.
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  await overlay.getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(2);
+  // Ticking one works but is never required.
+  const tick = overlay.getByRole("button", { name: /Mark optional break task/ }).first();
+  await tick.click();
+  await expect(tick).toHaveAttribute("aria-pressed", "true");
+  // Back in focus, the optional rows disappear.
+  await overlay.getByRole("button", { name: "Skip", exact: true }).click();
+  await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(0);
+});
+
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
   for (const width of [320, 375, 390, 430, 768, 1280]) {

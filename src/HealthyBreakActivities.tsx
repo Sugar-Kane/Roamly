@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Heart } from "lucide-react";
 import { loadPref, savePref } from "./storage";
 
-type Activity = { id: string; title: string; instruction: string; category: string; movement: boolean };
+export type Activity = { id: string; title: string; instruction: string; category: string; movement: boolean };
 const ACTIVITIES: Activity[] = [
   { id: "water", title: "Drink water", instruction: "Take a few comfortable sips.", category: "hydrate", movement: false },
   { id: "stand", title: "Stand up", instruction: "Change position for a moment, with support if needed.", category: "movement", movement: true },
@@ -15,8 +15,11 @@ const ACTIVITIES: Activity[] = [
   { id: "hands", title: "Relax your hands", instruction: "Unclench your hands and gently move your fingers.", category: "mobility", movement: false },
 ];
 
-export function HealthyBreakActivities({ active, breakKey, compact = false }: { active: boolean; breakKey: string; compact?: boolean }) {
-  const [completed, setCompleted] = useState<string[]>([]);
+// Two activities per break, keyed off breakKey (deterministic within a break,
+// different next break) and excluding the previous break's picks. Shared by
+// the standalone break card and the focus-mode task checklist, so every
+// surface that's mounted during the same break shows the same pair.
+export function useBreakActivityPicks(active: boolean, breakKey: string): Activity[] {
   const picks = useMemo(() => {
     if (!active) return [];
     const previous = (loadPref("roamly-break-activity-last") ?? "").split(",").filter(Boolean);
@@ -29,9 +32,16 @@ export function HealthyBreakActivities({ active, breakKey, compact = false }: { 
   }, [active, breakKey]);
 
   useEffect(() => {
-    setCompleted([]);
     if (picks.length) savePref("roamly-break-activity-last", picks.map((p) => p.id).join(","));
-  }, [breakKey, picks]);
+  }, [picks]);
+  return picks;
+}
+
+export function HealthyBreakActivities({ active, breakKey, compact = false }: { active: boolean; breakKey: string; compact?: boolean }) {
+  const [completed, setCompleted] = useState<string[]>([]);
+  const picks = useBreakActivityPicks(active, breakKey);
+
+  useEffect(() => { setCompleted([]); }, [breakKey]);
   if (!active || picks.length !== 2) return null;
 
   return <section className={`rounded-2xl border border-roamly-green/30 bg-roamly-green/5 ${compact ? "p-3" : "p-4"}`} aria-label="Healthy break activities">
