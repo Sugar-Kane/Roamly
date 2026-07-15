@@ -468,10 +468,6 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
         )}
       </section>
 
-      {!isPremium && (
-        <p className="mt-5 text-center text-xs text-muted-foreground">Free plan: join up to 3 sessions a day. <span className="text-primary">Premium</span> removes all limits.</p>
-      )}
-
       {showCreate && <CreateRoomModal hostId={session.user.id} onClose={() => setShowCreate(false)} onCreated={created} />}
     </div>
   );

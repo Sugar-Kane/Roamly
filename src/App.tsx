@@ -2513,7 +2513,6 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
   const totalMin60 = (sessions as FocusSession[]).reduce((a, s) => a + s.minutes, 0);
   const activeDays = (sessions as FocusSession[]).filter((s) => s.minutes > 0).length;
   const bestDayEver = (sessions as FocusSession[]).reduce((m, s) => Math.max(m, s.minutes), 0);
-  const doneTasks = (tasks as Task[]).filter((t) => t.done).length;
 
   // Subject split from real completed pomodoros per subject.
   const pomsByTag = new Map<string, number>();
@@ -2524,20 +2523,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 
-  // Achievements are computed live from the same data — they unlock themselves
-  // as the user actually studies.
   const hrs = Math.floor(totalMin60 / 60);
-  const achievements = [
-    { name: "First focus", hint: "Finish one focus session", done: totalMin60 > 0 },
-    { name: "3-day streak", hint: `Study 3 days in a row (${Math.min(streak, 3)}/3)`, done: streak >= 3 },
-    { name: "7-day streak", hint: `Study 7 days in a row (${Math.min(streak, 7)}/7)`, done: streak >= 7 },
-    { name: "Century day", hint: `100 focus minutes in a day (best ${bestDayEver}m)`, done: bestDayEver >= 100 },
-    { name: "Deep day", hint: `3 hours in one day (best ${Math.floor(bestDayEver / 60)}h)`, done: bestDayEver >= 180 },
-    { name: "10 hours in", hint: `${Math.min(hrs, 10)}/10 hours of total focus`, done: hrs >= 10 },
-    { name: "25 hours in", hint: `${Math.min(hrs, 25)}/25 hours of total focus`, done: hrs >= 25 },
-    { name: "Task finisher", hint: `Complete 10 tasks (${Math.min(doneTasks, 10)}/10)`, done: doneTasks >= 10 },
-  ];
-  const earned = achievements.filter((a) => a.done).length;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -2578,28 +2564,6 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
           <PremiumAnalyticsGate title="Study post-mortem" description="Unlock follow-through patterns, missed-session reasons, and practical planning guidance." onUpgrade={onUpsell} />
         </div>
       )}
-
-      {/* Achievements are free for everyone (they feed the leveling system in
-          the Garden tab). This is a live snapshot; the full collection, XP, and
-          rewards live under Garden. */}
-      <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold">Achievements</h2>
-          <span className="text-xs text-muted-foreground">{earned}/{achievements.length} earned</span>
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {achievements.map((a) => (
-            <div key={a.name} className={`rounded-xl border p-3 ${a.done ? "border-primary/50 bg-primary/5" : "border-border bg-card/60 opacity-70"}`}>
-              <div className="flex items-center gap-1.5">
-                {a.done ? <Check size={13} className="shrink-0 text-roamly-green" /> : <Lock size={12} className="shrink-0 text-muted-foreground" />}
-                <span className="truncate text-xs font-semibold">{a.name}</span>
-              </div>
-              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{a.hint}</p>
-            </div>
-          ))}
-        </div>
-        <p className="mt-3 text-[11px] text-muted-foreground">Earn XP, level up, and collect pets & plants in the <span className="font-medium text-foreground">Garden</span> tab.</p>
-      </div>
 
       {isPremium ? subjectSplit.length > 0 && (
         <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
