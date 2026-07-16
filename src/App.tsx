@@ -1908,6 +1908,10 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               // gesture-safe path as the main Start button.
               const startFocusing = (taskId: string | null) => {
                 setActiveTask(taskId);
+                if (timerMode === "countup") {
+                  if (!countUp.running) runSolo?.(() => { timer.reset(); unlockAudio(); countUp.start(); });
+                  return;
+                }
                 if (!timer.running) runSolo?.(() => { countUp.reset(); unlockAudio(); enterFocus?.(); timer.start(); });
               };
               if (upNext.length === 0) return (
