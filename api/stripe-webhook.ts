@@ -129,6 +129,8 @@ export async function POST(request: Request): Promise<Response> {
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         const outcome = await processSubscription(admin, event, subscription, userId);
         apiLog("stripe-webhook", "subscription_checkout_processed", { event: event.id, outcome });
+      } else {
+        apiLog("stripe-webhook", "async_subscription_payment_acknowledged", { event: event.id, session: session.id });
       }
     } else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
       const outcome = await processSubscription(admin, event, event.data.object as Stripe.Subscription);
