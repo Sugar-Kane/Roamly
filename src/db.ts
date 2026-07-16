@@ -753,17 +753,18 @@ export async function fetchTasks(userId: string): Promise<Task[]> {
 
 export async function createTask(userId: string, title: string, tag: string, sortOrder?: number, est = 1): Promise<Task | null> {
   if (!supabase) return null;
+  const clampedEst = Math.max(1, Math.min(9, Math.round(est)));
   let res = await supabase
     .from("tasks")
     // est defaults to 1 — done in a single focus session unless the user says
     // otherwise at creation (overrides the older DB column default of 2).
-    .insert({ user_id: userId, title, tag, est: Math.max(1, Math.min(9, Math.round(est))), ...(sortOrder != null ? { sort_order: sortOrder } : {}) })
+    .insert({ user_id: userId, title, tag, est: clampedEst, ...(sortOrder != null ? { sort_order: sortOrder } : {}) })
     .select(TASK_COLUMNS)
     .single();
   // If the sort_order column hasn't been migrated in yet, retry without it —
   // adding the task always beats preserving its position.
   if (res.error && sortOrder != null && res.error.message.includes("sort_order")) {
-    res = await supabase.from("tasks").insert({ user_id: userId, title, tag }).select(TASK_COLUMNS).single();
+    res = await supabase.from("tasks").insert({ user_id: userId, title, tag, est: clampedEst }).select(TASK_COLUMNS).single();
   }
   if (res.error) { console.warn("[Roamly] createTask failed", res.error.message); return null; }
   return res.data as Task;
