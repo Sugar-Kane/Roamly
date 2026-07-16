@@ -30,6 +30,10 @@ export function Modal({ label, onClose, children, cardClassName, overlayClassNam
     // listeners behind it (like the focus-mode overlay's own Escape handler).
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // An open themed dropdown (ThemedSelect/SearchableSelect) inside the
+        // dialog consumes Escape itself — mirror native <select> behavior and
+        // keep the dialog open so only the menu closes.
+        if ((e.target as HTMLElement | null)?.closest?.('[data-dropdown-open="true"]')) return;
         e.stopPropagation();
         onCloseRef.current();
         return;

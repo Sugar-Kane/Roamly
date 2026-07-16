@@ -34,6 +34,7 @@ import { loadGuestStudyEvents, newStudyEvent, saveGuestStudyEvents, type Planned
 import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
 import { computeLocalGamification, fetchGamification, syncGamification, setPetActive, setRewardActive, stageProps, type Gamification, type GamSyncResult } from "./gamification";
 import { GamificationView, UnlockToast } from "./GamificationView";
+import { ThemedSelect } from "./ThemedSelect";
 import { usePetSleep } from "./usePetSleep";
 const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 import { HealthyBreakActivities, useBreakActivityPicks, type Activity } from "./HealthyBreakActivities";
@@ -1453,11 +1454,8 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
           <p className="mt-1 text-sm text-muted-foreground">Choose the exam and date Roamly should track.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="flex min-w-0 gap-2">
-              <select value={examPick} onChange={(event) => setExamPick(event.target.value)} aria-label="Which exam"
-                className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
-                {EXAM_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
-                <option value="custom">Custom…</option>
-              </select>
+              <ThemedSelect value={examPick} onChange={setExamPick} ariaLabel="Which exam" className="flex-1"
+                options={[...EXAM_OPTIONS.map((name) => ({ value: name, label: name })), { value: "custom", label: "Custom…" }]} />
               {examPick === "custom" && (
                 <input value={customName} onChange={(event) => setCustomName(event.target.value)} maxLength={60}
                   aria-label="Custom exam name" placeholder="Exam name"
@@ -2517,12 +2515,12 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
             )}
           </span>
         ) : (
-          <select value={selectedTag} aria-label="Subject"
-            onChange={(e) => (e.target.value === "__new__" ? setCustomTag("") : setTag(e.target.value))}
-            className="rounded-xl border border-border bg-card px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20">
-            {tags.map((t) => <option key={t}>{t}</option>)}
-            <option value="__new__">＋ New subject…</option>
-          </select>
+          <ThemedSelect value={selectedTag} ariaLabel="Subject" className="w-40 min-w-0 flex-1 sm:flex-none"
+            onChange={(v) => (v === "__new__" ? setCustomTag("") : setTag(v))}
+            options={[
+              ...tags.map((t) => ({ value: t, label: t, accent: tagColor(t) })),
+              { value: "__new__", label: "＋ New subject…" },
+            ]} />
         )}
         <button onClick={add} disabled={!session && tasks.length >= guestLimit} aria-label="Add task" className="grid w-12 shrink-0 place-items-center rounded-xl gradient-primary text-white shadow-glow transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"><Plus size={20} /></button>
       </div>
