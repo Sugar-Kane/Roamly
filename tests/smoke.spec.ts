@@ -374,6 +374,23 @@ test("pets can be toggled from focus mode and the choice persists", async ({ pag
     .toHaveAttribute("aria-pressed", before === "true" ? "false" : "true");
 });
 
+test("app preferences live in the Settings modal opened from the profile menu", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Open profile menu" }).click();
+  await page.getByRole("button", { name: /^Settings/ }).click();
+  const modal = page.getByTestId("settings-modal");
+  await expect(modal).toBeVisible();
+  // The relocated groups: timer confetti, accessibility toggles, and the tour.
+  await expect(modal.getByRole("switch", { name: "Completion confetti" })).toBeVisible();
+  await expect(modal.getByRole("switch", { name: "Reduce motion" })).toBeVisible();
+  await expect(modal.getByRole("switch", { name: "Color-blind friendly" })).toBeVisible();
+  await expect(modal.getByRole("button", { name: /App tour/ })).toBeVisible();
+  // Toggling a switch sticks (persisted to localStorage).
+  const reduce = modal.getByRole("switch", { name: "Reduce motion" });
+  await reduce.click();
+  await expect(reduce).toHaveAttribute("aria-checked", "true");
+});
+
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
   for (const width of [320, 375, 390, 430, 768, 1280]) {

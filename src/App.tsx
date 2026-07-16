@@ -19,6 +19,7 @@ import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { AccountSettings } from "./AccountSettings";
+import { SettingsModal } from "./SettingsModal";
 import { RoomsLive } from "./RoomsLive";
 import { FocusMode, CompactSounds, TimeDisplay, InfoTip } from "./FocusMode";
 import { PipTimer } from "./PipTimer";
@@ -114,6 +115,7 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -953,8 +955,8 @@ export default function App() {
           onSignIn={onSignIn} onSignOut={onSignOut}
           onOpenAccount={() => setShowAccount(true)}
           onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends} onOpenPlannedStudy={() => setView("tasks")}
-          a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
-          confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
+          onOpenPremium={() => setView("premium")}
+          onOpenSettings={() => setShowSettings(true)}
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
           onOpenTutorial={() => setShowTutorial(true)}
           themeId={themeId} setThemeId={changeTheme} theme={theme}
@@ -1170,6 +1172,10 @@ export default function App() {
           onOpenPremium={() => { setShowAccount(false); setView("premium"); }}
           onOpenFriends={() => { setShowAccount(false); setShowFriends(true); }} />
       )}
+      {showSettings && (
+        <SettingsModal a11y={a11y} setA11y={setA11y} confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
+          onReplayTutorial={() => setShowTutorial(true)} onClose={() => setShowSettings(false)} />
+      )}
       {/* Deferred while a password prompt from an email link is up. */}
       {showTutorial && !needsPassword && <Tutorial setView={setView} onClose={() => setShowTutorial(false)} />}
       {showFeedback && session && (
@@ -1211,7 +1217,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenAccount, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, confettiOn, onToggleConfetti, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, theme, onGoHome, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenAccount, onOpenRoom, onOpenFriends, onOpenPlannedStudy, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, onOpenSettings, themeId, setThemeId, theme, onGoHome, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -1262,9 +1268,8 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
           </button>
         )}
         <ProfileMenu session={session} profile={profile} isPremium={isPremium}
-          a11y={a11y} setA11y={setA11y} confettiOn={confettiOn} onToggleConfetti={onToggleConfetti}
           onSignIn={onSignIn} onSignOut={onSignOut} onOpenAccount={onOpenAccount} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
-          isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onReplayTutorial={onOpenTutorial} onSendFeedback={onOpenFeedback} />
+          isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onOpenSettings={onOpenSettings} onSendFeedback={onOpenFeedback} />
       </div>
     </header>
   );

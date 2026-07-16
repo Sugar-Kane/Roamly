@@ -1,13 +1,13 @@
 // Profile menu, anchored to the avatar in the top-right of the header. A quick
 // launcher: the identity summary, a jump into the full Account settings panel
 // (where display name, username, photo, privacy, data export, and account
-// deletion live), fast links (plan, friends, admin, tour, feedback), and the
-// on-device toggles (timer confetti + accessibility) that must work signed-out.
-// Deeper account management deliberately lives in AccountSettings, not here, so
-// this stays a small, one-glance menu.
+// deletion live), and fast links (plan, friends, admin, settings, feedback).
+// The app preferences (timer confetti, accessibility, app tour) live in the
+// Settings modal, and deeper account management in AccountSettings, so this
+// stays a small, one-glance menu.
 
 import { useEffect, useRef, useState } from "react";
-import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, MessageSquare, UserCog } from "lucide-react";
+import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, MessageSquare, UserCog, SlidersHorizontal } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { loadPref } from "./storage";
 import type { Profile } from "./db";
@@ -35,22 +35,6 @@ export function loadA11y(): A11ySettings {
   }
 }
 
-const A11Y_OPTIONS: { key: keyof A11ySettings; label: string; hint: string }[] = [
-  { key: "colorBlind", label: "Color-blind friendly", hint: "Blue/orange timer and status colors" },
-  { key: "highContrast", label: "High contrast", hint: "Stronger text and borders" },
-  { key: "reduceMotion", label: "Reduce motion", hint: "Minimize animations" },
-  { key: "largeText", label: "Larger text", hint: "Increase the app's font size" },
-];
-
-function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
-  return (
-    <button role="switch" aria-checked={on} aria-label={label} onClick={onClick}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-primary" : "bg-border"}`}>
-      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
-    </button>
-  );
-}
-
 function ProfileAvatar({ url, initials, className }: { url?: string | null; initials: string; className: string }) {
   return <span className={`relative grid shrink-0 place-items-center overflow-hidden rounded-full gradient-primary font-semibold text-white ${className}`}>
     {initials}
@@ -58,14 +42,10 @@ function ProfileAvatar({ url, initials, className }: { url?: string | null; init
   </span>;
 }
 
-export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confettiOn, onToggleConfetti, onSignIn, onSignOut, onOpenAccount, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
+export function ProfileMenu({ session, profile, isPremium, onSignIn, onSignOut, onOpenAccount, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onOpenSettings, onSendFeedback }: {
   session: Session | null;
   profile: Profile | null;
   isPremium: boolean;
-  a11y: A11ySettings;
-  setA11y: (next: A11ySettings) => void;
-  confettiOn: boolean;
-  onToggleConfetti: () => void;
   onSignIn: () => void;
   onSignOut: () => void;
   onOpenAccount: () => void;
@@ -73,7 +53,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
   onOpenFriends: () => void;
   isAdmin: boolean;
   onOpenAdmin: () => void;
-  onReplayTutorial: () => void;
+  onOpenSettings: () => void;
   onSendFeedback: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -104,8 +84,6 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
   const uploadQuota = isPremium ? PREMIUM_MONTHLY_UPLOAD_QUOTA : FREE_MONTHLY_UPLOAD_QUOTA;
   const uploadsRemaining = Math.max(0, uploadQuota - usedThisPeriod);
   const credits = profile?.ai_credits ?? 0;
-
-  const flip = (key: keyof A11ySettings) => setA11y({ ...a11y, [key]: !a11y[key] });
 
   return (
     <div ref={rootRef} className="relative">
@@ -202,14 +180,15 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
             </button>
           )}
 
-          {/* App tour — works signed-out too */}
-          <button onClick={() => { setOpen(false); onReplayTutorial(); }}
+          {/* Settings — app preferences (confetti, accessibility, app tour).
+              Works signed-out: the prefs are stored on this device. */}
+          <button onClick={() => { setOpen(false); onOpenSettings(); }}
             className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2.5 text-left transition hover:border-primary/40">
             <span className="flex min-w-0 items-center gap-2">
-              <HelpCircle size={15} className="shrink-0 text-primary" />
+              <SlidersHorizontal size={15} className="shrink-0 text-primary" />
               <span className="min-w-0">
-                <span className="block text-sm font-medium">App tour</span>
-                <span className="block truncate text-[11px] text-muted-foreground">Replay the quick walkthrough of every feature</span>
+                <span className="block text-sm font-medium">Settings</span>
+                <span className="block truncate text-[11px] text-muted-foreground">Confetti, accessibility, and the app tour</span>
               </span>
             </span>
             <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
@@ -227,30 +206,6 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
             </span>
             <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
           </button>
-
-          {/* Timer celebrations — works signed-out too (stored on this device) */}
-          <p className="mt-2 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Timer</p>
-          <div className="mt-1 flex items-center justify-between gap-3 rounded-xl px-3 py-2">
-            <span className="min-w-0">
-              <span className="block text-sm">Completion confetti</span>
-              <span className="block text-[11px] text-muted-foreground">Celebrate finished focus sessions. Reduce motion also turns it off.</span>
-            </span>
-            <Toggle on={confettiOn} onClick={onToggleConfetti} label="Completion confetti" />
-          </div>
-
-          {/* Accessibility */}
-          <p className="mt-2 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Accessibility</p>
-          <div className="mt-1 space-y-0.5">
-            {A11Y_OPTIONS.map((o) => (
-              <div key={o.key} className="flex items-center justify-between gap-3 rounded-xl px-3 py-2">
-                <span className="min-w-0">
-                  <span className="block text-sm">{o.label}</span>
-                  <span className="block text-[11px] text-muted-foreground">{o.hint}</span>
-                </span>
-                <Toggle on={a11y[o.key]} onClick={() => flip(o.key)} label={o.label} />
-              </div>
-            ))}
-          </div>
 
           <div className="mt-1 border-t border-border pt-1">
             {session ? (
