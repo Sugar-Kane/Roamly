@@ -95,29 +95,42 @@ export async function POST(request: Request): Promise<Response> {
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
   try {
-    if (event.type === "checkout.session.completed") {
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
       const session = event.data.object as Stripe.Checkout.Session;
       const userId = session.metadata?.supabase_user_id;
       if (!userId) throw new Error("missing_user_metadata");
 
       if (session.mode === "payment") {
-        const credits = Number.parseInt(session.metadata?.credits ?? "", 10);
-        if (!Number.isFinite(credits) || credits <= 0 || !session.id) throw new Error("invalid_credit_metadata");
-        const { data, error } = await admin.rpc("process_stripe_credit_event", {
-          p_event_id: event.id,
-          p_event_type: event.type,
-          p_user: userId,
-          p_credits: credits,
-          p_external_ref: session.id,
-        });
-        if (error) throw error;
-        apiLog("stripe-webhook", "credits_processed", { event: event.id, outcome: data });
-      } else {
+        // Only grant credits once funds have actually cleared. Card checkouts
+        // are already "paid" at checkout.session.completed (the common path,
+        // unchanged), but async / delayed methods complete as "unpaid" and
+        // clear later via checkout.session.async_payment_succeeded — so we wait
+        // for payment_status === "paid" rather than crediting on completion.
+        // The two events carry the same session, and only one is ever "paid",
+        // so this can't double-credit; the credit RPC also dedups on event id.
+        if (session.payment_status !== "paid") {
+          apiLog("stripe-webhook", "credit_payment_not_cleared", { event: event.id, payment_status: session.payment_status });
+        } else {
+          const credits = Number.parseInt(session.metadata?.credits ?? "", 10);
+          if (!Number.isFinite(credits) || credits <= 0 || !session.id) throw new Error("invalid_credit_metadata");
+          const { data, error } = await admin.rpc("process_stripe_credit_event", {
+            p_event_id: event.id,
+            p_event_type: event.type,
+            p_user: userId,
+            p_credits: credits,
+            p_external_ref: session.id,
+          });
+          if (error) throw error;
+          apiLog("stripe-webhook", "credits_processed", { event: event.id, outcome: data });
+        }
+      } else if (event.type === "checkout.session.completed") {
         const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
         if (!subscriptionId) throw new Error("missing_subscription");
         const subscription = await stripe.subscriptions.retrieve(subscriptionId);
         const outcome = await processSubscription(admin, event, subscription, userId);
         apiLog("stripe-webhook", "subscription_checkout_processed", { event: event.id, outcome });
+      } else {
+        apiLog("stripe-webhook", "async_subscription_payment_acknowledged", { event: event.id, session: session.id });
       }
     } else if (event.type === "customer.subscription.created" || event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
       const outcome = await processSubscription(admin, event, event.data.object as Stripe.Subscription);

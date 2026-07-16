@@ -199,7 +199,10 @@ export function FocusMode({
         </div>
 
         <div className="w-full max-w-md">
-          <div className="h-2.5 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
+          <div className="h-2.5 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}
+            role="progressbar" aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={Math.round(Math.max(0, Math.min(1, progress)) * 100)}
+            aria-label={`${phaseLabel ?? "Session"} progress`}>
             <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(1, progress)) * 100}%`, background: ring, transition: "width 1s linear" }} />
           </div>
           {typeof cycles === "number" && cycles > 0 && (

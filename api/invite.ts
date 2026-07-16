@@ -85,8 +85,11 @@ export async function POST(request: Request): Promise<Response> {
     return json({ error: "Invites are busy today — try again tomorrow." }, 429);
   }
 
-  // Already a Roamly user?
-  const { data: existing } = await admin.from("profiles").select("id").ilike("email", email).maybeSingle();
+  // Already a Roamly user? Exact match (not ilike) — `email` is already
+  // lower-cased above and Supabase Auth stores emails lower-cased, so `.eq`
+  // matches correctly while ensuring LIKE metacharacters (%, _) a caller might
+  // put in the address can't act as wildcards to probe for other accounts.
+  const { data: existing } = await admin.from("profiles").select("id").eq("email", email).maybeSingle();
   let resend = false;
   if (existing?.id) {
     if (existing.id === inviter.id) return json({ error: "That's your own account." }, 400);
