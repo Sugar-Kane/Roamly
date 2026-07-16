@@ -65,6 +65,10 @@ function viewFromPath(pathname: string): View {
   return (Object.keys(VIEW_LABELS) as View[]).find((v) => v === slug) ?? "focus";
 }
 
+function calendarDayNumber(date: Date): number {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000;
+}
+
 export default function App() {
   const [view, setView] = useState<View>(() => viewFromPath(window.location.pathname));
   const [immersive, setImmersive] = useState(false); // personal focus-mode takeover
@@ -795,8 +799,12 @@ export default function App() {
     const nextDone = !current.done;
     if (nextDone) track("task_done");
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, done: nextDone } : t)));
+    if (nextDone && activeTask === id) {
+      const next = sortTasks(tasks).find((task) => !task.done && task.id !== id);
+      setActiveTask(next?.id ?? null);
+    }
     if (session?.user.id) updateTask(id, { done: nextDone });
-  }, [tasks, session?.user.id]);
+  }, [tasks, session?.user.id, activeTask]);
 
   const resolveEstimateReached = useCallback((complete: boolean) => {
     const id = estimateReachedTask;
@@ -1141,7 +1149,7 @@ export default function App() {
               estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached}
               breakActive={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
             <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
+            <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed} />
           </div>
         } />
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
@@ -1237,7 +1245,7 @@ function OfflineBanner() {
   if (!offline) return null;
   return (
     <div role="status" className="sticky top-0 z-[100] flex items-center justify-center gap-2 bg-foreground/90 px-4 py-1.5 text-center text-xs font-medium text-background">
-      <BellOff size={13} /> You're offline. Changes will sync when you reconnect.
+      <BellOff size={13} /> You're offline. New account changes may not be saved until you reconnect.
     </div>
   );
 }
@@ -1578,7 +1586,7 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {sorted.map((exam, index) => {
             const examDay = new Date(`${exam.exam_date}T00:00:00`);
-            const days = Math.ceil((examDay.getTime() - today.getTime()) / 86400000);
+            const days = calendarDayNumber(examDay) - calendarDayNumber(today);
             return (
               <article key={exam.id} className={`rounded-xl border p-3 ${index === 0 && days >= 0 ? "border-primary/45 bg-primary/5" : "border-border bg-card/60"}`}>
                 <div className="flex items-start justify-between gap-2">
@@ -1691,7 +1699,13 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
   // One timer card, two modes: the classic countdown methods or the count-up
   // stopwatch, both picked from the same "Select timer" list.
   const [timerMode, setTimerModeState] = useState<"pomodoro" | "countup">(() => (loadPref("roamly-timer-mode") === "countup" ? "countup" : "pomodoro"));
-  const setTimerMode = (m: "pomodoro" | "countup") => { setTimerModeState(m); savePref("roamly-timer-mode", m); };
+  const setTimerMode = (m: "pomodoro" | "countup") => {
+    if (m === timerMode) return;
+    if (timerMode === "pomodoro" && timer.running) timer.pause();
+    if (timerMode === "countup" && countUp.running) countUp.pause();
+    setTimerModeState(m);
+    savePref("roamly-timer-mode", m);
+  };
   // "Up next" can be narrowed to one subject; the pick sticks across visits.
   const [upNextTag, setUpNextTagState] = useState<string>(() => loadPref("roamly-upnext-tag") ?? "all");
   const setUpNextTag = (t: string) => { setUpNextTagState(t); savePref("roamly-upnext-tag", t); };
@@ -1729,7 +1743,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
           <div className="flex flex-1 flex-col gap-5">
             <div>
-              <div className="h-3 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
+              <div className="h-3 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}
+                role="progressbar" aria-label={`${phaseLabel} progress`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(timer.progress * 100)}>
                 <div className="h-full rounded-full" style={{ width: `${timer.progress * 100}%`, background: ring, transition: "width 1s linear" }} />
               </div>
               <div className="mt-2 flex items-center justify-between">
@@ -1976,7 +1991,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying}
+      <MusicPanel embed={embed} service={shownEmbed.service} onServiceChange={pickDockService} onPlay={playEmbed}
         dockClosed={dockClosed} onReopenDock={onReopenDock} />
     </div>
   );
@@ -2004,7 +2019,7 @@ function FocusIntro({ onOpenHowItWorks }: { onOpenHowItWorks: () => void }) {
 function ExamStrip({ exams }: { exams: ExamSchedule[] }) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const next = [...exams]
-    .map((exam) => ({ exam, days: Math.ceil((new Date(`${exam.exam_date}T00:00:00`).getTime() - today.getTime()) / 86400000) }))
+    .map((exam) => ({ exam, days: calendarDayNumber(new Date(`${exam.exam_date}T00:00:00`)) - calendarDayNumber(today) }))
     .filter(({ days }) => days >= 0)
     .sort((a, b) => a.days - b.days)[0];
   if (!next) return null;
@@ -2270,26 +2285,7 @@ function FocusSoundsPanel({ sounds }: any) {
 // up to App via onPlay — the iframe itself lives in the dock, so it keeps
 // playing across tab switches and pop-out timers instead of dying when this
 // panel unmounts.
-function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPlaying, dockClosed = false, onReopenDock }: any) {
-  // Remember the service tab so the persistent dock preloads the right
-  // default station on the next visit.
-  const [service, setServiceState] = useState<"spotify" | "apple">(() => loadPref("roamly-music-service") === "apple" ? "apple" : "spotify");
-  // Switching the service tab surfaces that service's player right away (loads
-  // its first station), matching the dock — the player should appear when you
-  // click Apple Music, not only after you pick a channel. Skips if that
-  // service is already playing so it never interrupts a chosen station.
-  const setService = (s: "spotify" | "apple") => {
-    savePref("roamly-music-service", s);
-    setServiceState(s);
-    if (shown?.service === s) return;
-    if (s === "apple") {
-      const p = APPLE_MUSIC_PRESETS[0] as any;
-      onPlay({ service: "apple", src: toAppleEmbedSrc({ type: p.type, path: p.path }), height: appleEmbedHeight(p.type), label: p.name });
-    } else {
-      const p = SPOTIFY_PRESETS[0] as any;
-      onPlay({ service: "spotify", src: toSpotifyEmbedSrc({ type: p.type, id: p.spotifyId }), height: embedHeight(p.type), label: p.name });
-    }
-  };
+function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = false, onReopenDock }: any) {
   const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
   const [spotifyCustomError, setSpotifyCustomError] = useState(false);
   const [appleCustomUrl, setAppleCustomUrl] = useState("");
@@ -2345,15 +2341,12 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPl
 
       {/* Hidden (not unmounted) when collapsed, so a playing embed keeps going. */}
       <div id="focus-music-body" className={collapsed ? "h-0 overflow-hidden" : ""} inert={collapsed} aria-hidden={collapsed}>
-        {/* The inline player mounts only after the user actually picks music —
-            never on page load (a mounted embed means a streaming iframe). */}
-        {showPlayer && embed && <StreamingPlayer shown={embed} stopSignal={stopSignal} onPlaying={onPlaying} />}
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
-          <button onClick={() => setService("spotify")}
+          <button onClick={() => onServiceChange("spotify")}
             className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
             Spotify
           </button>
-          <button onClick={() => setService("apple")}
+          <button onClick={() => onServiceChange("apple")}
             className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "apple" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
             Apple Music
           </button>
@@ -2706,7 +2699,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
   // Subject groups themselves can be reordered — drag the header's ⋮⋮ handle
   // (arrow keys work on it too) — and the order persists on this device.
   // Unlisted subjects keep their natural position.
-  const [tagOrder, setTagOrder] = useState<string[]>(() => { try { return JSON.parse(loadPref("roamly-tag-order") ?? "[]") as string[]; } catch { return []; } });
+  const [tagOrder, setTagOrder] = useState<string[]>(() => { try { const value: unknown = JSON.parse(loadPref("roamly-tag-order") ?? "[]"); return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { return []; } });
   const groupRank = (g: string) => { const i = tagOrder.indexOf(g); return i === -1 ? 1000 + groupNames.indexOf(g) : i; };
   const orderedGroupNames = [...groupNames].sort((a, b) => groupRank(a) - groupRank(b));
   const applyGroupOrder = (next: string[]) => {
@@ -2722,7 +2715,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
   };
 
   // Collapsed subject sections (click a header to toggle); persists per device.
-  const [collapsedTags, setCollapsedTags] = useState<string[]>(() => { try { return JSON.parse(loadPref("roamly-collapsed-tags") ?? "[]") as string[]; } catch { return []; } });
+  const [collapsedTags, setCollapsedTags] = useState<string[]>(() => { try { const value: unknown = JSON.parse(loadPref("roamly-collapsed-tags") ?? "[]"); return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { return []; } });
   const toggleCollapsed = (g: string) => setCollapsedTags((prev) => {
     const next = prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g];
     savePref("roamly-collapsed-tags", JSON.stringify(next));
@@ -2790,6 +2783,13 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
     }
   };
 
+  const onGroupHandleCancel = () => {
+    const p = groupPress.current;
+    if (p) clearTimeout(p.timer);
+    groupPress.current = null;
+    setGroupDrag(null);
+  };
+
   // While a section drag is live, stop the page from scrolling under the finger.
   useEffect(() => {
     if (!groupDrag) return;
@@ -2843,7 +2843,9 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
             <span>{doneTasks.length} of {tasks.length} done</span>
             {doneTasks.length === tasks.length && <span className="text-roamly-green">All clear 🎉</span>}
           </div>
-          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
+          <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}
+            role="progressbar" aria-label="Task completion progress" aria-valuemin={0} aria-valuemax={100}
+            aria-valuenow={Math.round(tasks.length ? (doneTasks.length / tasks.length) * 100 : 0)}>
             <div className="h-full rounded-full bg-roamly-green" style={{ width: `${tasks.length ? (doneTasks.length / tasks.length) * 100 : 0}%`, transition: "width 0.4s ease" }} />
           </div>
         </div>
@@ -2897,7 +2899,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
       {!session && tasks.length >= guestLimit && <p role="status" className="mt-2 text-sm text-muted-foreground">You reached the 5-task guest limit. Sign in to create and sync more tasks.</p>}
       <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
         isPremium={session ? (profile ? !!profile.is_premium : null) : false}
-        onSignIn={onSignIn} onUpgrade={onBuyCredits}
+        onSignIn={onSignIn} onUpgrade={onSubscribe}
         onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
 
       {session && !tasksLoaded && (
@@ -2924,7 +2926,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
             style={groupDragStyle(g, gi)}>
             <div className="flex items-center gap-1">
               <button data-group-handle onPointerDown={(e) => onGroupHandleDown(e, g, gi)} onPointerMove={onGroupHandleMove}
-                onPointerUp={onGroupHandleUp} onPointerCancel={onGroupHandleUp}
+                onPointerUp={onGroupHandleUp} onPointerCancel={onGroupHandleCancel}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowUp") { e.preventDefault(); moveGroup(g, -1); }
                   if (e.key === "ArrowDown") { e.preventDefault(); moveGroup(g, 1); }
@@ -3076,7 +3078,8 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
         <span className="text-muted-foreground">Today</span>
         <span className="font-mono">{todayMinutes} / {dailyGoal} min</span>
       </div>
-      <div className="mt-2 h-3 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
+      <div className="mt-2 h-3 w-full overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}
+        role="progressbar" aria-label="Daily goal progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
         <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%`, transition: "width 0.4s ease" }} />
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
@@ -3319,21 +3322,23 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
 
       {!isPremium && (
         <div className="mt-6 overflow-x-auto rounded-2xl border border-border bg-card/70">
-          <div className="min-w-[720px]">
-            <div className="grid grid-cols-[1.25fr_repeat(3,minmax(0,1fr))] gap-x-3 border-b border-border px-4 py-2.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <span>What you get</span><span>No account</span><span>Free account</span><span className="text-primary">Premium account</span>
-            </div>
+          <table className="min-w-[720px] w-full table-fixed text-left">
+            <thead className="border-b border-border text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <tr><th scope="col" className="w-[31.25%] px-4 py-2.5">What you get</th><th scope="col" className="px-3 py-2.5">No account</th><th scope="col" className="px-3 py-2.5">Free account</th><th scope="col" className="px-3 py-2.5 text-primary">Premium account</th></tr>
+            </thead>
+            <tbody>
             {compare.map(([feature, guest, free, prem]) => (
-              <div key={feature} className="grid grid-cols-[1.25fr_repeat(3,minmax(0,1fr))] items-center gap-x-3 border-b border-border/50 px-4 py-2 text-sm last:border-b-0">
-                <span className="min-w-0 text-muted-foreground">{feature}</span>
+              <tr key={feature} className="border-b border-border/50 text-sm last:border-b-0">
+                <th scope="row" className="min-w-0 px-4 py-2 font-normal text-muted-foreground">{feature}</th>
                 {[guest, free, prem].map((value, index) => (
-                  <span key={index} className={`min-w-0 text-xs ${index === 2 ? "font-medium" : ""}`}>
+                  <td key={index} className={`min-w-0 px-3 py-2 text-xs ${index === 2 ? "font-medium" : ""}`}>
                     {value === true ? <Check size={15} className="text-roamly-green" /> : value === false ? <span className="text-muted-foreground/50">-</span> : value}
-                  </span>
+                  </td>
                 ))}
-              </div>
+              </tr>
             ))}
-          </div>
+            </tbody>
+          </table>
         </div>
       )}
 
