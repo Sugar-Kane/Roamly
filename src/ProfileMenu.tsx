@@ -11,6 +11,19 @@ import { loadPref } from "./storage";
 import { removeProfileAvatar, updateProfileAvatar, type Profile } from "./db";
 import { currentUploadPeriod, FREE_MONTHLY_UPLOAD_QUOTA, PREMIUM_MONTHLY_UPLOAD_QUOTA } from "./UploadTasks";
 
+// iOS photos are often HEIC/HEIF, which browsers cannot decode or upload as an
+// image. Convert to JPEG on the client (the WASM decoder is dynamically
+// imported so it only loads when a HEIC file is actually chosen). Non-HEIC
+// files pass straight through untouched.
+async function maybeConvertHeic(file: File): Promise<File> {
+  const isHeic = /image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+  if (!isHeic) return file;
+  const heic2any = (await import("heic2any")).default;
+  const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+  const blob = Array.isArray(converted) ? converted[0] : converted;
+  return new File([blob], file.name.replace(/\.hei[cf]$/i, ".jpg"), { type: "image/jpeg" });
+}
+
 export type A11ySettings = {
   colorBlind: boolean;
   highContrast: boolean;
@@ -110,7 +123,17 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
     if (!file || !session || !profile) return;
     setAvatarBusy(true);
     setAvatarError(null);
-    const result = await updateProfileAvatar(session.user.id, file, profile.avatar_path);
+    // iPhones hand back HEIC/HEIF, which browsers can't render or upload as an
+    // image. Convert to JPEG first (the decoder is loaded only when needed).
+    let prepared: File;
+    try {
+      prepared = await maybeConvertHeic(file);
+    } catch {
+      setAvatarBusy(false);
+      setAvatarError("Couldn't read that HEIC photo. Try a JPG or PNG.");
+      return;
+    }
+    const result = await updateProfileAvatar(session.user.id, prepared, profile.avatar_path);
     setAvatarBusy(false);
     if (!result.url) { setAvatarError(result.error ?? "Couldn't update that picture."); return; }
     onProfileChange({ ...profile, avatar_path: result.path, avatar_url: result.url });
@@ -146,7 +169,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
 
           {session && (
             <div className="mb-1 rounded-xl border border-border bg-card/70 px-3 py-2.5">
-              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Choose profile picture"
+              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" className="sr-only" aria-label="Choose profile picture"
                 onChange={(event) => { void chooseAvatar(event.target.files?.[0]); event.currentTarget.value = ""; }} />
               <div className="flex flex-wrap gap-2">
                 <button type="button" disabled={avatarBusy || !profile} onClick={() => fileRef.current?.click()}

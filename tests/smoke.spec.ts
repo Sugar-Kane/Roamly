@@ -132,22 +132,38 @@ test("count-up timer starts, pauses, and can be reset", async ({ page }) => {
 });
 
 test("guest count-up completion is saved to analytics", async ({ page }) => {
+  // The clock lets us pass the 60s minimum-save threshold without a real wait,
+  // and Stop & save now opens a themed confirm dialog (not a browser popup).
+  await page.clock.install();
   await goHome(page);
   await page.getByRole("button", { name: "Select timer" }).click();
   await page.getByRole("button", { name: /Count-up timer/ }).click();
   await page.getByRole("button", { name: "Start count-up timer" }).click();
-  await page.waitForTimeout(1100);
-  page.once("dialog", (dialog) => dialog.accept());
+  await page.clock.fastForward("01:30"); // 90s -> ceil to 2 minutes, over the 60s floor
   await page.getByRole("button", { name: "Stop & save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("button", { name: "Analytics" }).click();
-  await expect(page.getByText("1 / 120 min")).toBeVisible();
+  await expect(page.getByText("2 / 120 min")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Study time by category" })).toHaveCount(0);
-  await expect(page.getByText("You studied 1 minute on Uncategorized.")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Study post-mortem" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Unlock Study post-mortem with Premium" })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Analytics" }).click();
-  await expect(page.getByText("1 / 120 min")).toBeVisible();
+  await expect(page.getByText("2 / 120 min")).toBeVisible();
+});
+
+test("a trivially short count-up is not offered for saving", async ({ page }) => {
+  await page.clock.install();
+  await goHome(page);
+  await page.getByRole("button", { name: "Select timer" }).click();
+  await page.getByRole("button", { name: /Count-up timer/ }).click();
+  await page.getByRole("button", { name: "Start count-up timer" }).click();
+  await page.clock.fastForward("00:05"); // under the 60s floor
+  await page.getByRole("button", { name: "Stop & save" }).click();
+  // No save dialog appears and nothing is recorded.
+  await expect(page.getByText("Save this session?")).toHaveCount(0);
+  await page.getByRole("button", { name: "Analytics" }).click();
+  await expect(page.getByText("0 / 120 min")).toBeVisible();
 });
 
 test("completion sound preference persists", async ({ page }) => {

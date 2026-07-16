@@ -589,9 +589,13 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
         </select>
       </label>
       {targetType === "task" ? (
-        <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+        // Full-width row: task titles are long, and a half-width select clips
+        // them in the closed control. `title` surfaces the whole title on hover.
+        <label className="grid gap-1 text-[11px] font-medium text-muted-foreground sm:col-span-2">
           Task
-          <select value={effectiveTaskId} onChange={(event) => setTaskId(event.target.value)} aria-label="Planned task" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
+          <select value={effectiveTaskId} onChange={(event) => setTaskId(event.target.value)} aria-label="Planned task"
+            title={openTasks.find((task) => task.id === effectiveTaskId)?.title}
+            className="w-full truncate rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
             {openTasks.length === 0 && <option value="">No open tasks</option>}
             {openTasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
           </select>

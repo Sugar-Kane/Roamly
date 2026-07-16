@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon, PawPrint } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon, PawPrint, PartyPopper } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
@@ -43,6 +43,10 @@ import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
 
 export type View = "focus" | "tasks" | "analytics" | "rooms" | "garden" | "premium" | "admin";
+
+// A count-up session shorter than this isn't offered for saving — a few
+// seconds from an accidental start is not real study time.
+const MIN_COUNTUP_SAVE_SECONDS = 60;
 
 // Every tab has its own URL (/focus, /tasks, …) so pages are linkable and the
 // browser back button works. Unknown paths fall back to Focus; vercel.json
@@ -89,6 +93,15 @@ export default function App() {
   // Companions (pets/plants on the timer) are OFF by default; opt in per device.
   const [companionsOn, setCompanionsOn] = useState(() => loadPref("roamly-companions") === "1");
   const toggleCompanions = () => setCompanionsOn((v) => { savePref("roamly-companions", v ? "0" : "1"); return !v; });
+  // Completion confetti is ON by default; opt out per device (persisted).
+  const [confettiOn, setConfettiOn] = useState(() => loadPref("roamly-confetti") !== "0");
+  const toggleConfetti = () => setConfettiOn((v) => { savePref("roamly-confetti", v ? "0" : "1"); return !v; });
+  // Themed confirm dialog, replacing the bare browser confirm() pop-ups. onConfirm
+  // runs inside the modal's confirm-button click, so it is still a user gesture
+  // (iOS audio unlock keeps working).
+  const [confirmDialog, setConfirmDialog] = useState<null | {
+    title: string; body?: string; confirmLabel: string; onConfirm: () => void;
+  }>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
@@ -346,19 +359,27 @@ export default function App() {
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
 
   const completeCountUp = useCallback(() => {
-    // Snapshot elapsed BEFORE the blocking confirm: countUp.stop() recomputes
-    // from startedAt at call time, so any seconds the user spends on the dialog
-    // would otherwise inflate the saved session past the duration it showed.
+    // Snapshot elapsed BEFORE opening the dialog so the saved duration matches
+    // what the user saw, not whatever the clock reads when they confirm.
     const elapsed = countUp.elapsedSeconds;
     if (elapsed <= 0) return;
-    if (!window.confirm(`Save this ${fmt(elapsed)} focus session to Analytics?`)) return;
-    countUp.stop();
-    const minutes = Math.max(1, Math.ceil(elapsed / 60));
-    const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
-    setSessions((prev) => addSession(prev, minutes));
-    setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
-    if (session?.user.id) void recordFocusSession(dateKey(), minutes, current, "count_up").then((ok) => { if (ok) void bumpGamification(); });
-    track("count_up_complete", String(minutes));
+    // Trivially short sessions (e.g. a few seconds from an accidental start)
+    // are not real study time; discard them silently instead of prompting.
+    if (elapsed < MIN_COUNTUP_SAVE_SECONDS) { countUp.reset(); return; }
+    setConfirmDialog({
+      title: "Save this session?",
+      body: `Save this ${fmt(elapsed)} focus session to Analytics?`,
+      confirmLabel: "Save",
+      onConfirm: () => {
+        countUp.stop();
+        const minutes = Math.max(1, Math.ceil(elapsed / 60));
+        const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
+        setSessions((prev) => addSession(prev, minutes));
+        setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
+        if (session?.user.id) void recordFocusSession(dateKey(), minutes, current, "count_up").then((ok) => { if (ok) void bumpGamification(); });
+        track("count_up_complete", String(minutes));
+      },
+    });
   }, [countUp, session?.user.id, activeTask, tasks, bumpGamification]);
 
   const createStudyPlan = useCallback(async (row: PlannedStudyDraft): Promise<PlannedStudySession | null> => {
@@ -471,6 +492,11 @@ export default function App() {
     return window.innerWidth < 640;
   });
   const toggleDockMin = () => setDockMin((m) => { savePref("roamly-dock-min", m ? "0" : "1"); return !m; });
+  // The mini-player can be dismissed entirely; reopened from the Music panel.
+  // Closing only hides it (opacity/inert like `hidden`), so playback continues.
+  const [dockClosed, setDockClosed] = useState(() => loadPref("roamly-dock-closed") === "1");
+  const closeDock = () => { setDockClosed(true); savePref("roamly-dock-closed", "1"); };
+  const reopenDock = () => { setDockClosed(false); savePref("roamly-dock-closed", "0"); };
 
   const sounds = {
     sound: focusSound,
@@ -522,11 +548,18 @@ export default function App() {
   // …and starting a solo session while in a room asks the user to leave it
   // first (bumping leaveSignal makes RoomsLive exit the active room).
   const [leaveSignal, setLeaveSignal] = useState(0);
-  const guardSolo = useCallback(() => {
-    if (!inRoomRef.current) return true;
-    if (!window.confirm("You're in a group study room. Leave the room and start your solo timer?")) return false;
-    setLeaveSignal((s) => s + 1);
-    return true;
+  // Run a solo-start action, first asking (with a themed dialog) to leave any
+  // active room. Not in a room: run immediately so the click stays a single
+  // user gesture (iOS audio unlock). In a room: the action runs on the modal's
+  // confirm click, which is itself a gesture, after signaling RoomsLive to exit.
+  const runSolo = useCallback((action: () => void) => {
+    if (!inRoomRef.current) { action(); return; }
+    setConfirmDialog({
+      title: "Leave the study room?",
+      body: "You're in a group study room. Leave it and start your solo timer?",
+      confirmLabel: "Leave & start",
+      onConfirm: () => { setLeaveSignal((s) => s + 1); action(); },
+    });
   }, []);
 
   // Sound follows the timer: plays during a running focus block, fades out for
@@ -845,6 +878,10 @@ export default function App() {
     const root = document.documentElement;
     Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
     root.classList.toggle("dark", !!theme.dark);
+    // Declare the color scheme so native controls (select dropdowns, date and
+    // number spinners, scrollbars) render light on light themes instead of the
+    // OS-dark popup that appears when the page leaves color-scheme unset.
+    root.style.colorScheme = theme.dark ? "dark" : "light";
     if (a11y.colorBlind) root.style.setProperty("--roamly-green", "41 100% 45%"); // Okabe-Ito orange
     else root.style.removeProperty("--roamly-green"); // fall back to the stylesheet green
     if (a11y.highContrast) {
@@ -900,7 +937,7 @@ export default function App() {
               isPremium={isPremium} gateThen={gateThen}
               exams={examSchedules} addExam={addExam} editExam={editExam} removeExam={removeExam} alerts={alerts}
               embed={embed} shownEmbed={shownEmbed} playEmbed={playEmbed}
-              embedStopSignal={embedStopSignal} onEmbedPlaying={onEmbedPlaying} guardSolo={guardSolo}
+              embedStopSignal={embedStopSignal} onEmbedPlaying={onEmbedPlaying} runSolo={runSolo}
               autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow} onOpenTasks={() => setView("tasks")}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
@@ -910,6 +947,8 @@ export default function App() {
               onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
               companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
+              confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
+              dockClosed={dockClosed} onReopenDock={reopenDock}
               motivation={motivation} />
           )}
           {view === "tasks" && (
@@ -924,16 +963,18 @@ export default function App() {
               plannedSessions={plannedSessions} onCreatePlan={createStudyPlan} onUpdatePlan={updateStudyPlan} onDeletePlan={deleteStudyPlan} />
           )}
           {view === "analytics" && (
-            <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
-              streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
-              session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
-              studyEvents={studyEvents} plannedSessions={plannedSessions} />
+            <div data-tour="analytics">
+              <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
+                streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
+                session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
+                studyEvents={studyEvents} plannedSessions={plannedSessions} />
+            </div>
           )}
           {/* Rooms stay MOUNTED (just hidden) on other tabs: leaving the tab no
               longer kicks you out of a room — presence, the shared timer, room
               music, chat, and the pop-out keep running while you work on Tasks
               or anywhere else. */}
-          <div className={view === "rooms" ? undefined : "hidden"}>
+          <div data-tour="rooms" className={view === "rooms" ? undefined : "hidden"}>
             <RoomsLive session={session} profile={profile} isPremium={isPremium} gateThen={gateThen} onSignIn={onSignIn}
               onNeedUsername={openFriends} onOpenFriends={openFriends}
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
@@ -961,8 +1002,9 @@ export default function App() {
       </div>
       <BottomNav nav={nav} view={view} setView={setView} />
       {/* Above the focus-mode overlay (z-120) and modals; pointer-events none. */}
-      <ConfettiBurst burst={confettiBurst} reduceMotion={a11y.reduceMotion} />
-      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} hidden={view !== "focus" || immersive || !!pipWindow}
+      <ConfettiBurst burst={confettiBurst} reduceMotion={a11y.reduceMotion} enabled={confettiOn} />
+      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} onClose={closeDock}
+        hidden={view !== "focus" || immersive || !!pipWindow || dockClosed}
         stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
       <FocusMode open={immersive} phase={timer.phase}
         phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
@@ -973,7 +1015,7 @@ export default function App() {
         onExit={() => setImmersive(false)}
         controls={
           <>
-            <button onClick={() => { if (!timer.running) { if (!guardSolo()) return; countUp.reset(); unlockAudio(); } (timer.running ? timer.pause : timer.start)(); }}
+            <button onClick={() => { if (timer.running) { timer.pause(); return; } runSolo(() => { countUp.reset(); unlockAudio(); timer.start(); }); }}
               className="flex h-12 items-center justify-center gap-2 rounded-2xl px-8 font-semibold text-white shadow-glow transition active:scale-[0.98]"
               style={{ background: timer.phase === "focus" ? theme.ring : theme.rest }} aria-label={timer.running ? "Pause" : "Resume"}>
               {timer.running ? <><Pause size={20} fill="currentColor" /> Pause</> : <><Play size={20} fill="currentColor" /> Resume</>}
@@ -999,6 +1041,11 @@ export default function App() {
               aria-label={companionsOn ? "Hide pets during focus" : "Show pets during focus"}
               className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${companionsOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
               <PawPrint size={14} /> Pets {companionsOn ? "on" : "off"}
+            </button>
+            <button onClick={toggleConfetti} aria-pressed={confettiOn}
+              aria-label={confettiOn ? "Turn completion confetti off" : "Turn completion confetti on"}
+              className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${confettiOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+              <PartyPopper size={14} /> Confetti {confettiOn ? "on" : "off"}
             </button>
             {showCompanions && (
               <button onClick={toggleSleep} aria-pressed={petSleep.asleep}
@@ -1050,6 +1097,18 @@ export default function App() {
           }
           extra={<StreamingPlayer shown={shownEmbed} compact plain stopSignal={embedStopSignal} />} />,
         pipWindow.document.body
+      )}
+      {/* The pop-out is a separate document, so the main confetti canvas can't
+          reach it. Mount a second burst pointed at the PiP window, driven by
+          the same counter, so a focus block that finishes while the user is
+          watching the pop-out still celebrates there. */}
+      {pipWindow && !roomActive && createPortal(
+        <ConfettiBurst burst={confettiBurst} reduceMotion={a11y.reduceMotion} enabled={confettiOn} win={pipWindow} />,
+        pipWindow.document.body
+      )}
+      {confirmDialog && (
+        <ConfirmModal title={confirmDialog.title} body={confirmDialog.body} confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={confirmDialog.onConfirm} onClose={() => setConfirmDialog(null)} />
       )}
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }}
         onBuyCredits={() => { setShowUpsell(false); setView("premium"); }} />}
@@ -1524,7 +1583,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, companionsOn, onToggleCompanions, motivation }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, runSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, companionsOn, onToggleCompanions, confettiOn, onToggleConfetti, dockClosed, onReopenDock, motivation }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1551,7 +1610,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         <SignInPrompt onSignIn={onSignIn} message="Sign in to track countdowns for all of your exams." />
       )}
 
-      <section ref={timerRef} className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
+      <section ref={timerRef} data-tour="timer" className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
         <button onClick={() => setShowMethods(true)}
           className="mb-5 flex w-full items-center justify-between rounded-2xl border border-primary bg-primary/10 px-4 py-2.5 text-sm text-primary transition hover:bg-primary/15">
           <span className="flex items-center gap-2 font-medium"><Timer size={15} className="text-primary" /> Select timer</span>
@@ -1597,9 +1656,10 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               <button
                 onClick={() => {
                   // Unlock audio inside the tap itself: iOS refuses to start
-                  // sound from the effect that fires after this handler.
-                  if (!timer.running) { if (!guardSolo?.()) return; countUp.reset(); unlockAudio(); enterFocus?.(); } // Start also drops into focus mode
-                  (timer.running ? timer.pause : timer.start)();
+                  // sound from the effect that fires after this handler. runSolo
+                  // runs its action immediately unless a room needs leaving.
+                  if (timer.running) { timer.pause(); return; }
+                  runSolo?.(() => { countUp.reset(); unlockAudio(); enterFocus?.(); timer.start(); }); // Start also drops into focus mode
                 }}
                 className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]"
                 style={{ background: ring }} aria-label={timer.running ? "Pause" : "Start"}>
@@ -1641,6 +1701,11 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${companionsOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
                 <PawPrint size={13} /> Pets {companionsOn ? "on" : "off"}
               </button>
+              <button onClick={onToggleConfetti} aria-pressed={confettiOn}
+                aria-label={confettiOn ? "Turn completion confetti off" : "Turn completion confetti on"}
+                className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${confettiOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <PartyPopper size={13} /> Confetti {confettiOn ? "on" : "off"}
+              </button>
               {showCompanions && (
                 <button onClick={onToggleSleep} aria-pressed={petsAsleep}
                   className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${petsAsleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
@@ -1666,8 +1731,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             </p>
             <div className="flex items-center gap-3">
               <button onClick={() => {
-                if (!countUp.running) { if (!guardSolo?.()) return; timer.reset(); unlockAudio(); }
-                (countUp.running ? countUp.pause : countUp.start)();
+                if (countUp.running) { countUp.pause(); return; }
+                runSolo?.(() => { timer.reset(); unlockAudio(); countUp.start(); });
               }} className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]" style={{ background: theme.ring }} aria-label={countUp.running ? "Pause count-up timer" : countUp.elapsedSeconds > 0 ? "Resume count-up timer" : "Start count-up timer"}>
                 {countUp.running ? <><Pause size={22} fill="currentColor" /> Pause</> : <><Play size={22} fill="currentColor" /> {countUp.elapsedSeconds > 0 ? "Resume" : "Start"}</>}
               </button>
@@ -1688,7 +1753,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
       <FocusSoundsPanel sounds={sounds} />
 
-      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
+      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying}
+        dockClosed={dockClosed} onReopenDock={onReopenDock} />
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
@@ -1973,11 +2039,26 @@ function FocusSoundsPanel({ sounds }: any) {
 // up to App via onPlay — the iframe itself lives in the dock, so it keeps
 // playing across tab switches and pop-out timers instead of dying when this
 // panel unmounts.
-function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPlaying }: any) {
+function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPlaying, dockClosed = false, onReopenDock }: any) {
   // Remember the service tab so the persistent dock preloads the right
   // default station on the next visit.
   const [service, setServiceState] = useState<"spotify" | "apple">(() => loadPref("roamly-music-service") === "apple" ? "apple" : "spotify");
-  const setService = (s: "spotify" | "apple") => { savePref("roamly-music-service", s); setServiceState(s); };
+  // Switching the service tab surfaces that service's player right away (loads
+  // its first station), matching the dock — the player should appear when you
+  // click Apple Music, not only after you pick a channel. Skips if that
+  // service is already playing so it never interrupts a chosen station.
+  const setService = (s: "spotify" | "apple") => {
+    savePref("roamly-music-service", s);
+    setServiceState(s);
+    if (shown?.service === s) return;
+    if (s === "apple") {
+      const p = APPLE_MUSIC_PRESETS[0] as any;
+      onPlay({ service: "apple", src: toAppleEmbedSrc({ type: p.type, path: p.path }), height: appleEmbedHeight(p.type), label: p.name });
+    } else {
+      const p = SPOTIFY_PRESETS[0] as any;
+      onPlay({ service: "spotify", src: toSpotifyEmbedSrc({ type: p.type, id: p.spotifyId }), height: embedHeight(p.type), label: p.name });
+    }
+  };
   const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
   const [spotifyCustomError, setSpotifyCustomError] = useState(false);
   const [appleCustomUrl, setAppleCustomUrl] = useState("");
@@ -2016,11 +2097,19 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPl
           <Music size={16} className="text-primary" />
           <h2 className="font-display text-lg font-semibold">Music</h2>
         </div>
-        <button onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="focus-music-body"
-          aria-label={collapsed ? "Expand Music" : "Collapse Music"}
-          className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-          {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-        </button>
+        <div className="flex items-center gap-1.5">
+          {dockClosed && onReopenDock && (
+            <button onClick={onReopenDock}
+              className="rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary transition hover:bg-primary/15">
+              Show mini-player
+            </button>
+          )}
+          <button onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="focus-music-body"
+            aria-label={collapsed ? "Expand Music" : "Collapse Music"}
+            className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+            {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          </button>
+        </div>
       </div>
 
       {/* Hidden (not unmounted) when collapsed, so a playing embed keeps going. */}
@@ -2118,7 +2207,7 @@ function StreamingPlayer({ shown, compact = false, stopSignal, onPlaying, plain 
   );
 }
 
-function MusicDock({ shown, minimized, onToggleMin, onPickService, hidden = false, stopSignal, onPlaying }: any) {
+function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidden = false, stopSignal, onPlaying }: any) {
   return (
     // z-[45]: above the bottom nav (z-40), below every modal (z-50+) — a
     // permanent fixture must never eat taps meant for an open dialog.
@@ -2126,14 +2215,20 @@ function MusicDock({ shown, minimized, onToggleMin, onPickService, hidden = fals
     // without it the controls stay tabbable and announced to screen readers.
     <div data-testid="music-dock" inert={hidden} aria-hidden={hidden}
       className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[45] overflow-hidden rounded-2xl border border-border bg-card shadow-xl transition ${hidden ? "pointer-events-none opacity-0" : "opacity-100"} sm:left-auto sm:right-4 sm:w-96`}>
-      <button onClick={onToggleMin} className="flex w-full items-center justify-between px-3 py-1.5 text-left"
-        aria-label={minimized ? "Expand music player" : "Minimize music player"} aria-expanded={!minimized}>
-        <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-          <Music size={12} className="shrink-0 text-primary" />
-          <span className="truncate">{shown.service === "spotify" ? "Spotify" : "Apple Music"} · {shown.label}</span>
-        </span>
-        {minimized ? <ChevronUp size={14} className="shrink-0 text-muted-foreground" /> : <ChevronDown size={14} className="shrink-0 text-muted-foreground" />}
-      </button>
+      <div className="flex items-center">
+        <button onClick={onToggleMin} className="flex min-w-0 flex-1 items-center justify-between px-3 py-1.5 text-left"
+          aria-label={minimized ? "Expand music player" : "Minimize music player"} aria-expanded={!minimized}>
+          <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+            <Music size={12} className="shrink-0 text-primary" />
+            <span className="truncate">{shown.service === "spotify" ? "Spotify" : "Apple Music"} · {shown.label}</span>
+          </span>
+          {minimized ? <ChevronUp size={14} className="shrink-0 text-muted-foreground" /> : <ChevronDown size={14} className="shrink-0 text-muted-foreground" />}
+        </button>
+        <button onClick={onClose} aria-label="Close music player"
+          className="mr-1.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive">
+          <X size={13} />
+        </button>
+      </div>
       {/* Collapsed via height, NOT unmounted — the music keeps playing.
           `inert` keeps the collapsed controls out of the tab order too. */}
       <div className={minimized ? "h-0 overflow-hidden" : ""} inert={minimized} aria-hidden={minimized}>
@@ -2163,6 +2258,26 @@ function TagPill({ tag }: { tag: string }) {
 }
 
 type DragState = { id: string; group: string; from: number; over: number; dy: number; height: number };
+
+// Themed yes/no dialog, replacing bare window.confirm() pop-ups. onConfirm runs
+// on the confirm click (still a user gesture, so iOS audio unlock survives).
+function ConfirmModal({ title, body, confirmLabel, onConfirm, onClose }: {
+  title: string; body?: string; confirmLabel: string; onConfirm: () => void; onClose: () => void;
+}) {
+  return (
+    <Modal label={title} onClose={onClose}
+      overlayClassName="fixed inset-0 z-[140] grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm"
+      cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
+      <h3 className="font-display text-lg font-semibold">{title}</h3>
+      {body && <p className="mt-1.5 text-sm text-muted-foreground">{body}</p>}
+      <div className="mt-4 flex gap-2">
+        <button onClick={onClose} className="flex-1 rounded-full border border-border bg-card py-2 text-sm text-muted-foreground transition hover:border-primary/40">Cancel</button>
+        <button autoFocus onClick={() => { onConfirm(); onClose(); }}
+          className="flex-1 rounded-full gradient-primary py-2 text-sm font-semibold text-white shadow-glow transition active:scale-95">{confirmLabel}</button>
+      </div>
+    </Modal>
+  );
+}
 
 // Themed replacements for the old window.prompt() dialogs — same look as
 // every other Roamly modal instead of a bare browser popup.
@@ -2343,7 +2458,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
   };
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl" data-tour="tasks">
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
