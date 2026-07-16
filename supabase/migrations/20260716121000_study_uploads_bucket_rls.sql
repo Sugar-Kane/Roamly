@@ -35,6 +35,10 @@ drop policy if exists "study_uploads_insert_own" on storage.objects;
 drop policy if exists "study_uploads_select_own" on storage.objects;
 drop policy if exists "study_uploads_update_own" on storage.objects;
 drop policy if exists "study_uploads_delete_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_insert_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_select_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_update_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_delete_own" on storage.objects;
 
 create policy "study_uploads_insert_own"
 on storage.objects for insert to authenticated
@@ -67,3 +71,23 @@ using (
   bucket_id = 'study-uploads'
   and (storage.foldername(name))[1] = (select auth.uid())::text
 );
+
+-- Restrictive guards are ANDed with every permissive policy. This keeps any
+-- differently named legacy dashboard policy from widening access to this
+-- bucket, while leaving policies for all other buckets untouched.
+create policy "study_uploads_restrict_insert_own"
+on storage.objects as restrictive for insert to authenticated
+with check (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
+
+create policy "study_uploads_restrict_select_own"
+on storage.objects as restrictive for select to authenticated
+using (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
+
+create policy "study_uploads_restrict_update_own"
+on storage.objects as restrictive for update to authenticated
+using (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text)
+with check (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
+
+create policy "study_uploads_restrict_delete_own"
+on storage.objects as restrictive for delete to authenticated
+using (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
