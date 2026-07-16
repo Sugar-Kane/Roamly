@@ -1,54 +1,17 @@
-// Profile menu, anchored to the avatar in the top-right of the header.
-// Holds the account summary, the subscription plan (with a jump to the
-// Premium page), the accessibility settings (color-blind palette, high
-// contrast, reduced motion, larger text), and sign out. Accessibility
-// settings work signed-out too — they're stored locally on the device.
+// Profile menu, anchored to the avatar in the top-right of the header. A quick
+// launcher: the identity summary, a jump into the full Account settings panel
+// (where display name, username, photo, privacy, data export, and account
+// deletion live), fast links (plan, friends, admin, tour, feedback), and the
+// on-device toggles (timer confetti + accessibility) that must work signed-out.
+// Deeper account management deliberately lives in AccountSettings, not here, so
+// this stays a small, one-glance menu.
 
 import { useEffect, useRef, useState } from "react";
-import { Camera, Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, MessageSquare, Trash2 } from "lucide-react";
+import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, HelpCircle, MessageSquare, UserCog } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { loadPref } from "./storage";
-import { removeProfileAvatar, updateProfileAvatar, type Profile } from "./db";
+import type { Profile } from "./db";
 import { currentUploadPeriod, FREE_MONTHLY_UPLOAD_QUOTA, PREMIUM_MONTHLY_UPLOAD_QUOTA } from "./UploadTasks";
-
-// iOS photos are often HEIC/HEIF, which browsers cannot decode or upload as an
-// image. Convert to JPEG on the client (the WASM decoder is dynamically
-// imported so it only loads when a HEIC file is actually chosen). The real
-// file type comes from the leading bytes, not the extension or reported MIME:
-// a renamed .heic that's actually a JPEG passes straight through (with its
-// MIME corrected), and a mislabeled HEIC still gets converted. heic2any
-// decodes the pixels through libheif, so EXIF orientation is baked into the
-// converted JPEG and photos come out upright.
-async function sniffImageKind(file: File): Promise<"heic" | "jpeg" | "png" | "webp" | "unknown"> {
-  const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
-  if (bytes.length >= 12) {
-    const tag = String.fromCharCode(...bytes.slice(4, 8));
-    if (tag === "ftyp") {
-      const brand = String.fromCharCode(...bytes.slice(8, 12)).toLowerCase();
-      if (["heic", "heix", "hevc", "hevx", "heif", "mif1", "msf1"].includes(brand)) return "heic";
-    }
-    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-      && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "webp";
-  }
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpeg";
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "png";
-  return "unknown";
-}
-
-async function maybeConvertHeic(file: File): Promise<File> {
-  const kind = await sniffImageKind(file);
-  if (kind === "heic") {
-    const heic2any = (await import("heic2any")).default;
-    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
-    const blob = Array.isArray(converted) ? converted[0] : converted;
-    return new File([blob], file.name.replace(/\.hei[cf]$/i, "") + ".jpg", { type: "image/jpeg" });
-  }
-  // Mislabeled files (e.g. a JPEG renamed .heic, whose reported MIME would be
-  // rejected downstream) are re-wrapped with the MIME their bytes prove.
-  const realType = kind === "jpeg" ? "image/jpeg" : kind === "png" ? "image/png" : kind === "webp" ? "image/webp" : null;
-  if (realType && file.type !== realType) return new File([file], file.name, { type: realType });
-  return file;
-}
 
 export type A11ySettings = {
   colorBlind: boolean;
@@ -95,7 +58,7 @@ function ProfileAvatar({ url, initials, className }: { url?: string | null; init
   </span>;
 }
 
-export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confettiOn, onToggleConfetti, onProfileChange, onSignIn, onSignOut, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
+export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confettiOn, onToggleConfetti, onSignIn, onSignOut, onOpenAccount, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
   session: Session | null;
   profile: Profile | null;
   isPremium: boolean;
@@ -103,9 +66,9 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
   setA11y: (next: A11ySettings) => void;
   confettiOn: boolean;
   onToggleConfetti: () => void;
-  onProfileChange: (profile: Profile) => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  onOpenAccount: () => void;
   onOpenPremium: () => void;
   onOpenFriends: () => void;
   isAdmin: boolean;
@@ -114,10 +77,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
   onSendFeedback: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [avatarBusy, setAvatarBusy] = useState(false);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   // Close on outside tap/click and on Escape.
   useEffect(() => {
@@ -147,39 +107,6 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
 
   const flip = (key: keyof A11ySettings) => setA11y({ ...a11y, [key]: !a11y[key] });
 
-  const chooseAvatar = async (file: File | undefined) => {
-    if (!file || !session || !profile) return;
-    // Size check BEFORE any decode: converting an oversized HEIC would burn
-    // memory only for the upload to be rejected afterwards anyway.
-    if (file.size > 15 * 1024 * 1024) { setAvatarError("Choose an image smaller than 15 MB."); return; }
-    setAvatarBusy(true);
-    setAvatarError(null);
-    // iPhones hand back HEIC/HEIF, which browsers can't render or upload as an
-    // image. Convert to JPEG first (the decoder is loaded only when needed).
-    let prepared: File;
-    try {
-      prepared = await maybeConvertHeic(file);
-    } catch {
-      setAvatarBusy(false);
-      setAvatarError("Couldn't convert that HEIC photo. Try a JPG or PNG instead.");
-      return;
-    }
-    const result = await updateProfileAvatar(session.user.id, prepared, profile.avatar_path);
-    setAvatarBusy(false);
-    if (!result.url) { setAvatarError(result.error ?? "Couldn't update that picture."); return; }
-    onProfileChange({ ...profile, avatar_path: result.path, avatar_url: result.url });
-  };
-
-  const removeAvatar = async () => {
-    if (!session || !profile?.avatar_url) return;
-    setAvatarBusy(true);
-    setAvatarError(null);
-    const result = await removeProfileAvatar(session.user.id, profile.avatar_path);
-    setAvatarBusy(false);
-    if (result.error) { setAvatarError(result.error); return; }
-    onProfileChange({ ...profile, avatar_path: null, avatar_url: null });
-  };
-
   return (
     <div ref={rootRef} className="relative">
       <button onClick={() => setOpen((o) => !o)} aria-label="Open profile menu" aria-expanded={open}
@@ -189,32 +116,40 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confet
 
       {open && (
         <div className="absolute right-0 top-11 z-50 w-72 rounded-2xl border border-border bg-card p-2 shadow-xl">
-          {/* Account */}
-          <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
-            <ProfileAvatar url={session ? profile?.avatar_url : null} initials={session ? initials : "☺"} className="h-10 w-10 text-sm" />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{session ? (name ?? "Set a username") : "Not signed in"}</span>
-              <span className="block truncate text-xs text-muted-foreground">{session ? email : "Sign in to sync your data"}</span>
-            </span>
-          </div>
-
-          {session && (
-            <div className="mb-1 rounded-xl border border-border bg-card/70 px-3 py-2.5">
-              <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" className="sr-only" aria-label="Choose profile picture"
-                onChange={(event) => { void chooseAvatar(event.target.files?.[0]); event.currentTarget.value = ""; }} />
-              <div className="flex flex-wrap gap-2">
-                <button type="button" disabled={avatarBusy || !profile} onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
-                  <Camera size={13} /> {avatarBusy ? "Saving…" : profile?.avatar_url ? "Change photo" : "Add photo"}
-                </button>
-                {profile?.avatar_url && <button type="button" disabled={avatarBusy} onClick={() => void removeAvatar()}
-                  className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition hover:text-destructive disabled:opacity-50">
-                  <Trash2 size={12} /> Remove
-                </button>}
-              </div>
-              <p className="mt-1.5 text-[10px] text-muted-foreground">JPG, PNG, WebP, or iPhone HEIC. Maximum 15 MB.</p>
-              {avatarError && <p role="alert" className="mt-1 text-[11px] text-destructive">{avatarError}</p>}
+          {/* Account summary — tap to open full account settings when signed in */}
+          {session ? (
+            <button onClick={() => { setOpen(false); onOpenAccount(); }}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-secondary/60">
+              <ProfileAvatar url={profile?.avatar_url} initials={initials} className="h-10 w-10 text-sm" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold">{name ?? "Set up your profile"}</span>
+                <span className="block truncate text-xs text-muted-foreground">{email}</span>
+              </span>
+              <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
+            </button>
+          ) : (
+            <div className="flex items-center gap-3 rounded-xl px-3 py-2.5">
+              <ProfileAvatar url={null} initials="☺" className="h-10 w-10 text-sm" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold">Not signed in</span>
+                <span className="block truncate text-xs text-muted-foreground">Sign in to sync your data</span>
+              </span>
             </div>
+          )}
+
+          {/* Account settings entry */}
+          {session && (
+            <button onClick={() => { setOpen(false); onOpenAccount(); }}
+              className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2.5 text-left transition hover:border-primary/40">
+              <span className="flex min-w-0 items-center gap-2">
+                <UserCog size={15} className="shrink-0 text-primary" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium">Account settings</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">Profile, privacy, data, and deletion</span>
+                </span>
+              </span>
+              <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
+            </button>
           )}
 
           {/* Plan */}

@@ -32,6 +32,9 @@ export type Profile = {
   // When true, accepted friends can compare stats without a per-friend request.
   // Optional so the client tolerates the pre-migration schema.
   stats_public?: boolean;
+  // The user's chosen app theme, synced across devices. Optional so the client
+  // tolerates the pre-migration schema.
+  theme?: string | null;
 };
 
 const AVATAR_BUCKET = "avatars";
@@ -79,6 +82,85 @@ export async function removeProfileAvatar(userId: string, currentPath?: string |
   }
   if (currentPath) void supabase.storage.from(AVATAR_BUCKET).remove([currentPath]);
   return {};
+}
+
+// Change the caller's display name via the validating set_display_name() RPC.
+// Returns null on success, or a user-facing message. display_name is not in the
+// client UPDATE grant on profiles, so this must go through the definer RPC.
+export async function setDisplayName(name: string): Promise<string | null> {
+  if (!supabase) return "Accounts aren't available right now.";
+  const { error } = await supabase.rpc("set_display_name", { p_name: name });
+  if (!error) return null;
+  if (error.message.includes("invalid_display_name")) return "Use 1–40 characters.";
+  console.warn("[Roamly] setDisplayName failed", error.message);
+  return "Couldn't save that name. Try again.";
+}
+
+// Self-service account deletion. Calls the server endpoint with the caller's own
+// token; the server cancels billing, sweeps avatar storage, and hard-deletes the
+// auth user (everything cascades). On success the caller should sign out — the
+// session is now attached to a user that no longer exists.
+export async function deleteAccount(): Promise<{ ok?: boolean; billingCanceled?: boolean; error?: string }> {
+  if (!supabase) return { error: "Not available right now." };
+  const { data: auth } = await supabase.auth.getSession();
+  const token = auth.session?.access_token;
+  if (!token) return { error: "Your session expired. Sign in again." };
+  try {
+    const response = await fetch("/api/delete-account", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ confirm: "DELETE" }),
+    });
+    const result = await response.json() as { ok?: boolean; billingCanceled?: boolean; error?: string };
+    if (!response.ok) return { error: result.error || "Couldn't delete your account." };
+    return result;
+  } catch {
+    return { error: "Couldn't reach the server. Check your connection and try again." };
+  }
+}
+
+// Gather everything the app stores about this user into one JSON object, for a
+// "download my data" export. Reads only the caller's own rows (RLS enforces
+// this regardless); each table is best-effort so one failure never sinks the
+// whole export. Ephemeral/telemetry tables (app_events, room heartbeats) are
+// intentionally omitted — this is the user's meaningful personal data.
+export async function exportAccountData(userId: string): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {
+    exported_at: new Date().toISOString(),
+    user_id: userId,
+  };
+  if (!supabase) return out;
+
+  const pull = async (key: string, run: () => PromiseLike<{ data: unknown }>) => {
+    try { out[key] = (await run()).data ?? []; } catch { out[key] = []; }
+  };
+
+  const byUser = (table: string) => () => supabase!.from(table).select("*").eq("user_id", userId);
+
+  await pull("profile", async () => await supabase!.from("profiles").select("*").eq("id", userId).maybeSingle());
+  await pull("tasks", byUser("tasks"));
+  await pull("focus_sessions", byUser("focus_sessions"));
+  await pull("study_session_events", byUser("study_session_events"));
+  await pull("planned_study_sessions", byUser("planned_study_sessions"));
+  await pull("exam_schedules", byUser("exam_schedules"));
+  await pull("gamification_state", async () => await supabase!.from("gamification_state").select("*").eq("user_id", userId).maybeSingle());
+  await pull("achievements", byUser("user_achievements"));
+  await pull("pets", byUser("user_pets"));
+  await pull("rewards", byUser("user_rewards"));
+  await pull("notifications", byUser("notifications"));
+  await pull("feedback", byUser("feedback"));
+  await pull("friendships", async () => await supabase!.from("friendships").select("*").or(`requester.eq.${userId},addressee.eq.${userId}`));
+
+  return out;
+}
+
+// Persist the user's chosen theme to their profile so it follows them across
+// devices. Best-effort with graceful degradation: if the theme column hasn't
+// been migrated in yet, the local copy still keeps the choice on this device.
+export async function saveThemePreference(userId: string, theme: string) {
+  if (!supabase) return;
+  const { error } = await supabase.from("profiles").update({ theme }).eq("id", userId);
+  if (error && !error.message.includes("theme")) console.warn("[Roamly] saveThemePreference failed", error.message);
 }
 
 export type FocusSessionRow = { date: string; minutes: number };
