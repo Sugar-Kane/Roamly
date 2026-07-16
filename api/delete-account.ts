@@ -4,7 +4,7 @@ import { limitOrResponse } from "./_ratelimit";
 import { apiLog } from "./_log";
 
 // Self-service, PERMANENT account deletion — the user deleting THEIR OWN
-// account. Unlike api/admin-delete-user, there is no admin allowlist: the
+// account. Unlike api/admin-account's delete_user, there is no admin allowlist: the
 // bearer token identifies the caller, and the caller can only ever delete
 // themselves. Billing is canceled first so a departing user can never keep
 // being charged; their avatar objects are swept from storage (DB cascade

@@ -263,8 +263,8 @@ export async function adminRevokePremium(userId: string): Promise<{ revoked?: nu
   const token = auth.session?.access_token;
   if (!token) return { error: "Your session expired. Sign in again." };
   try {
-    const response = await fetch("/api/admin-revoke-premium", {
-      method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ userId }),
+    const response = await fetch("/api/admin-account", {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ action: "revoke_premium", userId }),
     });
     const result = await response.json() as { revoked?: number; billingCanceled?: boolean; stripeWarning?: string; error?: string };
     if (!response.ok) return { error: result.error || "Couldn't revoke Premium." };
@@ -350,8 +350,8 @@ export async function adminDeleteUser(userId: string): Promise<{ ok?: boolean; b
   const token = auth.session?.access_token;
   if (!token) return { error: "Your session expired. Sign in again." };
   try {
-    const response = await fetch("/api/admin-delete-user", {
-      method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ userId }),
+    const response = await fetch("/api/admin-account", {
+      method: "POST", headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ action: "delete_user", userId }),
     });
     const result = await response.json() as { ok?: boolean; billingCanceled?: boolean; stripeWarning?: string; error?: string };
     if (!response.ok) return { error: result.error || "Couldn't delete the account." };
