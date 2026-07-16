@@ -319,6 +319,45 @@ test("confetti fires only when a focus block completes naturally", async ({ page
   await expect(page.getByTestId("focus-overlay").getByText("Short break")).toBeVisible();
 });
 
+test("the streaming Music panel collapses and the choice persists", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  const collapse = overlay.getByRole("button", { name: "Collapse Music" });
+  await expect(collapse).toBeVisible();
+  await expect(collapse).toHaveAttribute("aria-expanded", "true");
+  // The Spotify/Apple tabs live in the panel body; collapsing hides them.
+  await expect(overlay.getByRole("button", { name: "Apple Music" })).toBeVisible();
+  await collapse.click();
+  await expect(overlay.getByRole("button", { name: "Expand Music" })).toHaveAttribute("aria-expanded", "false");
+  // Reloading keeps the collapsed choice (localStorage). The Focus tab's own
+  // Music panel comes back already collapsed.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Expand Music" }).first()).toBeVisible();
+});
+
+test("pets can be toggled from focus mode and the choice persists", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  // The control is always present (even with pets off) so they can be restored.
+  const petToggle = overlay.getByRole("button", { name: /pets during focus/i });
+  await expect(petToggle).toBeVisible();
+  const before = await petToggle.getAttribute("aria-pressed");
+  await petToggle.click();
+  await expect(overlay.getByRole("button", { name: /pets during focus/i }))
+    .toHaveAttribute("aria-pressed", before === "true" ? "false" : "true");
+  // The preference persists across a reload.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await expect(page.getByTestId("focus-overlay").getByRole("button", { name: /pets during focus/i }))
+    .toHaveAttribute("aria-pressed", before === "true" ? "false" : "true");
+});
+
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
   for (const width of [320, 375, 390, 430, 768, 1280]) {

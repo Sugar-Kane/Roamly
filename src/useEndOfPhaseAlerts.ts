@@ -62,7 +62,7 @@ export function useEndOfPhaseAlerts() {
 
   const playEndingChime = useCallback((endingPhase: Phase) => {
     if (!soundEnabled) return;
-    playChime(endingPhase === "focus" ? "transition" : "breakEnd");
+    playChime(endingPhase === "focus" ? "focusEnd" : "breakEnd");
   }, [soundEnabled]);
 
   const notify = useCallback((finishedPhase: Phase) => {

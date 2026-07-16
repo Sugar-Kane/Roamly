@@ -1,9 +1,11 @@
 // Confetti for a naturally completed focus block. Dependency-free canvas:
-// ~110 particles fired from the two lower corners, ~2.2s, then the canvas
-// unmounts itself. The overlay never captures pointer events, sits above the
-// focus-mode overlay (z-120) and modals (z-130/150), and is skipped entirely
-// when the user prefers reduced motion.
+// a full-viewport rain plus two corner cannons, ~2.2s, then the canvas
+// unmounts itself. The overlay is portaled to document.body so no ancestor's
+// transform or overflow can clip it, never captures pointer events, sits above
+// the focus-mode overlay (z-120) and modals (z-130/150), and is skipped
+// entirely when the user prefers reduced motion.
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Particle = {
   x: number; y: number; vx: number; vy: number;
@@ -44,8 +46,26 @@ export function ConfettiBurst({ burst, reduceMotion }: { burst: number; reduceMo
 
     const rand = (min: number, max: number) => min + Math.random() * (max - min);
     const colors = paletteWithTheme();
+    const pick = () => colors[Math.floor(rand(0, colors.length))];
     const particles: Particle[] = [];
-    // Two cannons at the lower corners aimed up and inward.
+
+    // Full-width rain from just above the top edge so the confetti fills the
+    // whole viewport (full width and height), not only the lower corners.
+    // Density scales with viewport width and is capped so very wide screens
+    // stay light on the animation loop.
+    const rainCount = Math.min(150, Math.max(60, Math.round(w / 12)));
+    for (let i = 0; i < rainCount; i++) {
+      particles.push({
+        x: rand(0, w), y: rand(-40, -4),
+        vx: rand(-70, 70), vy: rand(60, 240),
+        rot: rand(0, Math.PI * 2), vr: rand(-8, 8),
+        w: rand(5, 9), h: rand(8, 14),
+        color: pick(), wobble: rand(0, Math.PI * 2),
+      });
+    }
+
+    // Two cannons at the lower corners aimed up and inward, so the celebratory
+    // upward burst meets the falling rain across the middle of the screen.
     for (const [ox, dir] of [[0.08, 1], [0.92, -1]] as const) {
       for (let i = 0; i < 55; i++) {
         const speed = rand(520, 980);
@@ -55,8 +75,7 @@ export function ConfettiBurst({ burst, reduceMotion }: { burst: number; reduceMo
           vx: Math.cos(angle) * speed * dir, vy: Math.sin(angle) * speed,
           rot: rand(0, Math.PI * 2), vr: rand(-8, 8),
           w: rand(5, 9), h: rand(8, 14),
-          color: colors[Math.floor(rand(0, colors.length))],
-          wobble: rand(0, Math.PI * 2),
+          color: pick(), wobble: rand(0, Math.PI * 2),
         });
       }
     }
@@ -93,8 +112,12 @@ export function ConfettiBurst({ burst, reduceMotion }: { burst: number; reduceMo
   }, [activeBurst]);
 
   if (activeBurst === 0) return null;
-  return (
+  // Portaled to document.body so a transformed/overflow ancestor can never clip
+  // the fixed full-viewport canvas. Immersive focus mode fullscreens the whole
+  // document element, so a body-level fixed canvas still renders over it.
+  return createPortal(
     <canvas ref={canvasRef} data-testid="confetti" aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-[200] h-full w-full" />
+      className="pointer-events-none fixed inset-0 z-[200] h-full w-full" />,
+    document.body
   );
 }
