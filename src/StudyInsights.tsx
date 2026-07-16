@@ -4,6 +4,8 @@ import type { Task } from "./data";
 import type { FocusSession } from "./streaks";
 import { MISSED_REASONS, type MissedReason, type PlannedStudyDraft, type PlannedStudyInvite, type PlannedStudySession, type PlannedStudyTarget, type StudyEvent } from "./release3";
 import { fetchFriendships, fetchIncomingPlannedStudyInvites, getPublicProfiles, inviteFriendsToPlannedStudy, respondPlannedStudyInvite, type PublicProfile } from "./rooms";
+import { SearchableSelect, ThemedSelect } from "./ThemedSelect";
+import { tagColor } from "./data";
 
 type Range = "day" | "week" | "month" | "all";
 const RANGE_LABEL: Record<Range, string> = { day: "Day", week: "Week", month: "Month", all: "All time" };
@@ -581,37 +583,34 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
         <span>Date and time</span>
         <ThemedDateTimePicker value={when} onChange={setWhen} />
       </div>
-      <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
-        Plan target
-        <select value={targetType} onChange={(event) => setTargetType(event.target.value as PlannedStudyTarget)} aria-label="Plan target" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
-          <option value="task">One task</option>
-          <option value="category">Full category</option>
-        </select>
-      </label>
+      <div className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+        <span>Plan target</span>
+        <ThemedSelect value={targetType} onChange={(v) => setTargetType(v as PlannedStudyTarget)} ariaLabel="Plan target"
+          options={[
+            { value: "task", label: "One task" },
+            { value: "category", label: "Full category" },
+          ]} />
+      </div>
       {targetType === "task" ? (
-        // Full-width row: task titles are long, and a half-width select clips
-        // them in the closed control. `title` surfaces the whole title on hover.
-        <label className="grid gap-1 text-[11px] font-medium text-muted-foreground sm:col-span-2">
-          Task
-          <select value={effectiveTaskId} onChange={(event) => setTaskId(event.target.value)} aria-label="Planned task"
-            title={openTasks.find((task) => task.id === effectiveTaskId)?.title}
-            className="w-full truncate rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
-            {openTasks.length === 0 && <option value="">No open tasks</option>}
-            {openTasks.map((task) => <option key={task.id} value={task.id}>{task.title}</option>)}
-          </select>
-        </label>
+        // Full-width row: task titles are long, and a half-width control clips
+        // them in the closed state. The combobox is searchable by task name.
+        <div className="grid gap-1 text-[11px] font-medium text-muted-foreground sm:col-span-2">
+          <span>Task</span>
+          <SearchableSelect value={effectiveTaskId} onChange={setTaskId} ariaLabel="Planned task"
+            placeholder="No open tasks" searchPlaceholder="Search tasks…"
+            options={openTasks.map((task) => ({ value: task.id, label: task.title, hint: task.tag, accent: tagColor(task.tag) }))} />
+        </div>
       ) : (
-        <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
-          Category
-          <select value={effectiveCategory} onChange={(event) => setCategory(event.target.value)} aria-label="Planned category" className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground">
-            {categories.length === 0 && <option value="">No categories</option>}
-            {categories.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </label>
+        <div className="grid gap-1 text-[11px] font-medium text-muted-foreground">
+          <span>Category</span>
+          <ThemedSelect value={effectiveCategory} onChange={setCategory} ariaLabel="Planned category"
+            placeholder="No categories"
+            options={categories.map((name) => ({ value: name, label: name, accent: tagColor(name) }))} />
+        </div>
       )}
       <label className="grid gap-1 text-[11px] font-medium text-muted-foreground">
         Duration (minutes)
-        <span className="flex items-center rounded-xl border border-border bg-card pr-3">
+        <span className="flex min-h-[2.5rem] items-center rounded-xl border border-border bg-card pr-3 transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20 hover:border-primary/50">
           <input type="number" min={5} max={480} value={minutes} onChange={(event) => setMinutes(Math.max(5, Math.min(480, Number(event.target.value))))} aria-label="Duration in minutes" className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-foreground outline-none" />
           <span className="text-xs text-muted-foreground">min</span>
         </span>
@@ -649,10 +648,11 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
     )}
 
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      <button onClick={save} disabled={!canSave || saving} className="rounded-xl gradient-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+      <button onClick={save} disabled={!canSave || saving}
+        className="rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-50">
         {saving ? "Saving…" : editingId ? "Save changes" : "Plan event"}
       </button>
-      {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}
+      {message && <p role="status" className={`text-xs ${message.startsWith("Couldn't") ? "text-destructive" : "text-muted-foreground"}`}>{message}</p>}
     </div>
 
     {incomingInvites.length > 0 && (

@@ -1,18 +1,21 @@
 // Admin dashboard: usage metrics, feedback inbox, client-error log, invites,
 // and Premium management. Extracted from App.tsx to keep that file focused.
 // Every data call is a SECURITY DEFINER RPC gated on is_admin() server-side.
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Crown, Search, ExternalLink, Trash2, ChevronDown, ChevronRight, ArrowUpDown } from "lucide-react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Crown, Search, ExternalLink, Trash2, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import {
-  adminSearchUsers, adminGrantPremium, adminRevokePremium, adminDeleteUser, adminAdjustCredits, sendInvite,
+  adminSearchUsers, adminListUsers, adminGrantPremium, adminRevokePremium, adminDeleteUser, adminAdjustCredits, sendInvite,
   adminOverview, adminEventStats, adminDailyActivity, adminListFeedback, adminListErrors,
   adminUserActivity, adminFeedbackAction, adminUsageUsers, adminOverviewToday, adminEventStatsToday,
   adminListAdSubmissions, adminSetAdSubmissionStatus, adminDeleteAdSubmission,
-  type AdminUser, type AdminOverview, type AdminEventStat, type AdminDailyActivity,
-  type AdminUsageUser, type AdminOverviewToday,
+  type AdminOverview, type AdminEventStat, type AdminDailyActivity,
+  type AdminUsageUser, type AdminOverviewToday, type AdminUserListRow,
+  type AdminUserPlanFilter, type AdminUserActivityFilter, type AdminUserSort,
   type FeedbackRow, type ErrorRow, type UserActivityRow,
   type AdSubmissionRow, type AdStatus,
 } from "./db";
+import { Modal } from "./Modal";
+import { ThemedSelect } from "./ThemedSelect";
 
 const AdminActivityChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminActivityChart })));
 const DeviceDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
@@ -31,103 +34,7 @@ function relTime(iso: string): string {
 }
 
 export function AdminView({ isAdmin }: { isAdmin: boolean }) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<AdminUser[]>([]);
-  const [searched, setSearched] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteName, setInviteName] = useState("");
-  const [inviting, setInviting] = useState(false);
-  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
-
-  const invite = async () => {
-    if (!inviteEmail.trim() || inviting) return;
-    setInviting(true);
-    setInviteMsg(null);
-    const res = await sendInvite(inviteEmail.trim(), inviteName);
-    setInviting(false);
-    if (res.error) { setInviteMsg({ ok: false, text: res.error }); return; }
-    setInviteMsg({
-      ok: true,
-      text: res.status === "friend_request"
-        ? "Already a user. Friend request sent."
-        : res.note === "resent"
-          ? `Invite re-sent to ${inviteEmail.trim()}.`
-          : `Invite emailed to ${inviteEmail.trim()}.`,
-    });
-    setInviteEmail("");
-    setInviteName("");
-  };
-
-  const search = async () => {
-    setError(null);
-    setResults(await adminSearchUsers(query.trim())); // blank query lists everyone
-    setSearched(true);
-  };
-
-  const grant = async (u: AdminUser, months: 1 | 12) => {
-    setBusyId(`${u.id}:${months}`);
-    setError(null);
-    const result = await adminGrantPremium(u.id, months, "Granted from Roamly admin portal");
-    setBusyId(null);
-    if (result.error) { setError(result.error); return; }
-    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: true } : r)));
-  };
-
-  const revoke = async (u: AdminUser) => {
-    const label = u.display_name || u.username || u.email || "this user";
-    if (!window.confirm(`Cancel any active Stripe subscription and revoke all current Premium access for ${label}? Cancellation is immediate and does not automatically refund prior charges.`)) return;
-    setBusyId(`${u.id}:revoke`);
-    setError(null);
-    const result = await adminRevokePremium(u.id);
-    setBusyId(null);
-    if (result.error) { setError(result.error); return; }
-    // Access is revoked even when Stripe couldn't cancel; surface the
-    // follow-up so the admin checks the Stripe dashboard.
-    if (result.stripeWarning) setError(`Roamly access revoked. ${result.stripeWarning}`);
-    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, is_premium: false } : r)));
-  };
-
-  // One credit at a time, per the admin_adjust_credits contract; the RPC
-  // returns the authoritative new balance which replaces the shown value.
-  const adjustCredits = async (u: AdminUser, delta: 1 | -1) => {
-    setBusyId(`${u.id}:credits`);
-    setError(null);
-    const result = await adminAdjustCredits(u.id, delta);
-    setBusyId(null);
-    if (result.error) { setError(result.error); return; }
-    setResults((prev) => prev.map((r) => (r.id === u.id ? { ...r, ai_credits: result.balance } : r)));
-  };
-
-  // Permanent, typed-confirmation account deletion. Billing is canceled server-
-  // side first; the auth delete cascades through every app table.
-  const deleteAccount = async (u: AdminUser) => {
-    const label = u.display_name || u.username || u.email || "this user";
-    const typed = window.prompt(
-      `PERMANENTLY delete the account for ${label}?\n\nThis cancels their Stripe billing and erases their profile, tasks, focus history, gamification, rooms, and feedback. It cannot be undone.\n\nType DELETE to confirm.`
-    );
-    if (typed !== "DELETE") return;
-    setBusyId(`${u.id}:delete`);
-    setError(null);
-    const result = await adminDeleteUser(u.id);
-    setBusyId(null);
-    if (result.error) { setError(result.error); return; }
-    if (result.stripeWarning) setError(`Account deleted. ${result.stripeWarning}`);
-    setResults((prev) => prev.filter((r) => r.id !== u.id));
-  };
-
   const [tab, setTab] = useState<"usage" | "feedback" | "ads" | "errors" | "users">("usage");
-
-  // Show the full roster by default when the Users tab opens; the search box
-  // then filters it (and a cleared box restores the full list).
-  useEffect(() => {
-    if (!isAdmin || tab !== "users") return;
-    let alive = true;
-    adminSearchUsers("").then((r) => { if (alive) { setResults(r); setSearched(true); } });
-    return () => { alive = false; };
-  }, [isAdmin, tab]);
 
   if (!isAdmin) {
     return (
@@ -156,8 +63,209 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
       {tab === "feedback" && <AdminFeedback />}
       {tab === "ads" && <AdminAds />}
       {tab === "errors" && <AdminErrors />}
+      {tab === "users" && <AdminUsers />}
+    </div>
+  );
+}
 
-      {tab === "users" && <>
+// Themed replacement for window.confirm()/prompt() on destructive admin
+// actions. Names the affected user, optionally requires typing a word (e.g.
+// DELETE) before enabling the destructive button, and disables everything
+// while the action runs so it can't double-submit.
+function AdminConfirmDialog({ title, body, confirmLabel, typedWord, busy, onConfirm, onClose }: {
+  title: string; body: string; confirmLabel: string;
+  typedWord?: string; busy: boolean;
+  onConfirm: () => void; onClose: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const armed = !typedWord || typed === typedWord;
+  return (
+    <Modal label={title} onClose={() => { if (!busy) onClose(); }}
+      cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
+      <div className="grid h-11 w-11 place-items-center rounded-2xl bg-destructive/10 text-destructive"><Trash2 size={20} /></div>
+      <h3 className="mt-4 font-display text-xl font-semibold">{title}</h3>
+      <p className="mt-1.5 whitespace-pre-line text-sm text-muted-foreground">{body}</p>
+      {typedWord && (
+        <input value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus
+          aria-label={`Type ${typedWord} to confirm`} placeholder={`Type ${typedWord} to confirm`}
+          className="mt-3 w-full rounded-xl border border-border bg-card px-3 py-2.5 text-sm outline-none transition placeholder:text-muted-foreground focus:border-destructive focus:ring-2 focus:ring-destructive/20" />
+      )}
+      <div className="mt-5 flex gap-2">
+        <button onClick={onClose} disabled={busy}
+          className="flex-1 rounded-full border border-border bg-card py-2.5 text-sm text-muted-foreground transition hover:border-primary/40 disabled:opacity-50">
+          Cancel
+        </button>
+        <button onClick={onConfirm} disabled={busy || !armed}
+          className="flex-1 rounded-full bg-destructive py-2.5 text-sm font-semibold text-destructive-foreground transition active:scale-95 disabled:opacity-50">
+          {busy ? "Working…" : confirmLabel}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+const USERS_PAGE_SIZE = 25;
+const USER_SORT_OPTIONS: { value: AdminUserSort; label: string }[] = [
+  { value: "created_at", label: "Signup date" },
+  { value: "last_active", label: "Last active" },
+  { value: "name", label: "Name" },
+  { value: "email", label: "Email" },
+  { value: "credits", label: "Credits" },
+];
+const USER_PLAN_FILTERS: { value: AdminUserPlanFilter; label: string }[] = [
+  { value: "all", label: "All plans" },
+  { value: "premium", label: "Premium" },
+  { value: "free", label: "Free" },
+  { value: "admin", label: "Admins" },
+];
+const USER_ACTIVITY_FILTERS: { value: AdminUserActivityFilter; label: string }[] = [
+  { value: "all", label: "Any activity" },
+  { value: "active", label: "Active (30d)" },
+  { value: "inactive", label: "Inactive" },
+];
+
+// Users tab: server-side paginated / sorted / filtered roster with debounced
+// search, plus invite-by-email and the Premium / credits / delete actions.
+// Nothing beyond the current page is fetched, so it stays fast at 1,000+
+// users. If the admin_list_users RPC isn't deployed yet, it falls back to the
+// legacy admin_search_users (≤200 rows) and pages that client-side.
+function AdminUsers() {
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [plan, setPlan] = useState<AdminUserPlanFilter>("all");
+  const [activity, setActivity] = useState<AdminUserActivityFilter>("all");
+  const [sort, setSort] = useState<AdminUserSort>("created_at");
+  const [dir, setDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(0);
+  const [rows, setRows] = useState<AdminUserListRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [legacy, setLegacy] = useState(false);
+  // Monotonic request id: a slow older response can never overwrite the
+  // results of the search the admin actually typed last.
+  const requestSeq = useRef(0);
+
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<{ kind: "revoke" | "delete"; user: AdminUserListRow } | null>(null);
+
+  // Debounced search — typing doesn't fire a request per keystroke.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  // Any filter change returns to the first page (filters themselves persist
+  // while the admin works through user rows).
+  useEffect(() => { setPage(0); }, [debouncedQuery, plan, activity, sort, dir]);
+
+  useEffect(() => {
+    const seq = ++requestSeq.current;
+    setLoading(true);
+    void (async () => {
+      const res = await adminListUsers({
+        query: debouncedQuery, plan, activity, sort, dir,
+        limit: USERS_PAGE_SIZE, offset: page * USERS_PAGE_SIZE,
+      });
+      if (seq !== requestSeq.current) return; // superseded by a newer search
+      if (res) {
+        setLegacy(false);
+        setRows(res.rows);
+        setTotal(res.total);
+        setLoading(false);
+        return;
+      }
+      // RPC not deployed yet → legacy roster (≤200 rows), paged client-side.
+      const all = await adminSearchUsers(debouncedQuery);
+      if (seq !== requestSeq.current) return;
+      setLegacy(true);
+      const filtered = all.filter((u) => plan === "premium" ? u.is_premium : plan === "free" ? !u.is_premium : true);
+      setTotal(filtered.length);
+      setRows(filtered.slice(page * USERS_PAGE_SIZE, (page + 1) * USERS_PAGE_SIZE));
+      setLoading(false);
+    })();
+  }, [debouncedQuery, plan, activity, sort, dir, page]);
+
+  const patchRow = (id: string, fields: Partial<AdminUserListRow>) =>
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...fields } : r)));
+
+  const invite = async () => {
+    if (!inviteEmail.trim() || inviting) return;
+    setInviting(true);
+    setInviteMsg(null);
+    const res = await sendInvite(inviteEmail.trim(), inviteName);
+    setInviting(false);
+    if (res.error) { setInviteMsg({ ok: false, text: res.error }); return; }
+    setInviteMsg({
+      ok: true,
+      text: res.status === "friend_request"
+        ? "Already a user. Friend request sent."
+        : res.note === "resent"
+          ? `Invite re-sent to ${inviteEmail.trim()}.`
+          : `Invite emailed to ${inviteEmail.trim()}.`,
+    });
+    setInviteEmail("");
+    setInviteName("");
+  };
+
+  const grant = async (u: AdminUserListRow, months: 1 | 12) => {
+    setBusyId(`${u.id}:${months}`);
+    setError(null);
+    const result = await adminGrantPremium(u.id, months, "Granted from Roamly admin portal");
+    setBusyId(null);
+    if (result.error) { setError(result.error); return; }
+    patchRow(u.id, { is_premium: true, premium_expires_at: result.expiresAt ?? u.premium_expires_at });
+  };
+
+  const confirmRevoke = async (u: AdminUserListRow) => {
+    setBusyId(`${u.id}:revoke`);
+    setError(null);
+    const result = await adminRevokePremium(u.id);
+    setBusyId(null);
+    setPending(null);
+    if (result.error) { setError(result.error); return; }
+    // Access is revoked even when Stripe couldn't cancel; surface the
+    // follow-up so the admin checks the Stripe dashboard.
+    if (result.stripeWarning) setError(`Roamly access revoked. ${result.stripeWarning}`);
+    patchRow(u.id, { is_premium: false });
+  };
+
+  // One credit at a time, per the admin_adjust_credits contract; the RPC
+  // returns the authoritative new balance which replaces the shown value.
+  const adjustCredits = async (u: AdminUserListRow, delta: 1 | -1) => {
+    setBusyId(`${u.id}:credits`);
+    setError(null);
+    const result = await adminAdjustCredits(u.id, delta);
+    setBusyId(null);
+    if (result.error) { setError(result.error); return; }
+    patchRow(u.id, { ai_credits: result.balance });
+  };
+
+  // Permanent, typed-confirmation account deletion. Billing is canceled
+  // server-side first; the auth delete cascades through every app table.
+  const confirmDelete = async (u: AdminUserListRow) => {
+    setBusyId(`${u.id}:delete`);
+    setError(null);
+    const result = await adminDeleteUser(u.id);
+    setBusyId(null);
+    setPending(null);
+    if (result.error) { setError(result.error); return; }
+    if (result.stripeWarning) setError(`Account deleted. ${result.stripeWarning}`);
+    setRows((prev) => prev.filter((r) => r.id !== u.id));
+    setTotal((t) => Math.max(0, t - 1));
+  };
+
+  const nameOf = (u: AdminUserListRow) => u.display_name || u.username || u.email || "this user";
+  const lastPage = Math.max(0, Math.ceil(total / USERS_PAGE_SIZE) - 1);
+  const rangeStart = total === 0 ? 0 : page * USERS_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(total, (page + 1) * USERS_PAGE_SIZE);
+
+  return (
+    <>
       <div className="mt-6 rounded-2xl border border-border bg-card/70 p-4">
         <h2 className="text-sm font-semibold">Invite by email</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">Emails them an invite to join Roamly (or sends a friend request if they're already a user).</p>
@@ -176,33 +284,52 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
         {inviteMsg && <p className={`mt-2 text-xs ${inviteMsg.ok ? "text-roamly-green" : "text-destructive"}`}>{inviteMsg.text}</p>}
       </div>
 
-      <h2 className="mt-8 text-sm font-semibold">Manage Premium</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">Everyone's listed below. Search to filter by email, username, or name.</p>
-      <div className="mt-3 flex gap-2">
-        <input value={query}
-          onChange={(e) => {
-            const v = e.target.value;
-            setQuery(v);
-            if (!v.trim()) { setError(null); adminSearchUsers("").then((r) => { setResults(r); setSearched(true); }); }
-          }}
-          onKeyDown={(e) => e.key === "Enter" && search()}
-          placeholder="Search by email or username…"
-          className="min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
-        <button onClick={search} className="shrink-0 rounded-xl gradient-primary px-4 text-sm font-semibold text-white shadow-glow transition active:scale-95">Search</button>
+      <h2 className="mt-8 text-sm font-semibold">Manage users</h2>
+      <p className="mt-0.5 text-xs text-muted-foreground">Search, filter, and sort the roster. Only the visible page is fetched.</p>
+      <div className="relative mt-3">
+        <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by email, username, or name…"
+          className="w-full rounded-xl border border-border bg-card py-3 pl-9 pr-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary/20" />
       </div>
+
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+        {USER_PLAN_FILTERS.filter((f) => !legacy || f.value !== "admin").map((f) => (
+          <button key={f.value} onClick={() => setPlan(f.value)} aria-pressed={plan === f.value}
+            className={`rounded-full border px-3 py-1 text-xs font-medium transition ${plan === f.value ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+            {f.label}
+          </button>
+        ))}
+        {!legacy && (
+          <>
+            <span aria-hidden className="mx-1 h-4 w-px bg-border" />
+            {USER_ACTIVITY_FILTERS.map((f) => (
+              <button key={f.value} onClick={() => setActivity(f.value)} aria-pressed={activity === f.value}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition ${activity === f.value ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+                {f.label}
+              </button>
+            ))}
+            <span className="ml-auto flex items-center gap-1.5">
+              <ThemedSelect value={sort} onChange={(v) => setSort(v as AdminUserSort)} ariaLabel="Sort users by" className="w-36"
+                options={USER_SORT_OPTIONS} />
+              <button onClick={() => setDir((d) => (d === "asc" ? "desc" : "asc"))}
+                aria-label={`Sort direction: ${dir === "asc" ? "ascending" : "descending"}. Toggle`}
+                className="grid h-10 w-10 place-items-center rounded-xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                <ArrowUpDown size={14} className={dir === "asc" ? "" : "opacity-60"} />
+              </button>
+            </span>
+          </>
+        )}
+      </div>
+      {legacy && <p className="mt-2 text-[11px] text-muted-foreground">Server-side paging isn't deployed yet — showing up to 200 matches with basic filters.</p>}
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
-      <div className="mt-6 space-y-2">
-        {results.length > 0 && (
-          <p className="px-1 text-xs text-muted-foreground">
-            {query.trim() ? `${results.length} match${results.length === 1 ? "" : "es"}` : `${results.length} user${results.length === 1 ? "" : "s"}`}
-          </p>
-        )}
-        {searched && results.length === 0 && (
-          <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">{query.trim() ? "No users match that search." : "No users yet."}</p>
-        )}
-        {results.map((u) => (
-          <div key={u.id} className="rounded-xl border border-border bg-card/70 p-3">
+      <div className="mt-4 space-y-2" aria-busy={loading}>
+        <p className="px-1 text-xs text-muted-foreground" role="status">
+          {loading ? "Loading users…" : total === 0 ? (debouncedQuery ? "No users match that search." : "No users yet.") : `Showing ${rangeStart}–${rangeEnd} of ${total} user${total === 1 ? "" : "s"}`}
+        </p>
+        {rows.map((u) => (
+          <div key={u.id} className={`rounded-xl border border-border bg-card/70 p-3 ${loading ? "opacity-60" : ""}`}>
             {/* Stacks on phones (identity row, then actions) so the name/email
                 block is never crushed to zero width by the buttons; from sm it
                 lays back out as a single row. */}
@@ -214,15 +341,22 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
                 <p className="flex flex-wrap items-center gap-1 truncate text-[11px] text-muted-foreground">
                   <button onClick={() => adjustCredits(u, -1)} disabled={busyId !== null || (u.ai_credits ?? 0) === 0}
                     aria-label={`Remove one credit from ${u.email ?? u.id}`}
-                    className="grid h-4 w-4 place-items-center rounded border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">−</button>
+                    className="grid h-5 w-5 place-items-center rounded border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">−</button>
                   <span className="font-mono">{busyId === `${u.id}:credits` ? "…" : (u.ai_credits ?? 0)}</span>
                   <button onClick={() => adjustCredits(u, 1)} disabled={busyId !== null}
                     aria-label={`Add one credit to ${u.email ?? u.id}`}
-                    className="grid h-4 w-4 place-items-center rounded border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">+</button>
+                    className="grid h-5 w-5 place-items-center rounded border border-border text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">+</button>
                   credit{(u.ai_credits ?? 0) === 1 ? "" : "s"}
                   {typeof u.ai_uploads_count === "number" ? ` · ${u.ai_uploads_count} upload${u.ai_uploads_count === 1 ? "" : "s"} used${u.ai_uploads_period ? ` in ${u.ai_uploads_period}` : ""}` : ""}
                   {u.is_premium && u.premium_expires_at ? ` · Premium through ${new Date(u.premium_expires_at).toLocaleDateString()}` : ""}
                 </p>
+                {(u.created_at || u.last_active) && (
+                  <p className="truncate text-[11px] text-muted-foreground/80">
+                    {u.created_at ? `Joined ${new Date(u.created_at).toLocaleDateString()}` : ""}
+                    {u.created_at && u.last_active ? " · " : ""}
+                    {u.last_active ? `Active ${relTime(u.last_active)}` : ""}
+                  </p>
+                )}
               </div>
               {u.is_premium && (
                 <span className="flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
@@ -232,7 +366,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
               </div>
               <div className="flex shrink-0 flex-wrap gap-1 sm:justify-end">
                 {u.is_premium && (
-                  <button onClick={() => revoke(u)} disabled={busyId !== null}
+                  <button onClick={() => setPending({ kind: "revoke", user: u })} disabled={busyId !== null}
                     className="rounded-full border border-destructive/50 px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50">
                     {busyId === `${u.id}:revoke` ? "…" : "Revoke"}
                   </button>
@@ -245,7 +379,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
                   className="rounded-full gradient-primary px-2.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
                   {busyId === `${u.id}:12` ? "…" : "+1 year"}
                 </button>
-                <button onClick={() => deleteAccount(u)} disabled={busyId !== null} aria-label={`Delete account for ${u.email ?? u.id}`}
+                <button onClick={() => setPending({ kind: "delete", user: u })} disabled={busyId !== null} aria-label={`Delete account for ${u.email ?? u.id}`}
                   className="rounded-full border border-destructive/50 px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50">
                   {busyId === `${u.id}:delete` ? "…" : <Trash2 size={12} className="inline" />}
                 </button>
@@ -254,8 +388,34 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
           </div>
         ))}
       </div>
-      </>}
-    </div>
+
+      {total > USERS_PAGE_SIZE && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0 || loading}
+            className="flex items-center gap-1 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">
+            <ChevronLeft size={13} /> Previous
+          </button>
+          <span className="text-xs text-muted-foreground">Page {page + 1} of {lastPage + 1}</span>
+          <button onClick={() => setPage((p) => Math.min(lastPage, p + 1))} disabled={page >= lastPage || loading}
+            className="flex items-center gap-1 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground disabled:opacity-40">
+            Next <ChevronRight size={13} />
+          </button>
+        </div>
+      )}
+
+      {pending?.kind === "revoke" && (
+        <AdminConfirmDialog title="Revoke Premium?"
+          body={`Cancels any active Stripe subscription and removes all current Premium access for ${nameOf(pending.user)} (${pending.user.email ?? "no email"}). Cancellation is immediate and does not automatically refund prior charges.`}
+          confirmLabel="Revoke Premium" busy={busyId === `${pending.user.id}:revoke`}
+          onConfirm={() => void confirmRevoke(pending.user)} onClose={() => setPending(null)} />
+      )}
+      {pending?.kind === "delete" && (
+        <AdminConfirmDialog title="Delete this account?"
+          body={`PERMANENTLY deletes the account for ${nameOf(pending.user)} (${pending.user.email ?? "no email"}).\n\nThis cancels their Stripe billing and erases their profile, tasks, focus history, gamification, rooms, and feedback. It cannot be undone.`}
+          confirmLabel="Delete account" typedWord="DELETE" busy={busyId === `${pending.user.id}:delete`}
+          onConfirm={() => void confirmDelete(pending.user)} onClose={() => setPending(null)} />
+      )}
+    </>
   );
 }
 
@@ -709,6 +869,8 @@ const AD_PLAN_LABEL: Record<string, string> = {
 function AdminAds() {
   const [rows, setRows] = useState<AdSubmissionRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AdSubmissionRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => { adminListAdSubmissions(100).then((r) => { setRows(r); setLoaded(true); }); }, []);
 
@@ -716,10 +878,13 @@ function AdminAds() {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
     await adminSetAdSubmissionStatus(id, status);
   };
-  const remove = async (id: string) => {
-    if (!window.confirm("Delete this ad submission?")) return;
-    const res = await adminDeleteAdSubmission(id);
-    if (!res.error) setRows((prev) => prev.filter((r) => r.id !== id));
+  const confirmRemove = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    const res = await adminDeleteAdSubmission(deleteTarget.id);
+    setDeleting(false);
+    if (!res.error) setRows((prev) => prev.filter((r) => r.id !== deleteTarget.id));
+    setDeleteTarget(null);
   };
 
   return (
@@ -740,11 +905,9 @@ function AdminAds() {
               </p>
             </div>
             <div className="flex items-center gap-1.5">
-              <select value={a.status} onChange={(e) => setStatus(a.id, e.target.value as AdStatus)}
-                className="rounded-lg border border-border bg-card px-2 py-1 text-xs">
-                {AD_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-              <button onClick={() => remove(a.id)} aria-label="Delete submission"
+              <ThemedSelect value={a.status} onChange={(v) => setStatus(a.id, v as AdStatus)} ariaLabel="Ad submission status" className="w-32"
+                options={AD_STATUS_OPTIONS.map((s) => ({ value: s, label: s }))} />
+              <button onClick={() => setDeleteTarget(a)} aria-label="Delete submission"
                 className="grid h-7 w-7 place-items-center rounded-lg border border-border text-muted-foreground transition hover:border-destructive/40 hover:text-destructive">
                 <Trash2 size={13} />
               </button>
@@ -761,6 +924,12 @@ function AdminAds() {
           {a.note && <p className="mt-2 rounded-lg border border-border bg-card/60 px-3 py-2 text-xs text-muted-foreground">{a.note}</p>}
         </div>
       ))}
+      {deleteTarget && (
+        <AdminConfirmDialog title="Delete this ad submission?"
+          body={`Removes the submission from ${deleteTarget.business_name} (${deleteTarget.contact_email}). This can't be undone.`}
+          confirmLabel="Delete submission" busy={deleting}
+          onConfirm={() => void confirmRemove()} onClose={() => { if (!deleting) setDeleteTarget(null); }} />
+      )}
     </div>
   );
 }
@@ -774,6 +943,7 @@ function FeedbackTicket({ f, onPatch, onDelete }: {
   const [reply, setReply] = useState(f.admin_reply ?? "");
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const setStatus = async (status: string) => {
     if (status === f.status) return;
@@ -794,10 +964,10 @@ function FeedbackTicket({ f, onPatch, onDelete }: {
   };
 
   const remove = async () => {
-    if (!confirm("Delete this feedback? This can't be undone.")) return;
     setBusy("delete"); setErr(null);
     const e = await adminFeedbackAction("delete", f.id);
     setBusy(null);
+    setConfirmingDelete(false);
     if (e) { setErr(e); return; }
     onDelete(f.id);
   };
@@ -842,13 +1012,19 @@ function FeedbackTicket({ f, onPatch, onDelete }: {
             className="rounded-full gradient-primary px-3.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
             {busy === "reply" ? "Saving…" : f.admin_reply ? "Update reply" : "Save reply"}
           </button>
-          <button onClick={remove} disabled={busy === "delete"}
+          <button onClick={() => setConfirmingDelete(true)} disabled={busy === "delete"}
             className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-destructive/50 hover:text-destructive disabled:opacity-50">
             <Trash2 size={12} /> {busy === "delete" ? "Deleting…" : "Delete"}
           </button>
         </div>
       </div>
       {err && <p className="mt-2 text-xs text-destructive">{err}</p>}
+      {confirmingDelete && (
+        <AdminConfirmDialog title="Delete this feedback?"
+          body={`Deletes the ${style.label.toLowerCase()} ticket from ${f.email ?? "an unknown user"}. This can't be undone.`}
+          confirmLabel="Delete ticket" busy={busy === "delete"}
+          onConfirm={() => void remove()} onClose={() => { if (busy !== "delete") setConfirmingDelete(false); }} />
+      )}
     </div>
   );
 }

@@ -117,6 +117,43 @@ export async function adminSearchUsers(query: string): Promise<AdminUser[]> {
   return (data ?? []) as AdminUser[];
 }
 
+// Server-side paginated user listing for the admin Users tab. Filtering,
+// sorting, and the total count all happen in Postgres so the client never
+// pulls the whole roster. Returns null when the RPC isn't deployed yet, so
+// the UI can fall back to the legacy admin_search_users path.
+export type AdminUserListRow = AdminUser & {
+  created_at?: string | null;
+  last_active?: string | null;
+  total_count?: number;
+};
+export type AdminUserPlanFilter = "all" | "premium" | "free" | "admin";
+export type AdminUserActivityFilter = "all" | "active" | "inactive";
+export type AdminUserSort = "created_at" | "email" | "name" | "credits" | "last_active";
+
+export async function adminListUsers(params: {
+  query: string;
+  plan: AdminUserPlanFilter;
+  activity: AdminUserActivityFilter;
+  sort: AdminUserSort;
+  dir: "asc" | "desc";
+  limit: number;
+  offset: number;
+}): Promise<{ rows: AdminUserListRow[]; total: number } | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_list_users", {
+    p_query: params.query,
+    p_plan: params.plan,
+    p_activity: params.activity,
+    p_sort: params.sort,
+    p_dir: params.dir,
+    p_limit: params.limit,
+    p_offset: params.offset,
+  });
+  if (error) { console.warn("[Roamly] adminListUsers failed", error.message); return null; }
+  const rows = (data ?? []) as AdminUserListRow[];
+  return { rows, total: Number(rows[0]?.total_count ?? 0) };
+}
+
 // Admins add or remove ONE purchased credit at a time (server-enforced ±1,
 // floored at zero, ledgered + audited). Returns the new balance.
 export async function adminAdjustCredits(userId: string, delta: 1 | -1): Promise<{ balance?: number; error?: string }> {

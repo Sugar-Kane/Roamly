@@ -38,9 +38,11 @@ export function ConfettiBurst({ burst, reduceMotion, enabled = true, win }: {
   const targetWindow = win ?? (typeof window !== "undefined" ? window : null);
 
   // Each increment of `burst` (one per completed focus block) plays one round —
-  // unless the user has confetti off or prefers reduced motion.
+  // unless the user has confetti off or prefers reduced motion (either the
+  // app's own accessibility toggle or the OS-level media preference).
   useEffect(() => {
-    if (burst > 0 && enabled && !reduceMotion) setActiveBurst(burst);
+    const osReduced = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (burst > 0 && enabled && !reduceMotion && !osReduced) setActiveBurst(burst);
   }, [burst, enabled, reduceMotion]);
 
   useEffect(() => {
