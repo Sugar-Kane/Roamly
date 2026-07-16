@@ -57,6 +57,7 @@ export function applyThemeToPip(pip: Window, theme: Theme, a11y: A11ySettings): 
     const root = pip.document.documentElement;
     Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
     root.classList.toggle("dark", !!theme.dark);
+    root.style.colorScheme = theme.dark ? "dark" : "light";
     if (a11y.colorBlind) root.style.setProperty("--roamly-green", "41 100% 45%");
     else root.style.removeProperty("--roamly-green");
     if (a11y.highContrast) {

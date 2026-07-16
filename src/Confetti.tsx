@@ -1,9 +1,14 @@
 // Confetti for a naturally completed focus block. Dependency-free canvas:
 // a full-viewport rain plus two corner cannons, ~2.2s, then the canvas
-// unmounts itself. The overlay is portaled to document.body so no ancestor's
+// unmounts itself. The overlay is portaled to a document body so no ancestor's
 // transform or overflow can clip it, never captures pointer events, sits above
 // the focus-mode overlay (z-120) and modals (z-130/150), and is skipped
-// entirely when the user prefers reduced motion.
+// entirely when the user prefers reduced motion or turns confetti off.
+//
+// `win` lets the same burst render into a DIFFERENT window: the pop-out
+// (Picture-in-Picture) timer is a separate document, so App mounts a second
+// ConfettiBurst pointed at it. Everything (size, palette, rAF, portal target)
+// is read from `win` so it fills whichever window it is drawn in.
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,38 +19,47 @@ type Particle = {
 
 const DURATION_MS = 2200;
 // Canvas fillStyle can't resolve CSS variables, so the theme's primary hue is
-// read from the root element at burst time and joined with a fixed pastel set.
+// read from the target document's root at burst time and joined with a fixed
+// pastel set.
 const BASE_COLORS = ["#7fb069", "#e6b655", "#c86b5c", "#7c9bb8", "#b58ecc"];
-function paletteWithTheme(): string[] {
-  const primary = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
+function paletteWithTheme(doc: Document): string[] {
+  const primary = getComputedStyle(doc.documentElement).getPropertyValue("--primary").trim();
   return primary ? [`hsl(${primary})`, ...BASE_COLORS] : BASE_COLORS;
 }
 
-export function ConfettiBurst({ burst, reduceMotion }: { burst: number; reduceMotion: boolean }) {
+export function ConfettiBurst({ burst, reduceMotion, enabled = true, win }: {
+  burst: number;
+  reduceMotion: boolean;
+  enabled?: boolean;
+  win?: Window | null;
+}) {
   const [activeBurst, setActiveBurst] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const targetWindow = win ?? (typeof window !== "undefined" ? window : null);
 
-  // Each increment of `burst` (one per completed focus block) plays one round.
+  // Each increment of `burst` (one per completed focus block) plays one round —
+  // unless the user has confetti off or prefers reduced motion.
   useEffect(() => {
-    if (burst > 0 && !reduceMotion) setActiveBurst(burst);
-  }, [burst, reduceMotion]);
+    if (burst > 0 && enabled && !reduceMotion) setActiveBurst(burst);
+  }, [burst, enabled, reduceMotion]);
 
   useEffect(() => {
     if (activeBurst === 0) return;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const view = targetWindow;
+    if (!canvas || !view) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const dpr = Math.min(2, view.devicePixelRatio || 1);
+    const w = view.innerWidth;
+    const h = view.innerHeight;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const rand = (min: number, max: number) => min + Math.random() * (max - min);
-    const colors = paletteWithTheme();
+    const colors = paletteWithTheme(view.document);
     const pick = () => colors[Math.floor(rand(0, colors.length))];
     const particles: Particle[] = [];
 
@@ -82,7 +96,7 @@ export function ConfettiBurst({ burst, reduceMotion }: { burst: number; reduceMo
 
     let raf = 0;
     let last = 0;
-    const startedAt = performance.now();
+    const startedAt = view.performance.now();
     const frame = (t: number) => {
       const dt = Math.min(0.04, last ? (t - last) / 1000 : 0.016);
       last = t;
@@ -104,20 +118,21 @@ export function ConfettiBurst({ burst, reduceMotion }: { burst: number; reduceMo
         ctx.fillRect(-p.w / 2, -p.h / 2, p.w, Math.abs(Math.sin(p.wobble)) * p.h * 0.6 + p.h * 0.4);
         ctx.restore();
       }
-      if (elapsed < DURATION_MS) raf = requestAnimationFrame(frame);
+      if (elapsed < DURATION_MS) raf = view.requestAnimationFrame(frame);
       else setActiveBurst(0); // unmounts the canvas; nothing to clean by hand
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
-  }, [activeBurst]);
+    raf = view.requestAnimationFrame(frame);
+    return () => view.cancelAnimationFrame(raf);
+  }, [activeBurst, targetWindow]);
 
-  if (activeBurst === 0) return null;
-  // Portaled to document.body so a transformed/overflow ancestor can never clip
-  // the fixed full-viewport canvas. Immersive focus mode fullscreens the whole
-  // document element, so a body-level fixed canvas still renders over it.
+  if (activeBurst === 0 || !targetWindow) return null;
+  // Portaled to the target document's body so a transformed/overflow ancestor
+  // can never clip the fixed full-viewport canvas. Immersive focus mode
+  // fullscreens the whole document element, so a body-level fixed canvas still
+  // renders over it; the pop-out uses its own document body.
   return createPortal(
     <canvas ref={canvasRef} data-testid="confetti" aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-[200] h-full w-full" />,
-    document.body
+      style={{ position: "fixed", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 200 }} />,
+    targetWindow.document.body
   );
 }

@@ -357,6 +357,22 @@ export async function markAllNotificationsRead(userId: string) {
   if (error) console.warn("[Roamly] markAllNotificationsRead failed", error.message);
 }
 
+// Delete a single notification (RLS: notifications_delete_own restricts to the
+// owner). Returns true on success so the UI can drop the row optimistically.
+export async function deleteNotification(id: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("notifications").delete().eq("id", id);
+  if (error) { console.warn("[Roamly] deleteNotification failed", error.message); return false; }
+  return true;
+}
+
+export async function clearAllNotifications(userId: string): Promise<boolean> {
+  if (!supabase) return false;
+  const { error } = await supabase.from("notifications").delete().eq("user_id", userId);
+  if (error) { console.warn("[Roamly] clearAllNotifications failed", error.message); return false; }
+  return true;
+}
+
 export async function notifyFriendsOfRoom(roomId: string, kind: "room_created" | "room_joined") {
   if (!supabase) return;
   const { error } = await supabase.rpc("notify_friends_of_room", { p_room: roomId, p_kind: kind });

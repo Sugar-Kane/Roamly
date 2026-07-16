@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Users, DoorOpen, UserPlus, BarChart3, CalendarPlus } from "lucide-react";
+import { Bell, Users, DoorOpen, UserPlus, BarChart3, CalendarPlus, X } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
-  fetchNotifications, markAllNotificationsRead, getPublicProfiles, fetchRooms,
+  fetchNotifications, markAllNotificationsRead, deleteNotification, clearAllNotifications, getPublicProfiles, fetchRooms,
   type AppNotification, type PublicProfile,
 } from "./rooms";
 import { displayNameOf } from "./Friends";
@@ -116,6 +116,16 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
     else onOpenFriends();
   };
 
+  // Clear one / clear all — drop optimistically, then persist the delete.
+  const clearOne = (id: string) => {
+    setItems((prev) => prev.filter((n) => n.id !== id));
+    void deleteNotification(id);
+  };
+  const clearAll = () => {
+    setItems([]);
+    void clearAllNotifications(userId);
+  };
+
   return (
     <div className="relative" ref={panelRef}>
       <button onClick={toggle} aria-label={`Notifications${unread ? ` (${unread} unread)` : ""}`}
@@ -129,26 +139,37 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
       </button>
       {open && (
         <div className="absolute right-0 top-11 z-50 w-80 rounded-2xl border border-border bg-card p-2 shadow-xl">
-          <p className="px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Notifications</p>
+          <div className="flex items-center justify-between px-2.5 py-1.5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Notifications</p>
+            {items.length > 0 && (
+              <button onClick={clearAll} className="rounded-full px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:text-destructive">Clear all</button>
+            )}
+          </div>
           {items.length === 0 && <p className="px-2.5 pb-2 text-sm text-muted-foreground">Nothing yet. Add friends and they'll show up here.</p>}
           <div className="max-h-80 overflow-y-auto">
             {items.map((n) => {
               const Icon = KIND_ICON[n.kind];
               const room = n.room_id ? roomInfo.get(n.room_id) : undefined;
               return (
-                <button key={n.id} onClick={() => activate(n)}
-                  className="flex w-full items-start gap-2.5 rounded-xl px-2.5 py-2 text-left transition hover:bg-primary/5">
-                  <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Icon size={13} /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm leading-snug">{label(n, n.actor_id ? actors.get(n.actor_id) : undefined, room)}</span>
-                    <span className="block text-[11px] text-muted-foreground">{timeAgo(n.created_at)}</span>
-                    {n.kind === "room_invite" && n.room_id && room && (
-                      <span className="mt-1 inline-block rounded-full gradient-primary px-3 py-1 text-[11px] font-semibold text-white shadow-glow">
-                        Accept & join
-                      </span>
-                    )}
-                  </span>
-                </button>
+                <div key={n.id} className="group flex items-start gap-1 rounded-xl transition hover:bg-primary/5">
+                  <button onClick={() => activate(n)}
+                    className="flex min-w-0 flex-1 items-start gap-2.5 rounded-xl px-2.5 py-2 text-left">
+                    <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Icon size={13} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm leading-snug">{label(n, n.actor_id ? actors.get(n.actor_id) : undefined, room)}</span>
+                      <span className="block text-[11px] text-muted-foreground">{timeAgo(n.created_at)}</span>
+                      {n.kind === "room_invite" && n.room_id && room && (
+                        <span className="mt-1 inline-block rounded-full gradient-primary px-3 py-1 text-[11px] font-semibold text-white shadow-glow">
+                          Accept & join
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  <button onClick={() => clearOne(n.id)} aria-label="Clear notification"
+                    className="mr-1 mt-2 grid h-6 w-6 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive">
+                    <X size={13} />
+                  </button>
+                </div>
               );
             })}
           </div>
