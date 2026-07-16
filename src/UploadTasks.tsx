@@ -11,8 +11,16 @@ export const PREMIUM_MONTHLY_UPLOAD_QUOTA = 10;
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const FILE_TOO_LARGE_MSG = "That file is over 12 MB. Split big decks into parts and upload them separately.";
 
-const CREDITS_EXPLAINER =
-  "Every month you get free AI uploads (3 free, 10 with Premium). This monthly allowance does not roll over, it resets at the start of each month. Credits are extra uploads you buy once on the Premium page. Only purchased credits roll over: they never expire and are used automatically after your monthly allowance runs out.";
+// Explains the two credit pools without hard-coding a stale allowance: the
+// number shown always comes from the caller's real plan (FREE_/PREMIUM_
+// MONTHLY_UPLOAD_QUOTA, which mirror api/generate-tasks.ts). The backend
+// enforces exactly these rollover rules: the monthly count resets each
+// calendar month (ai_uploads_period) and never carries over, while purchased
+// ai_credits persist until spent.
+export function creditsExplainer(isPremium: boolean): string {
+  const quota = isPremium ? PREMIUM_MONTHLY_UPLOAD_QUOTA : FREE_MONTHLY_UPLOAD_QUOTA;
+  return `Your plan includes ${quota} AI uploads each month (${isPremium ? "Premium plan" : "free plan"}). Unused monthly uploads expire when the next month's allowance arrives — they do not roll over. Purchased top-up credits are separate: they never expire, carry over month to month, and are used automatically once the monthly allowance runs out.`;
+}
 
 // Keep in sync with ALLOWED_MEDIA_TYPES in api/generate-tasks.ts. Some
 // platforms report an empty MIME for .md/.csv, so the extension map below is
@@ -163,7 +171,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
               Top up
             </button>
           )}
-          <InfoTip text={CREDITS_EXPLAINER} />
+          <InfoTip text={creditsExplainer(isPremium)} />
         </p>
       </div>
     );
@@ -174,7 +182,7 @@ export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBu
       <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
         <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
           You've used your monthly AI uploads{isPremium ? "" : ` (${FREE_MONTHLY_UPLOAD_QUOTA} free)`}, and any purchased credits.
-          <InfoTip text={CREDITS_EXPLAINER} />
+          <InfoTip text={creditsExplainer(isPremium)} />
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           {!isPremium && (

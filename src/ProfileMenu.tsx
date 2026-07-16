@@ -13,15 +13,41 @@ import { currentUploadPeriod, FREE_MONTHLY_UPLOAD_QUOTA, PREMIUM_MONTHLY_UPLOAD_
 
 // iOS photos are often HEIC/HEIF, which browsers cannot decode or upload as an
 // image. Convert to JPEG on the client (the WASM decoder is dynamically
-// imported so it only loads when a HEIC file is actually chosen). Non-HEIC
-// files pass straight through untouched.
+// imported so it only loads when a HEIC file is actually chosen). The real
+// file type comes from the leading bytes, not the extension or reported MIME:
+// a renamed .heic that's actually a JPEG passes straight through (with its
+// MIME corrected), and a mislabeled HEIC still gets converted. heic2any
+// decodes the pixels through libheif, so EXIF orientation is baked into the
+// converted JPEG and photos come out upright.
+async function sniffImageKind(file: File): Promise<"heic" | "jpeg" | "png" | "webp" | "unknown"> {
+  const bytes = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  if (bytes.length >= 12) {
+    const tag = String.fromCharCode(...bytes.slice(4, 8));
+    if (tag === "ftyp") {
+      const brand = String.fromCharCode(...bytes.slice(8, 12)).toLowerCase();
+      if (["heic", "heix", "hevc", "hevx", "heif", "mif1", "msf1"].includes(brand)) return "heic";
+    }
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+      && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "webp";
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpeg";
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "png";
+  return "unknown";
+}
+
 async function maybeConvertHeic(file: File): Promise<File> {
-  const isHeic = /image\/hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
-  if (!isHeic) return file;
-  const heic2any = (await import("heic2any")).default;
-  const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
-  const blob = Array.isArray(converted) ? converted[0] : converted;
-  return new File([blob], file.name.replace(/\.hei[cf]$/i, ".jpg"), { type: "image/jpeg" });
+  const kind = await sniffImageKind(file);
+  if (kind === "heic") {
+    const heic2any = (await import("heic2any")).default;
+    const converted = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+    const blob = Array.isArray(converted) ? converted[0] : converted;
+    return new File([blob], file.name.replace(/\.hei[cf]$/i, "") + ".jpg", { type: "image/jpeg" });
+  }
+  // Mislabeled files (e.g. a JPEG renamed .heic, whose reported MIME would be
+  // rejected downstream) are re-wrapped with the MIME their bytes prove.
+  const realType = kind === "jpeg" ? "image/jpeg" : kind === "png" ? "image/png" : kind === "webp" ? "image/webp" : null;
+  if (realType && file.type !== realType) return new File([file], file.name, { type: realType });
+  return file;
 }
 
 export type A11ySettings = {
@@ -69,12 +95,14 @@ function ProfileAvatar({ url, initials, className }: { url?: string | null; init
   </span>;
 }
 
-export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProfileChange, onSignIn, onSignOut, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
+export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, confettiOn, onToggleConfetti, onProfileChange, onSignIn, onSignOut, onOpenPremium, onOpenFriends, isAdmin, onOpenAdmin, onReplayTutorial, onSendFeedback }: {
   session: Session | null;
   profile: Profile | null;
   isPremium: boolean;
   a11y: A11ySettings;
   setA11y: (next: A11ySettings) => void;
+  confettiOn: boolean;
+  onToggleConfetti: () => void;
   onProfileChange: (profile: Profile) => void;
   onSignIn: () => void;
   onSignOut: () => void;
@@ -121,6 +149,9 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
 
   const chooseAvatar = async (file: File | undefined) => {
     if (!file || !session || !profile) return;
+    // Size check BEFORE any decode: converting an oversized HEIC would burn
+    // memory only for the upload to be rejected afterwards anyway.
+    if (file.size > 15 * 1024 * 1024) { setAvatarError("Choose an image smaller than 15 MB."); return; }
     setAvatarBusy(true);
     setAvatarError(null);
     // iPhones hand back HEIC/HEIF, which browsers can't render or upload as an
@@ -130,7 +161,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
       prepared = await maybeConvertHeic(file);
     } catch {
       setAvatarBusy(false);
-      setAvatarError("Couldn't read that HEIC photo. Try a JPG or PNG.");
+      setAvatarError("Couldn't convert that HEIC photo. Try a JPG or PNG instead.");
       return;
     }
     const result = await updateProfileAvatar(session.user.id, prepared, profile.avatar_path);
@@ -181,7 +212,7 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
                   <Trash2 size={12} /> Remove
                 </button>}
               </div>
-              <p className="mt-1.5 text-[10px] text-muted-foreground">JPG, PNG, or WebP. Maximum 15 MB.</p>
+              <p className="mt-1.5 text-[10px] text-muted-foreground">JPG, PNG, WebP, or iPhone HEIC. Maximum 15 MB.</p>
               {avatarError && <p role="alert" className="mt-1 text-[11px] text-destructive">{avatarError}</p>}
             </div>
           )}
@@ -261,6 +292,16 @@ export function ProfileMenu({ session, profile, isPremium, a11y, setA11y, onProf
             </span>
             <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
           </button>
+
+          {/* Timer celebrations — works signed-out too (stored on this device) */}
+          <p className="mt-2 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Timer</p>
+          <div className="mt-1 flex items-center justify-between gap-3 rounded-xl px-3 py-2">
+            <span className="min-w-0">
+              <span className="block text-sm">Completion confetti</span>
+              <span className="block text-[11px] text-muted-foreground">Celebrate finished focus sessions. Reduce motion also turns it off.</span>
+            </span>
+            <Toggle on={confettiOn} onClick={onToggleConfetti} label="Completion confetti" />
+          </div>
 
           {/* Accessibility */}
           <p className="mt-2 px-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Accessibility</p>

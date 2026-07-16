@@ -927,6 +927,7 @@ export default function App() {
           onSignIn={onSignIn} onSignOut={onSignOut}
           onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends} onOpenPlannedStudy={() => setView("tasks")}
           a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
+          confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
           onOpenTutorial={() => setShowTutorial(true)}
           themeId={themeId} setThemeId={changeTheme}
@@ -1175,7 +1176,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onGoHome, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, confettiOn, onToggleConfetti, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onGoHome, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -1213,7 +1214,7 @@ function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn
           </button>
         )}
         <ProfileMenu session={session} profile={profile} onProfileChange={onProfileChange} isPremium={isPremium}
-          a11y={a11y} setA11y={setA11y}
+          a11y={a11y} setA11y={setA11y} confettiOn={confettiOn} onToggleConfetti={onToggleConfetti}
           onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
           isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onReplayTutorial={onOpenTutorial} onSendFeedback={onOpenFeedback} />
       </div>
