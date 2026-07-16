@@ -8,6 +8,6 @@
 -- notifications table on every reap, growing costlier as the table does.
 -- Partial (room_id is not null) since the column is null for most rows.
 
-create index if not exists notifications_room_id_idx
+create index concurrently if not exists notifications_room_id_idx
   on public.notifications (room_id)
   where room_id is not null;
