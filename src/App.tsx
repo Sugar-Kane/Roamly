@@ -10,7 +10,7 @@ import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc,
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
-import { fetchProfile, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
+import { fetchProfile, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, saveThemePreference, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { loadPref, savePref } from "./storage";
@@ -18,6 +18,7 @@ import { FeedbackModal } from "./Feedback";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
 import { AuthPanel, SetPasswordModal } from "./Auth";
 import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
+import { AccountSettings } from "./AccountSettings";
 import { RoomsLive } from "./RoomsLive";
 import { FocusMode, CompactSounds, TimeDisplay, InfoTip } from "./FocusMode";
 import { PipTimer } from "./PipTimer";
@@ -65,7 +66,14 @@ export default function App() {
   const [view, setView] = useState<View>(() => viewFromPath(window.location.pathname));
   const [immersive, setImmersive] = useState(false); // personal focus-mode takeover
   const [methodId, setMethodId] = useState("classic");
-  const [themeId, setThemeId] = useState("coffee");
+  // The chosen theme is restored from the device before first paint (no flash
+  // of the default), and for signed-in users it also syncs to the profile so
+  // the pick follows them across devices. Unknown/retired ids fall back to the
+  // default rather than breaking the palette.
+  const [themeId, setThemeId] = useState(() => {
+    const saved = loadPref("roamly-theme");
+    return saved && THEMES.some((t) => t.id === saved) ? saved : "coffee";
+  });
   const [tasks, setTasks] = useState<Task[]>(loadGuestTasks);
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [activeTask, setActiveTask] = useState<string | null>(() => loadGuestTasks()[0]?.id ?? null);
@@ -105,6 +113,7 @@ export default function App() {
   }>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [showFriends, setShowFriends] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [roomTarget, setRoomTarget] = useState<string | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -210,6 +219,19 @@ export default function App() {
       const nextProfile = await fetchProfile(userId);
       if (cancelled) return;
       setProfile(nextProfile);
+
+      // Theme preference priority: the account's saved theme wins; if the
+      // account has none yet, adopt the device's current pick and save it as
+      // the account preference — an intentional local selection is never
+      // silently replaced with the default.
+      const accountTheme = nextProfile?.theme;
+      if (accountTheme && THEMES.some((t) => t.id === accountTheme)) {
+        setThemeId(accountTheme);
+        savePref("roamly-theme", accountTheme);
+      } else if (nextProfile) {
+        const localTheme = loadPref("roamly-theme");
+        if (localTheme && THEMES.some((t) => t.id === localTheme)) void saveThemePreference(userId, localTheme);
+      }
 
       const [recent, events, planned, taskRows, exams] = await Promise.all([
         fetchRecentSessions(userId),
@@ -650,7 +672,12 @@ export default function App() {
 
   const onSignIn = () => setShowAuth(true);
   const onSignOut = () => supabase?.auth.signOut();
-  const changeTheme = (id: string) => { setThemeId(id); track("theme_change", id); };
+  const changeTheme = (id: string) => {
+    setThemeId(id);
+    savePref("roamly-theme", id); // guests keep it on this device; no expiry
+    if (session?.user.id) void saveThemePreference(session.user.id, id); // signed-in: follow the account
+    track("theme_change", id);
+  };
 
   // A notification ("X invited you to a room") lands the user in that room.
   const openRoomFromNotification = useCallback((roomId: string) => {
@@ -923,8 +950,8 @@ export default function App() {
           page-end content can always scroll fully above the fixed chrome. */}
       <div className="relative mx-auto flex w-full max-w-6xl flex-col px-5 pb-[calc(11rem+env(safe-area-inset-bottom))] pt-7 md:px-8">
         <Header isPremium={isPremium} streak={streak} session={session} profile={profile}
-          onProfileChange={setProfile}
           onSignIn={onSignIn} onSignOut={onSignOut}
+          onOpenAccount={() => setShowAccount(true)}
           onOpenRoom={openRoomFromNotification} onOpenFriends={openFriends} onOpenPlannedStudy={() => setView("tasks")}
           a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
           confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
@@ -1135,6 +1162,12 @@ export default function App() {
         <FriendsModal session={session} profile={profile} onClose={() => setShowFriends(false)} onUsernameSet={handleUsernameSet}
           isPremium={isPremium} onUpgrade={() => { setShowFriends(false); setShowUpsell(true); }} />
       )}
+      {showAccount && session && (
+        <AccountSettings session={session} profile={profile} isPremium={isPremium}
+          onProfileChange={setProfile} onClose={() => setShowAccount(false)} onSignOut={onSignOut}
+          onOpenPremium={() => { setShowAccount(false); setView("premium"); }}
+          onOpenFriends={() => { setShowAccount(false); setShowFriends(true); }} />
+      )}
       {/* Deferred while a password prompt from an email link is up. */}
       {showTutorial && !needsPassword && <Tutorial setView={setView} onClose={() => setShowTutorial(false)} />}
       {showFeedback && session && (
@@ -1176,7 +1209,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, confettiOn, onToggleConfetti, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, theme, onGoHome, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenAccount, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, confettiOn, onToggleConfetti, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, theme, onGoHome, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -1226,9 +1259,9 @@ function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn
             <LogIn size={15} /> <span className="hidden sm:inline">Sign in</span>
           </button>
         )}
-        <ProfileMenu session={session} profile={profile} onProfileChange={onProfileChange} isPremium={isPremium}
+        <ProfileMenu session={session} profile={profile} isPremium={isPremium}
           a11y={a11y} setA11y={setA11y} confettiOn={confettiOn} onToggleConfetti={onToggleConfetti}
-          onSignIn={onSignIn} onSignOut={onSignOut} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
+          onSignIn={onSignIn} onSignOut={onSignOut} onOpenAccount={onOpenAccount} onOpenPremium={onOpenPremium} onOpenFriends={onOpenFriends}
           isAdmin={isAdmin} onOpenAdmin={onOpenAdmin} onReplayTutorial={onOpenTutorial} onSendFeedback={onOpenFeedback} />
       </div>
     </header>
