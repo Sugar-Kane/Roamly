@@ -963,16 +963,18 @@ export default function App() {
               plannedSessions={plannedSessions} onCreatePlan={createStudyPlan} onUpdatePlan={updateStudyPlan} onDeletePlan={deleteStudyPlan} />
           )}
           {view === "analytics" && (
-            <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
-              streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
-              session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
-              studyEvents={studyEvents} plannedSessions={plannedSessions} />
+            <div data-tour="analytics">
+              <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
+                streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
+                session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
+                studyEvents={studyEvents} plannedSessions={plannedSessions} />
+            </div>
           )}
           {/* Rooms stay MOUNTED (just hidden) on other tabs: leaving the tab no
               longer kicks you out of a room — presence, the shared timer, room
               music, chat, and the pop-out keep running while you work on Tasks
               or anywhere else. */}
-          <div className={view === "rooms" ? undefined : "hidden"}>
+          <div data-tour="rooms" className={view === "rooms" ? undefined : "hidden"}>
             <RoomsLive session={session} profile={profile} isPremium={isPremium} gateThen={gateThen} onSignIn={onSignIn}
               onNeedUsername={openFriends} onOpenFriends={openFriends}
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
@@ -1608,7 +1610,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         <SignInPrompt onSignIn={onSignIn} message="Sign in to track countdowns for all of your exams." />
       )}
 
-      <section ref={timerRef} className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
+      <section ref={timerRef} data-tour="timer" className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
         <button onClick={() => setShowMethods(true)}
           className="mb-5 flex w-full items-center justify-between rounded-2xl border border-primary bg-primary/10 px-4 py-2.5 text-sm text-primary transition hover:bg-primary/15">
           <span className="flex items-center gap-2 font-medium"><Timer size={15} className="text-primary" /> Select timer</span>
@@ -2456,7 +2458,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
   };
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl" data-tour="tasks">
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
