@@ -1034,33 +1034,54 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
 function useRoomChat(roomId: string) {
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [names, setNames] = useState<Map<string, PublicProfile>>(new Map());
+  // The live channel, so send() can broadcast a new message to peers instantly.
+  const channelRef = useRef<ReturnType<NonNullable<typeof supabase>["channel"]> | null>(null);
 
-  // History + live inserts. subscribe() throws if this topic is somehow
-  // already subscribed — guard so a duplicate can degrade to history-only
-  // instead of crashing the whole screen. Merge keyed by id (never blind-append)
-  // so a message that lands in both the history snapshot and a realtime event
-  // shows once, and load history only AFTER the subscription is live so an
-  // insert during setup can't fall through the gap between the two.
+  // Merge keyed by id (never blind-append) so a message that lands via more
+  // than one path (broadcast, postgres-changes, history, or the sender's own
+  // echo) shows exactly once. Stable identity so send() can call it too.
+  const mergeRef = useRef((incoming: RoomMessage[]) =>
+    setMessages((prev) => {
+      const byId = new Map(prev.map((m) => [m.id, m]));
+      for (const m of incoming) byId.set(m.id, m);
+      return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }));
+
+  // History + live inserts. subscribe() throws if this topic is somehow already
+  // subscribed — guard so a duplicate can degrade to history-only. We listen on
+  // BOTH a realtime broadcast (near-instant, sent by peers in send()) and
+  // postgres-changes (slower WAL replication, the reliability backstop) so a
+  // message shows immediately for everyone instead of after replication lag.
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
-    const merge = (incoming: RoomMessage[]) =>
-      setMessages((prev) => {
-        const byId = new Map(prev.map((m) => [m.id, m]));
-        for (const m of incoming) byId.set(m.id, m);
-        return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
-      });
+    const merge = (incoming: RoomMessage[]) => mergeRef.current(incoming);
     try {
       const channel = client
         .channel(`room-chat:${roomId}`)
+        .on("broadcast", { event: "msg" }, (payload) => merge([payload.payload as RoomMessage]))
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${roomId}` },
           (payload) => merge([payload.new as RoomMessage]))
         .subscribe((status) => { if (status === "SUBSCRIBED") fetchMessages(roomId).then(merge); });
-      return () => { client.removeChannel(channel); };
+      channelRef.current = channel;
+      return () => { channelRef.current = null; client.removeChannel(channel); };
     } catch (e) {
       console.warn("[Roamly] room chat subscribe failed", e);
       fetchMessages(roomId).then(merge); // degrade to history-only
     }
+  }, [roomId]);
+
+  // Send + instant delivery: insert, then echo the real row locally right away
+  // (the sender never waits on replication) and broadcast it so peers get it
+  // within a channel round-trip instead of up to ~12s of WAL lag.
+  const send = useCallback(async (userId: string, body: string): Promise<string | null> => {
+    const { error, message } = await sendMessage(roomId, userId, body);
+    if (error) return error;
+    if (message) {
+      mergeRef.current([message]);
+      channelRef.current?.send({ type: "broadcast", event: "msg", payload: message });
+    }
+    return null;
   }, [roomId]);
 
   // Resolve sender names we haven't seen yet. Track requested ids in a ref so
@@ -1074,7 +1095,7 @@ function useRoomChat(roomId: string) {
     getPublicProfiles(unknown).then((fresh) => setNames((cur) => new Map([...cur, ...fresh])));
   }, [messages]);
 
-  return { messages, names };
+  return { messages, names, send };
 }
 
 function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, compact }: {
@@ -1086,7 +1107,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
   phaseStartMs: number;
   compact?: boolean; // tighter layout for the small pop-out (PiP) window
 }) {
-  const { messages, names } = chat;
+  const { messages, names, send: sendChat } = chat;
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -1115,10 +1136,12 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
     if (!body || sending) return;
     setSending(true);
     setError(null);
-    const err = await sendMessage(room.id, userId, body);
-    setSending(false);
-    if (err) { setError(err); return; }
+    // Clear the input immediately for a snappy feel; the message is echoed
+    // locally by sendChat, so there is no wait for it to appear.
     setDraft("");
+    const err = await sendChat(userId, body);
+    setSending(false);
+    if (err) { setError(err); setDraft(body); }
   };
 
   return (

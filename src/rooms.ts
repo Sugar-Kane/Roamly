@@ -267,14 +267,17 @@ export async function fetchMessages(roomId: string, limit = 50): Promise<RoomMes
 
 // Returns an error string for the UI (null on success) — the DB trigger
 // rejects messages sent during a focus block even if the UI gate is bypassed.
-export async function sendMessage(roomId: string, userId: string, body: string): Promise<string | null> {
-  if (!supabase) return "Chat isn't available right now.";
-  const { error } = await supabase.from("room_messages").insert({ room_id: roomId, user_id: userId, body });
-  if (!error) return null;
-  if (error.message.includes("chat_closed_during_focus")) return "Chat is closed during focus. It opens at the break.";
-  if (error.message.includes("chat_rate_limited")) return "Whoa, slow down a little. You can send more messages in a minute.";
+// Returns the inserted row on success so the caller can echo it into the chat
+// immediately (and broadcast it to peers) instead of waiting for the slower
+// postgres-changes replication to loop it back.
+export async function sendMessage(roomId: string, userId: string, body: string): Promise<{ error: string | null; message: RoomMessage | null }> {
+  if (!supabase) return { error: "Chat isn't available right now.", message: null };
+  const { data, error } = await supabase.from("room_messages").insert({ room_id: roomId, user_id: userId, body }).select().single();
+  if (!error) return { error: null, message: (data as RoomMessage) ?? null };
+  if (error.message.includes("chat_closed_during_focus")) return { error: "Chat is closed during focus. It opens at the break.", message: null };
+  if (error.message.includes("chat_rate_limited")) return { error: "Whoa, slow down a little. You can send more messages in a minute.", message: null };
   console.warn("[Roamly] sendMessage failed", error.message);
-  return "Couldn't send that message. Try again.";
+  return { error: "Couldn't send that message. Try again.", message: null };
 }
 
 // Room heartbeats: while someone is in a room they upsert a ping every
