@@ -13,6 +13,16 @@ async function goHome(page: Page) {
   await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
 }
 
+// Navigate via the bottom bar. Analytics and Premium live in the More sheet
+// on phones (four primary tabs + More below the sm breakpoint) and in the bar
+// itself from sm up.
+async function goTab(page: Page, tab: string) {
+  const direct = page.getByRole("button", { name: tab, exact: true });
+  if (await direct.isVisible()) { await direct.click(); return; }
+  await page.getByRole("button", { name: "More", exact: true }).click();
+  await page.getByTestId("more-sheet").getByRole("button", { name: tab }).click();
+}
+
 test("homepage loads with the timer", async ({ page }) => {
   await goHome(page);
   await expect(page).toHaveTitle(/Roamly/);
@@ -25,24 +35,45 @@ test("expanded built-in music library is available", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Rainy piano/ })).toBeVisible();
 });
 
-test("first-run tutorial shows on a fresh device", async ({ browser }) => {
+test("tour never auto-opens; a fresh device sees the timer immediately", async ({ browser }) => {
   const ctx = await browser.newContext(); // no seen-flag
   const page = await ctx.newPage();
   await page.goto("/");
+  // Fresh arrival: usable timer, no tour, no music dock, no streaming iframe,
+  // Pomodoro explainer collapsed to its link, intro line present.
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+  await expect(page.getByTestId("tutorial")).toHaveCount(0);
+  await expect(page.getByTestId("music-dock")).toHaveCount(0);
+  await expect(page.locator('iframe[title="Music player"]')).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "A focus timer built for PA school." })).toBeVisible();
+  await expect(page.getByText("What's the Pomodoro method?")).toBeVisible();
+  // The tour still opens on demand (header "?" → replay) and restores state.
+  await page.getByRole("button", { name: "Replay the app tour" }).click();
   await expect(page.getByTestId("tutorial")).toBeVisible();
-  await expect(page.getByText("Welcome to Roamly")).toBeVisible();
+  await expect(page.getByText("Welcome to Roamly Flow")).toBeVisible();
+  await page.getByText("Skip tour").click();
+  await expect(page.getByTestId("tutorial")).toHaveCount(0);
   await ctx.close();
+});
+
+test("How Roamly Flow works opens from the intro and can start the tour", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "How Roamly Flow works" }).click();
+  await expect(page.getByRole("dialog", { name: "How Roamly Flow works" })).toBeVisible();
+  await page.getByRole("button", { name: "Take the quick tour" }).click();
+  await expect(page.getByTestId("tutorial")).toBeVisible();
+  await page.getByText("Skip tour").click();
 });
 
 test("navigation tabs switch views", async ({ page }) => {
   await goHome(page);
-  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  await goTab(page, "Tasks");
   await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Rooms" }).click();
-  await expect(page.getByRole("heading", { name: "Study rooms" })).toBeVisible();
-  await page.getByRole("button", { name: "Analytics" }).click();
+  await goTab(page, "Rooms");
+  await expect(page.getByRole("heading", { name: "Rooms", exact: true })).toBeVisible();
+  await goTab(page, "Analytics");
   await expect(page.getByRole("heading", { name: "Analytics" })).toBeVisible();
-  await page.getByRole("button", { name: "Premium", exact: true }).click();
+  await goTab(page, "Premium");
   await expect(page.getByRole("heading", { name: "Go Premium" })).toBeVisible();
 });
 
@@ -80,7 +111,11 @@ test("sign-up form rejects a weak password", async ({ page }) => {
 test("a task can be added locally", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  // The auto-complete preference moved into the collapsed Task preferences
+  // disclosure; it stays on by default.
+  await page.getByRole("button", { name: "Task preferences" }).click();
   await expect(page.getByRole("switch", { name: "Complete tasks automatically" })).toHaveAttribute("aria-checked", "true");
+  await page.getByRole("button", { name: "Task preferences" }).click();
   await page.getByPlaceholder(/Add a study task/).fill("Smoke test task");
   await page.getByLabel("New subject name").fill("Testing");
   await page.getByRole("button", { name: "Add task", exact: true }).click();
@@ -142,13 +177,13 @@ test("guest count-up completion is saved to analytics", async ({ page }) => {
   await page.clock.fastForward("01:30"); // 90s -> ceil to 2 minutes, over the 60s floor
   await page.getByRole("button", { name: "Stop & save" }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await page.getByRole("button", { name: "Analytics" }).click();
+  await goTab(page, "Analytics");
   await expect(page.getByText("2 / 120 min")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Study time by category" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Study post-mortem" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Unlock Study post-mortem with Premium" })).toBeVisible();
   await page.reload();
-  await page.getByRole("button", { name: "Analytics" }).click();
+  await goTab(page, "Analytics");
   await expect(page.getByText("2 / 120 min")).toBeVisible();
 });
 
@@ -162,7 +197,7 @@ test("a trivially short count-up is not offered for saving", async ({ page }) =>
   await page.getByRole("button", { name: "Stop & save" }).click();
   // No save dialog appears and nothing is recorded.
   await expect(page.getByText("Save this session?")).toHaveCount(0);
-  await page.getByRole("button", { name: "Analytics" }).click();
+  await goTab(page, "Analytics");
   await expect(page.getByText("0 / 120 min")).toBeVisible();
 });
 
@@ -185,11 +220,20 @@ test("premium feature prompts sign-in when logged out", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 });
 
-test("pop-out timer button shows when Document PiP is supported", async ({ page }) => {
+test("pop-out timer lives in Customize Session when Document PiP is supported", async ({ page }) => {
   // localhost is a secure context, so Chromium exposes documentPictureInPicture
-  // and the gated "Pop out timer" button renders on the Focus tab.
+  // and the gated pop-out row renders inside the Customize Session drawer.
   await goHome(page);
-  await expect(page.getByRole("button", { name: "Pop out timer" })).toBeVisible();
+  await page.getByRole("button", { name: "Customize Session" }).click();
+  const drawer = page.getByTestId("customize-session");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("Pop-out timer")).toBeVisible();
+  // The drawer also carries the relocated pets/confetti/auto-flow settings.
+  await expect(drawer.getByRole("switch", { name: "Show pets during focus" })).toBeVisible();
+  await expect(drawer.getByRole("switch", { name: "Completion confetti" })).toBeVisible();
+  await expect(drawer.getByRole("switch", { name: "Auto-flow" })).toBeVisible();
+  await drawer.getByRole("button", { name: /Done/ }).click();
+  await expect(page.getByTestId("customize-session")).toHaveCount(0);
 });
 
 test("AI upload requires sign-in when logged out", async ({ page }) => {
@@ -203,7 +247,7 @@ test("AI upload requires sign-in when logged out", async ({ page }) => {
 test("no horizontal overflow on any tab", async ({ page }) => {
   await goHome(page);
   for (const tab of ["Focus", "Tasks", "Rooms", "Analytics"]) {
-    await page.getByRole("button", { name: tab, exact: true }).click();
+    await goTab(page, tab);
     await page.waitForTimeout(250);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `${tab} tab overflows horizontally`).toBeLessThanOrEqual(1);
@@ -215,7 +259,7 @@ test("mobile header controls do not overlap the Roamly wordmark", async ({ page 
   for (const width of [320, 375, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
     await goHome(page);
-    const brandBox = await page.getByText("Roamly", { exact: true }).boundingBox();
+    const brandBox = await page.getByText("Roamly Flow", { exact: true }).first().boundingBox();
     const controlBox = await page.getByRole("button", { name: "Replay the app tour" }).boundingBox();
     expect(brandBox, `wordmark missing at ${width}px`).not.toBeNull();
     expect(controlBox, `header controls missing at ${width}px`).not.toBeNull();
@@ -246,7 +290,7 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
 
 test("planned study lives in Tasks and requires an account", async ({ page }) => {
   await goHome(page);
-  await page.getByRole("button", { name: "Analytics", exact: true }).click();
+  await goTab(page, "Analytics");
   await expect(page.getByRole("heading", { name: "Study breakdown" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Unlock Study breakdown with Premium" })).toBeVisible();
   await expect(page.getByRole("button", { name: "All time" })).toHaveCount(0);
@@ -393,36 +437,40 @@ test("app preferences live in the Settings modal opened from the profile menu", 
 
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
+  // 6 widths × 5 tabs, with More-sheet hops at phone widths — give the sweep
+  // double the default budget.
+  test.setTimeout(60_000);
   for (const width of [320, 375, 390, 430, 768, 1280]) {
     await page.setViewportSize({ width, height: width >= 768 ? 800 : 844 });
     await goHome(page);
     for (const tab of ["Focus", "Tasks", "Rooms", "Analytics", "Premium"]) {
-      await page.getByRole("button", { name: tab, exact: true }).click();
+      await goTab(page, tab);
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
       expect(overflow, `${tab} overflows at ${width}px`).toBeLessThanOrEqual(1);
     }
   }
 });
 
-test("Spotify and Apple Music choices are visible without opening a popup", async ({ page }) => {
+test("Spotify and Apple Music stay fully closed until intentionally opened", async ({ page }) => {
   await goHome(page);
-  // The Music panel tabs and the dock's service toggle each carry both
-  // labels — assert each surface independently so a missing dock toggle
-  // can't hide behind the panel (and vice versa). No dialog either way.
+  // Fresh load: the Music panel offers both services, but NO streaming iframe
+  // exists anywhere and the floating dock isn't mounted — music is closed
+  // until the user asks for it.
   const panel = page.getByRole("main");
   await expect(panel.getByRole("button", { name: "Spotify", exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Apple Music", exact: true })).toBeVisible();
+  await expect(page.getByTestId("music-dock")).toHaveCount(0);
+  await expect(page.locator('iframe[title="Music player"]')).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Intentionally picking a service starts music: the dock mounts with that
+  // service's player and the choice persists.
+  await panel.getByRole("button", { name: "Apple Music", exact: true }).click();
   const dock = page.getByTestId("music-dock");
+  await expect(dock).toBeVisible();
   const expand = dock.getByRole("button", { name: "Expand music player" });
   if (await expand.isVisible()) await expand.click(); // phones start minimized
-  await expect(dock.getByRole("button", { name: "Spotify", exact: true })).toBeVisible();
-  await expect(dock.getByRole("button", { name: "Apple Music", exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  // Exercise one dock switch end to end: select the non-default service and
-  // confirm the toggle state, the embedded player, and the saved preference.
-  await dock.getByRole("button", { name: "Apple Music", exact: true }).click();
   await expect(dock.getByRole("button", { name: "Apple Music", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(dock.locator('iframe[title="Music player"]')).toHaveAttribute("src", /embed\.music\.apple\.com/);
+  await expect(page.locator('iframe[title="Music player"]').first()).toHaveAttribute("src", /embed\.music\.apple\.com/);
   expect(await page.evaluate(() => localStorage.getItem("roamly-music-service"))).toBe("apple");
 });
 

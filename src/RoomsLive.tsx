@@ -99,8 +99,10 @@ export function RoomsLive(props: RoomsLiveProps) {
 // feedback: the concept wasn't obvious). Collapses to a small reopen link
 // once dismissed.
 function HowRoomsWork() {
-  const [open, setOpen] = useState(() => loadPref("roamly-rooms-explainer-seen") !== "1");
-  const dismiss = () => { savePref("roamly-rooms-explainer-seen", "1"); setOpen(false); };
+  // Collapsed to its link by default — rooms show immediately; the explainer
+  // opens only on request.
+  const [open, setOpen] = useState(false);
+  const dismiss = () => setOpen(false);
   if (!open) {
     return (
       <button onClick={() => setOpen(true)}
@@ -131,7 +133,7 @@ function HowRoomsWork() {
 function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="font-display text-3xl font-semibold">Study rooms</h1>
+      <h1 className="font-display text-3xl font-semibold">Rooms</h1>
       <p className="mt-1 text-sm text-muted-foreground">Focus alongside other PA students in real time.</p>
       <HowRoomsWork />
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-border bg-card/60 p-4">
@@ -385,10 +387,10 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     <div className="mx-auto max-w-3xl">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="flex items-center gap-2 font-display text-3xl font-semibold">Study rooms
+          <h1 className="flex items-center gap-2 font-display text-3xl font-semibold">Rooms
             <InfoTip text="With an account, pick any room and hit Join. Every room runs one shared timer, so everyone focuses and breaks together. The always-on rooms never stop; jump in whenever. Chat and voice unlock during breaks. Premium members can host their own public or private rooms." />
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">Live sessions with a shared timer. Chat and voice open during breaks.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Focus alongside other PA students in real time.</p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={onOpenFriends}

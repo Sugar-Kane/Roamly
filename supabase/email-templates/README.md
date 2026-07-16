@@ -1,4 +1,4 @@
-# Roamly auth email templates
+# Roamly Flow auth email templates
 
 Branded replacements for Supabase's default auth emails (warm Coffee Shop
 palette, table layout, inline styles — safe in Gmail/Outlook/Apple Mail).
@@ -10,10 +10,10 @@ Subject → replace the Body with the file's HTML → Save.
 
 | File | Supabase template | Suggested subject |
 | --- | --- | --- |
-| `invite.html` | Invite user | You're invited to Roamly 📚 |
-| `confirm-signup.html` | Confirm signup | Confirm your Roamly account ✔️ |
-| `magic-link.html` | Magic Link | Your Roamly sign-in link 🔑 |
-| `reset-password.html` | Reset password | Reset your Roamly password 🔒 |
+| `invite.html` | Invite user | You're invited to Roamly Flow 📚 |
+| `confirm-signup.html` | Confirm signup | Confirm your Roamly Flow account ✔️ |
+| `magic-link.html` | Magic Link | Your Roamly Flow sign-in link 🔑 |
+| `reset-password.html` | Reset password | Reset your Roamly Flow password 🔒 |
 
 `{{ .ConfirmationURL }}` and `{{ .Email }}` are Supabase template variables —
 leave them as-is when pasting.

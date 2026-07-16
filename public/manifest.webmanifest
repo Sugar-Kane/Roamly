@@ -1,13 +1,21 @@
 {
-  "name": "Roamly Focus",
-  "short_name": "Roamly",
-  "description": "Pomodoro study timer for PA students — focus solo or in live rooms.",
+  "name": "Roamly Flow",
+  "short_name": "Roamly Flow",
+  "description": "A focus timer built for PA school. Plan what to study, stay focused, and track progress toward upcoming exams \u2014 solo or in live study rooms.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#16181D",
   "theme_color": "#16181D",
   "icons": [
-    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
   ]
 }

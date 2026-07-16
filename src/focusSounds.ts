@@ -181,7 +181,7 @@ function mediaSession(): MediaSession | null {
   return typeof navigator !== "undefined" && "mediaSession" in navigator ? navigator.mediaSession : null;
 }
 
-function announcePlayback(title: string, artist = "Roamly Focus") {
+function announcePlayback(title: string, artist = "Roamly Flow") {
   const ms = mediaSession();
   if (!ms) return;
   try {
