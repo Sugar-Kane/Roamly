@@ -1183,7 +1183,8 @@ function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn
   return (
     <header className="flex items-center justify-between gap-1.5 sm:gap-3">
       <button onClick={onGoHome} aria-label="Go to the Focus home screen"
-        className="flex shrink-0 items-baseline gap-3 rounded-lg transition hover:opacity-80">
+        className="flex shrink-0 items-center gap-2.5 rounded-lg transition hover:opacity-80">
+        <img src="/roamly-logo.png" alt="" aria-hidden="true" className="h-9 w-9 shrink-0 sm:h-10 sm:w-10" />
         <span className="font-display text-xl font-semibold tracking-tight text-gradient sm:text-2xl">Roamly</span>
         <span className="hidden font-mono text-[11px] uppercase tracking-[0.22em] text-primary sm:inline">Focus</span>
       </button>
