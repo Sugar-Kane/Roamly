@@ -751,13 +751,13 @@ export async function fetchTasks(userId: string): Promise<Task[]> {
   return (data ?? []) as Task[];
 }
 
-export async function createTask(userId: string, title: string, tag: string, sortOrder?: number): Promise<Task | null> {
+export async function createTask(userId: string, title: string, tag: string, sortOrder?: number, est = 1): Promise<Task | null> {
   if (!supabase) return null;
   let res = await supabase
     .from("tasks")
-    // est: 1 — a task is done in a single focus session unless the user says
-    // otherwise (overrides the older DB column default of 2).
-    .insert({ user_id: userId, title, tag, est: 1, ...(sortOrder != null ? { sort_order: sortOrder } : {}) })
+    // est defaults to 1 — done in a single focus session unless the user says
+    // otherwise at creation (overrides the older DB column default of 2).
+    .insert({ user_id: userId, title, tag, est: Math.max(1, Math.min(9, Math.round(est))), ...(sortOrder != null ? { sort_order: sortOrder } : {}) })
     .select(TASK_COLUMNS)
     .single();
   // If the sort_order column hasn't been migrated in yet, retry without it —

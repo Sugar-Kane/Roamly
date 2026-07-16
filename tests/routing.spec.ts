@@ -21,7 +21,14 @@ test("deep-loading /tasks renders the Tasks tab", async ({ page }) => {
 test("switching tabs updates the URL and back returns", async ({ page }) => {
   await goHome(page);
   await expect(page).toHaveURL(/\/focus$/); // "/" normalizes in place
-  await page.getByRole("button", { name: "Analytics", exact: true }).click();
+  // Analytics lives in the More sheet on phones, in the bar from sm up.
+  const direct = page.getByRole("button", { name: "Analytics", exact: true });
+  if (await direct.isVisible()) {
+    await direct.click();
+  } else {
+    await page.getByRole("button", { name: "More", exact: true }).click();
+    await page.getByTestId("more-sheet").getByRole("button", { name: "Analytics" }).click();
+  }
   await expect(page).toHaveURL(/\/analytics$/);
   await page.goBack();
   await expect(page).toHaveURL(/\/focus$/);
