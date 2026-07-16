@@ -137,7 +137,7 @@ export async function POST(request: Request): Promise<Response> {
       p_global_cap: GLOBAL_MOTIVATION_DAILY_CAP,
     });
     if (reserveError) {
-      const missing = reserveError.message.includes("does not exist") || reserveError.message.includes("find the function");
+      const missing = reserveError.code === "PGRST202";
       if (!missing) {
         apiLog("motivation", "reserve_failed", { user: userData.user.id, message: reserveError.message });
         return jsonResponse({ error: "generation_failed" }, 503);
