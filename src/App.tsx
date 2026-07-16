@@ -862,10 +862,10 @@ export default function App() {
     try {
       const token = await getAccessToken();
       if (!token) { setCheckoutLoading(false); setShowAuth(true); return; }
-      const res = await fetch("/api/create-checkout-session", {
+      const res = await fetch("/api/billing", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify(pack ? { pack } : { plan }),
+        body: JSON.stringify(pack ? { action: "checkout", pack } : { action: "checkout", plan }),
       });
       if (!res.ok) {
         // Show the endpoint's actual message (e.g. a Stripe misconfiguration)
@@ -3071,10 +3071,10 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
     try {
       const token = await getAccessToken();
       if (!token) { setCancelBusy(false); return; }
-      const res = await fetch("/api/cancel-subscription", {
+      const res = await fetch("/api/billing", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify({ resume }),
+        body: JSON.stringify({ action: "cancel", resume }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setCancelError(data.error ?? "Couldn't update the subscription. Try again."); setCancelBusy(false); return; }
@@ -3100,7 +3100,11 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
     try {
       const token = await getAccessToken();
       if (!token) { setPortalLoading(false); return; }
-      const res = await fetch("/api/create-portal-session", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch("/api/billing", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: "portal" }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.url) {
         setPortalError(data.error ?? "Couldn't open the billing portal. Try again.");
