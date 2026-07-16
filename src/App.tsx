@@ -1139,8 +1139,10 @@ export default function App() {
       {/* The pop-out is a separate document, so the main confetti canvas can't
           reach it. Mount a second burst pointed at the PiP window, driven by
           the same counter, so a focus block that finishes while the user is
-          watching the pop-out still celebrates there. */}
-      {pipWindow && !roomActive && createPortal(
+          watching the pop-out still celebrates there. Not gated on roomActive:
+          the personal and room pop-outs share this one window, and rooms bump
+          the same counter, so this covers both. */}
+      {pipWindow && createPortal(
         <ConfettiBurst burst={confettiBurst} reduceMotion={a11y.reduceMotion} enabled={confettiOn} win={pipWindow} />,
         pipWindow.document.body
       )}

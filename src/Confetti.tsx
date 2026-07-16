@@ -56,6 +56,12 @@ export function ConfettiBurst({ burst, reduceMotion, enabled = true, win }: {
     const dpr = Math.min(2, view.devicePixelRatio || 1);
     const w = view.innerWidth;
     const h = view.innerHeight;
+    // Scale the burst down for a small target window: the pop-out is only a few
+    // hundred pixels, so speeds, gravity and counts are shrunk to read the same
+    // as they do full-screen. Every real device viewport is at least 320px, so
+    // s === 1 there and the main window (desktop and mobile) is unchanged.
+    const s = Math.min(1, Math.min(w, h) / 320);
+    const gravity = 1350 * s;
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -69,11 +75,11 @@ export function ConfettiBurst({ burst, reduceMotion, enabled = true, win }: {
     // whole viewport (full width and height), not only the lower corners.
     // Density scales with viewport width and is capped so very wide screens
     // stay light on the animation loop.
-    const rainCount = Math.min(150, Math.max(60, Math.round(w / 12)));
+    const rainCount = Math.round(Math.min(150, Math.max(60, Math.round(w / 12))) * s);
     for (let i = 0; i < rainCount; i++) {
       particles.push({
         x: rand(0, w), y: rand(-40, -4),
-        vx: rand(-70, 70), vy: rand(60, 240),
+        vx: rand(-70, 70) * s, vy: rand(60, 240) * s,
         rot: rand(0, Math.PI * 2), vr: rand(-8, 8),
         w: rand(5, 9), h: rand(8, 14),
         color: pick(), wobble: rand(0, Math.PI * 2),
@@ -83,8 +89,8 @@ export function ConfettiBurst({ burst, reduceMotion, enabled = true, win }: {
     // Two cannons at the lower corners aimed up and inward, so the celebratory
     // upward burst meets the falling rain across the middle of the screen.
     for (const [ox, dir] of [[0.08, 1], [0.92, -1]] as const) {
-      for (let i = 0; i < 55; i++) {
-        const speed = rand(520, 980);
+      for (let i = 0; i < Math.round(55 * s); i++) {
+        const speed = rand(520, 980) * s;
         const angle = (-78 + dir * rand(8, 34)) * (Math.PI / 180);
         particles.push({
           x: w * ox, y: h * 0.82,
@@ -106,10 +112,10 @@ export function ConfettiBurst({ burst, reduceMotion, enabled = true, win }: {
       ctx.clearRect(0, 0, w, h);
       const fade = elapsed > DURATION_MS - 500 ? Math.max(0, (DURATION_MS - elapsed) / 500) : 1;
       for (const p of particles) {
-        p.vy += 1350 * dt; // gravity
+        p.vy += gravity * dt; // gravity (scaled to the window)
         p.vx *= 1 - 0.9 * dt; // drag
         p.wobble += dt * 8;
-        p.x += (p.vx + Math.sin(p.wobble) * 28) * dt;
+        p.x += (p.vx + Math.sin(p.wobble) * 28 * s) * dt;
         p.y += p.vy * dt;
         p.rot += p.vr * dt;
         ctx.save();
