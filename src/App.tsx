@@ -930,7 +930,7 @@ export default function App() {
           confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
           onOpenTutorial={() => setShowTutorial(true)}
-          themeId={themeId} setThemeId={changeTheme}
+          themeId={themeId} setThemeId={changeTheme} theme={theme}
           onGoHome={() => setView("focus")}
           onOpenFeedback={() => (session ? setShowFeedback(true) : setShowAuth(true))} />
         {view !== "focus" && (
@@ -1176,7 +1176,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, confettiOn, onToggleConfetti, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, onGoHome, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn, onSignOut, onOpenRoom, onOpenFriends, onOpenPlannedStudy, a11y, setA11y, onOpenPremium, confettiOn, onToggleConfetti, isAdmin, onOpenAdmin, onOpenTutorial, themeId, setThemeId, theme, onGoHome, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -1184,7 +1184,19 @@ function Header({ isPremium, streak, session, profile, onProfileChange, onSignIn
     <header className="flex items-center justify-between gap-1.5 sm:gap-3">
       <button onClick={onGoHome} aria-label="Go to the Focus home screen"
         className="flex shrink-0 items-center gap-2.5 rounded-lg transition hover:opacity-80">
-        <img src="/roamly-logo.png" alt="" aria-hidden="true" className="h-9 w-9 shrink-0 sm:h-10 sm:w-10" />
+        <span aria-hidden="true" className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full sm:h-10 sm:w-10"
+          style={{ background: `linear-gradient(145deg, ${theme.ring}, ${theme.rest})` }}>
+          <span className="absolute inset-0" style={{
+            backgroundColor: `hsl(${theme.vars["--foreground"]})`,
+            mask: "url(/logo-r-mask.png) center / contain no-repeat",
+            WebkitMask: "url(/logo-r-mask.png) center / contain no-repeat",
+          }} />
+          <span className="absolute inset-0" style={{
+            backgroundColor: `hsl(${theme.vars["--card"]})`,
+            mask: "url(/logo-arc-mask.png) center / contain no-repeat",
+            WebkitMask: "url(/logo-arc-mask.png) center / contain no-repeat",
+          }} />
+        </span>
         <span className="font-display text-xl font-semibold tracking-tight text-gradient sm:text-2xl">Roamly</span>
         <span className="hidden font-mono text-[11px] uppercase tracking-[0.22em] text-primary sm:inline">Focus</span>
       </button>
