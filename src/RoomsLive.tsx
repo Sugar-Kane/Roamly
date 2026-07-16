@@ -69,6 +69,10 @@ type RoomsLiveProps = {
   // room (so the personal-timer sound effect doesn't fight it).
   soundAuto: boolean;
   completionSoundEnabled: boolean;
+  // Fires when a shared room focus block completes naturally, so App can play
+  // the completion confetti and its fireworks sound for group and hosted rooms
+  // just like a solo focus block.
+  onCelebrate: () => void;
   onInRoom: (inRoom: boolean) => void;
   // Bumped by App when the user confirms starting a solo timer while in a
   // room — the lobby leaves the active room so only one timer runs at a time.
@@ -154,7 +158,7 @@ function DemoRooms({ onSignIn }: { onSignIn: () => void }) {
   );
 }
 
-function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, completionSoundEnabled, onInRoom, leaveSignal, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
+function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOpenFriends, targetRoomId, onTargetConsumed, soundAuto, completionSoundEnabled, onCelebrate, onInRoom, leaveSignal, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade }: RoomsLiveProps & { session: Session }) {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [active, setActive] = useState<LiveRoom | null>(null);
   // Two head-count sources, merged for display: heartbeat counts (polled RPC,
@@ -350,7 +354,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
   if (active) {
     return (
       <RoomView room={active} session={session} profile={profile} now={now}
-        isPremium={isPremium} gateThen={gateThen} soundAuto={soundAuto} completionSoundEnabled={completionSoundEnabled} onInRoom={onInRoom}
+        isPremium={isPremium} gateThen={gateThen} soundAuto={soundAuto} completionSoundEnabled={completionSoundEnabled} onCelebrate={onCelebrate} onInRoom={onInRoom}
         pipSupported={pipSupported} pipWindow={pipWindow} onPopOut={onPopOut} onClosePip={onClosePip}
         onImportedTasks={onImportedTasks} onUpgrade={onUpgrade}
         onMusicChange={(music) => setActive((prev) => (prev ? { ...prev, music } : prev))}
@@ -587,7 +591,7 @@ function CreateRoomModal({ hostId, onClose, onCreated }: { hostId: string; onClo
 
 type Member = { id: string; username: string };
 
-function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, completionSoundEnabled, onInRoom, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade, onMusicChange, onLeave, onEnded }: {
+function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto, completionSoundEnabled, onCelebrate, onInRoom, pipSupported, pipWindow, onPopOut, onClosePip, onImportedTasks, onUpgrade, onMusicChange, onLeave, onEnded }: {
   room: LiveRoom;
   session: Session;
   profile: Profile | null;
@@ -596,6 +600,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   gateThen: (fn: () => void) => void;
   soundAuto: boolean;
   completionSoundEnabled: boolean;
+  onCelebrate: () => void;
   onInRoom: (inRoom: boolean) => void;
   pipSupported: boolean;
   pipWindow: Window | null;
@@ -786,7 +791,10 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
       info.secondsLeft > 0
     ) {
       chimePhaseKeyRef.current = phaseKey;
-      playChime(info.phase === "focus" ? "transition" : "breakEnd");
+      // Focus blocks use the shorter "focusEnd" chime so it rings out before
+      // the boundary, leaving 00:00 clear for the completion confetti's
+      // fireworks sound (same as the solo timer).
+      playChime(info.phase === "focus" ? "focusEnd" : "breakEnd");
     }
 
     previousRoomSecondsRef.current = info.secondsLeft;
@@ -801,6 +809,21 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     info.focusIndex,
     completionSoundEnabled,
   ]);
+
+  // Fire the completion celebration (full-screen confetti + fireworks sound)
+  // the moment a shared focus block rolls into a break, so group and hosted
+  // rooms celebrate a finished block just like a solo session. Keyed off the
+  // focus -> break phase transition, so it fires once per completed block and
+  // never on a break ending or when someone joins mid-break.
+  const onCelebrateRef = useRef(onCelebrate);
+  onCelebrateRef.current = onCelebrate;
+  const prevRoomPhaseRef = useRef(info.phase);
+  useEffect(() => {
+    if (prevRoomPhaseRef.current === "focus" && info.phase !== "focus") {
+      onCelebrateRef.current();
+    }
+    prevRoomPhaseRef.current = info.phase;
+  }, [info.phase]);
 
   // Ending is host-only and blocked during focus, so a host can't pull the room
   // out from under people who are mid-session.

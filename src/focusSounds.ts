@@ -30,6 +30,11 @@ let currentVolume = 0.5;
 let keeper: HTMLAudioElement | null = null;
 let chimeOscillators: OscillatorNode[] = [];
 let chimeCleanupTimer: number | null = null;
+// The celebration ("fireworks") sound that plays with the completion confetti.
+// Tracked separately from chimes so releaseAudioSession keeps the context alive
+// while it rings, and so it never collides with the chime's own teardown.
+let celebrationOscillators: OscillatorNode[] = [];
+let celebrationCleanupTimer: number | null = null;
 
 // Fired every time a focus sound starts, from ANY path (the sound picker, the
 // timer's auto-play, room music). App subscribes to stop the Spotify/Apple
@@ -199,7 +204,7 @@ function clearPlayback(state: MediaSessionPlaybackState = "none") {
 // No-op while something is actively playing. Everything re-acquires on the
 // next Start tap (unlockAudio/startFocusSound run inside user gestures).
 export function releaseAudioSession() {
-  if (masterGain || chimeOscillators.length > 0) return; // music or a completion chime still needs the session
+  if (masterGain || chimeOscillators.length > 0 || celebrationOscillators.length > 0) return; // music, a chime, or the celebration still needs the session
   if (keeper) {
     keeper.pause();
     keeper.removeAttribute("src");
@@ -801,8 +806,11 @@ export function stopChime() {
 // as the focus sounds so they remain audible on iOS.
 //
 // "transition" is the standard multi-pulse completion chime.
+// "focusEnd" is a shorter two-pulse version used when a focus block completes,
+//   so it rings out before 00:00 and leaves the moment clear for the
+//   completion confetti and its "fireworks" sound.
 // "breakEnd" is a distinct sustained tone marking the end of a break.
-export function playChime(kind: "transition" | "breakEnd" = "transition") {
+export function playChime(kind: "transition" | "focusEnd" | "breakEnd" = "transition") {
   const audio = audioCtx();
   if (!audio) return;
 
@@ -810,6 +818,43 @@ export function playChime(kind: "transition" | "breakEnd" = "transition") {
   keeper?.play().catch(() => { /* not unlocked yet; harmless */ });
 
   const start = audio.currentTime + 0.02;
+
+  if (kind === "focusEnd") {
+    // Two pulses (~2.4s total). Triggered ~3s before the boundary, it finishes
+    // roughly half a second before 00:00 so the fireworks sound is the finale.
+    // Its cleanup only disconnects the (already stopped) nodes and never
+    // releases the audio session, so it cannot suspend the context out from
+    // under the confetti sound that plays right after; the idle-release effect
+    // in App frees the session once nothing is running.
+    for (const offset of [0, 1.3]) {
+      const notes: [number, number][] = [
+        [528, start + offset],
+        [660, start + offset + 0.18],
+      ];
+      for (const [freq, at] of notes) {
+        const o = audio.createOscillator();
+        const g = audio.createGain();
+        o.type = "sine";
+        o.frequency.value = freq;
+        o.connect(g);
+        g.connect(audio.destination);
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.2, at + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 0.9);
+        o.start(at);
+        o.stop(at + 0.95);
+        chimeOscillators.push(o);
+      }
+    }
+    chimeCleanupTimer = window.setTimeout(() => {
+      for (const oscillator of chimeOscillators) {
+        try { oscillator.disconnect(); } catch { /* already disconnected */ }
+      }
+      chimeOscillators = [];
+      chimeCleanupTimer = null;
+    }, 2600);
+    return;
+  }
 
   if (kind === "breakEnd") {
     const o = audio.createOscillator();
@@ -877,6 +922,59 @@ export function playChime(kind: "transition" | "breakEnd" = "transition") {
     chimeCleanupTimer = null;
     releaseAudioSession();
   }, 5100);
+}
+
+// The "fireworks" celebration that plays the instant the completion confetti
+// begins (a naturally finished focus block, solo or in a room). A short, warm
+// ascending sparkle, deliberately gentle and not alarm-like. Routed through the
+// same unlocked context + keeper as the chimes so it survives the iOS silent
+// switch, and tracked in celebrationOscillators so releaseAudioSession keeps
+// the context alive while it rings. Failure to play never throws.
+export function playCelebration() {
+  try {
+    const audio = audioCtx();
+    if (!audio) return;
+    keeper?.play().catch(() => { /* not unlocked yet; harmless */ });
+
+    // Stop any previous celebration so a rapid re-fire can't stack.
+    if (celebrationCleanupTimer !== null) {
+      window.clearTimeout(celebrationCleanupTimer);
+      celebrationCleanupTimer = null;
+    }
+    for (const oscillator of celebrationOscillators) {
+      try { oscillator.stop(); } catch { /* already stopped */ }
+      try { oscillator.disconnect(); } catch { /* already disconnected */ }
+    }
+    celebrationOscillators = [];
+
+    const start = audio.currentTime + 0.02;
+    // A rising major-pentatonic run (C5 E5 G5 A5 C6) so it reads as a happy
+    // flourish rather than a scale or an alarm.
+    const notes = [523.25, 659.25, 783.99, 880.0, 1046.5];
+    notes.forEach((freq, i) => {
+      const at = start + i * 0.085;
+      const o = audio.createOscillator();
+      const g = audio.createGain();
+      o.type = "triangle"; // softer, warmer than a raw sine sparkle
+      o.frequency.value = freq;
+      o.connect(g);
+      g.connect(audio.destination);
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.14, at + 0.02); // quick soft attack
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.42); // gentle decay
+      o.start(at);
+      o.stop(at + 0.5);
+      celebrationOscillators.push(o);
+    });
+
+    celebrationCleanupTimer = window.setTimeout(() => {
+      for (const oscillator of celebrationOscillators) {
+        try { oscillator.disconnect(); } catch { /* already disconnected */ }
+      }
+      celebrationOscillators = [];
+      celebrationCleanupTimer = null;
+    }, 1400);
+  } catch { /* audio unavailable; the confetti still plays */ }
 }
 
 export function setFocusVolume(volume: number) {

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon, PawPrint } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
-import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, type FocusSoundId } from "./focusSounds";
+import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, embedSrcToUri, type SpotifyEmbedType } from "./spotify";
 import { SpotifyEmbed } from "./SpotifyEmbed";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
@@ -273,6 +273,15 @@ export default function App() {
   // celebration per bump (and skips itself under reduced motion).
   const [confettiBurst, setConfettiBurst] = useState(0);
 
+  // The one celebration entry point, shared by the personal timer and rooms:
+  // full-screen confetti plus the "fireworks" sound. The confetti visual always
+  // fires (ConfettiBurst self-skips under reduced motion); the sound respects
+  // the completion-sound toggle so muting it silences the fireworks too.
+  const celebrateFocusComplete = useCallback(() => {
+    setConfettiBurst((n) => n + 1);
+    if (alerts.soundEnabled) playCelebration();
+  }, [alerts.soundEnabled]);
+
   const handlePhaseComplete = useCallback((finishedPhase: Phase) => {
     alerts.notify(finishedPhase);
     if (finishedPhase !== "focus") return;
@@ -280,7 +289,7 @@ export default function App() {
     // naturally (skip/reset never reach it), so this is the one true
     // "focus block completed" moment — celebrate it. Purely additive:
     // sounds, notifications, tracking, and auto-flow all continue below.
-    setConfettiBurst((n) => n + 1);
+    celebrateFocusComplete();
     track("focus_block_done");
     // Credit the completed Pomodoro to whichever task was active when the phase finished.
     const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
@@ -303,7 +312,7 @@ export default function App() {
     const event = newStudyEvent(method.focus, current, "countdown");
     setStudyEvents((prev) => [...prev, event]);
     if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown").then((ok) => { if (ok) void bumpGamification(); });
-  }, [alerts.notify, session?.user.id, method.focus, activeTask, tasks, autoCompleteEstimates, bumpGamification]);
+  }, [alerts.notify, celebrateFocusComplete, session?.user.id, method.focus, activeTask, tasks, autoCompleteEstimates, bumpGamification]);
 
   // Auto-flow: roll straight from focus into break (and back) like rooms do,
   // for users who don't want to press Start at every boundary. Default off —
@@ -900,6 +909,7 @@ export default function App() {
               pipSupported={pipSupported} pipActive={!!pipWindow}
               onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
+              companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
               motivation={motivation} />
           )}
           {view === "tasks" && (
@@ -928,7 +938,7 @@ export default function App() {
               onNeedUsername={openFriends} onOpenFriends={openFriends}
               targetRoomId={roomTarget} onTargetConsumed={() => setRoomTarget(null)}
               soundAuto={soundAuto} onInRoom={handleInRoom} leaveSignal={leaveSignal}
-              completionSoundEnabled={alerts.soundEnabled}
+              completionSoundEnabled={alerts.soundEnabled} onCelebrate={celebrateFocusComplete}
               pipSupported={pipSupported} pipWindow={pipWindow}
               onPopOut={() => openPip({ width: 191, height: 349 }).then((pip) => { if (pip) track("pip_open", "room"); })} onClosePip={closePip}
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
@@ -982,6 +992,13 @@ export default function App() {
             <button onClick={toggleAutoFlow} aria-pressed={autoFlow}
               className={`flex h-12 items-center rounded-2xl border px-4 text-xs font-medium transition ${autoFlow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
               Auto-flow {autoFlow ? "on" : "off"}
+            </button>
+            {/* Always visible (even when pets are hidden) so there is always a
+                way to bring them back. Reuses the single companions pref. */}
+            <button onClick={toggleCompanions} aria-pressed={companionsOn}
+              aria-label={companionsOn ? "Hide pets during focus" : "Show pets during focus"}
+              className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${companionsOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+              <PawPrint size={14} /> Pets {companionsOn ? "on" : "off"}
             </button>
             {showCompanions && (
               <button onClick={toggleSleep} aria-pressed={petSleep.asleep}
@@ -1507,7 +1524,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, motivation }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, guardSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, companionsOn, onToggleCompanions, motivation }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1618,6 +1635,12 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               </button>
               <InfoTip text="Auto-flow starts the next phase by itself: focus rolls into break and back without pressing Start. Turn it off to start each block yourself." />
               <NotificationToggle alerts={alerts} />
+              {/* Always visible so pets can be turned back on after hiding. */}
+              <button onClick={onToggleCompanions} aria-pressed={companionsOn}
+                aria-label={companionsOn ? "Hide pets during focus" : "Show pets during focus"}
+                className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${companionsOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <PawPrint size={13} /> Pets {companionsOn ? "on" : "off"}
+              </button>
               {showCompanions && (
                 <button onClick={onToggleSleep} aria-pressed={petsAsleep}
                   className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${petsAsleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
@@ -1959,6 +1982,11 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPl
   const [spotifyCustomError, setSpotifyCustomError] = useState(false);
   const [appleCustomUrl, setAppleCustomUrl] = useState("");
   const [appleCustomError, setAppleCustomError] = useState(false);
+  // Let the whole streaming panel collapse to just its header, to free room for
+  // the timer and tasks. The body is only hidden (h-0 + inert), never
+  // unmounted, so a playing embed keeps going. The choice persists per device.
+  const [collapsed, setCollapsed] = useState(() => loadPref("roamly-focus-music-collapsed") === "1");
+  const toggleCollapsed = () => setCollapsed((v) => { savePref("roamly-focus-music-collapsed", v ? "0" : "1"); return !v; });
 
   const playSpotify = (target: { type: SpotifyEmbedType; id: string }, label: string) =>
     onPlay({ service: "spotify", src: toSpotifyEmbedSrc(target), height: embedHeight(target.type), label });
@@ -1983,14 +2011,20 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPl
 
   return (
     <div className="relative rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
+      <div className={`flex items-center justify-between ${collapsed ? "" : "mb-3"}`}>
         <div className="flex items-center gap-2">
           <Music size={16} className="text-primary" />
           <h2 className="font-display text-lg font-semibold">Music</h2>
         </div>
+        <button onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="focus-music-body"
+          aria-label={collapsed ? "Expand Music" : "Collapse Music"}
+          className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+          {collapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+        </button>
       </div>
 
-      <div>
+      {/* Hidden (not unmounted) when collapsed, so a playing embed keeps going. */}
+      <div id="focus-music-body" className={collapsed ? "h-0 overflow-hidden" : ""} inert={collapsed} aria-hidden={collapsed}>
         {showPlayer && shown && <StreamingPlayer shown={shown} stopSignal={stopSignal} onPlaying={onPlaying} />}
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
           <button onClick={() => setService("spotify")}
