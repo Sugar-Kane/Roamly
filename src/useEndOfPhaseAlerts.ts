@@ -70,7 +70,7 @@ export function useEndOfPhaseAlerts() {
     // only deliver the notification/title alert so the chime cannot duplicate.
     if (supported && Notification.permission === "granted") {
       try {
-        new Notification("Roamly Focus", { body: PHASE_MESSAGE[finishedPhase] });
+        new Notification("Roamly Flow", { body: PHASE_MESSAGE[finishedPhase] });
       } catch { /* some browsers restrict Notification construction; ignore */ }
     }
     if (document.hidden) startFlashing();

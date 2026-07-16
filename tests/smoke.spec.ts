@@ -25,13 +25,34 @@ test("expanded built-in music library is available", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Rainy piano/ })).toBeVisible();
 });
 
-test("first-run tutorial shows on a fresh device", async ({ browser }) => {
+test("tour never auto-opens; a fresh device sees the timer immediately", async ({ browser }) => {
   const ctx = await browser.newContext(); // no seen-flag
   const page = await ctx.newPage();
   await page.goto("/");
+  // Fresh arrival: usable timer, no tour, no music dock, no streaming iframe,
+  // Pomodoro explainer collapsed to its link, intro line present.
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+  await expect(page.getByTestId("tutorial")).toHaveCount(0);
+  await expect(page.getByTestId("music-dock")).toHaveCount(0);
+  await expect(page.locator('iframe[title="Music player"]')).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "A focus timer built for PA school." })).toBeVisible();
+  await expect(page.getByText("What's the Pomodoro method?")).toBeVisible();
+  // The tour still opens on demand (header "?" → replay) and restores state.
+  await page.getByRole("button", { name: "Replay the app tour" }).click();
   await expect(page.getByTestId("tutorial")).toBeVisible();
-  await expect(page.getByText("Welcome to Roamly")).toBeVisible();
+  await expect(page.getByText("Welcome to Roamly Flow")).toBeVisible();
+  await page.getByText("Skip tour").click();
+  await expect(page.getByTestId("tutorial")).toHaveCount(0);
   await ctx.close();
+});
+
+test("How Roamly Flow works opens from the intro and can start the tour", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "How Roamly Flow works" }).click();
+  await expect(page.getByRole("dialog", { name: "How Roamly Flow works" })).toBeVisible();
+  await page.getByRole("button", { name: "Take the quick tour" }).click();
+  await expect(page.getByTestId("tutorial")).toBeVisible();
+  await page.getByText("Skip tour").click();
 });
 
 test("navigation tabs switch views", async ({ page }) => {
@@ -215,7 +236,7 @@ test("mobile header controls do not overlap the Roamly wordmark", async ({ page 
   for (const width of [320, 375, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
     await goHome(page);
-    const brandBox = await page.getByText("Roamly", { exact: true }).boundingBox();
+    const brandBox = await page.getByText("Roamly Flow", { exact: true }).first().boundingBox();
     const controlBox = await page.getByRole("button", { name: "Replay the app tour" }).boundingBox();
     expect(brandBox, `wordmark missing at ${width}px`).not.toBeNull();
     expect(controlBox, `header controls missing at ${width}px`).not.toBeNull();
@@ -387,25 +408,26 @@ test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   }
 });
 
-test("Spotify and Apple Music choices are visible without opening a popup", async ({ page }) => {
+test("Spotify and Apple Music stay fully closed until intentionally opened", async ({ page }) => {
   await goHome(page);
-  // The Music panel tabs and the dock's service toggle each carry both
-  // labels — assert each surface independently so a missing dock toggle
-  // can't hide behind the panel (and vice versa). No dialog either way.
+  // Fresh load: the Music panel offers both services, but NO streaming iframe
+  // exists anywhere and the floating dock isn't mounted — music is closed
+  // until the user asks for it.
   const panel = page.getByRole("main");
   await expect(panel.getByRole("button", { name: "Spotify", exact: true })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Apple Music", exact: true })).toBeVisible();
+  await expect(page.getByTestId("music-dock")).toHaveCount(0);
+  await expect(page.locator('iframe[title="Music player"]')).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Intentionally picking a service starts music: the dock mounts with that
+  // service's player and the choice persists.
+  await panel.getByRole("button", { name: "Apple Music", exact: true }).click();
   const dock = page.getByTestId("music-dock");
+  await expect(dock).toBeVisible();
   const expand = dock.getByRole("button", { name: "Expand music player" });
   if (await expand.isVisible()) await expand.click(); // phones start minimized
-  await expect(dock.getByRole("button", { name: "Spotify", exact: true })).toBeVisible();
-  await expect(dock.getByRole("button", { name: "Apple Music", exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  // Exercise one dock switch end to end: select the non-default service and
-  // confirm the toggle state, the embedded player, and the saved preference.
-  await dock.getByRole("button", { name: "Apple Music", exact: true }).click();
   await expect(dock.getByRole("button", { name: "Apple Music", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(dock.locator('iframe[title="Music player"]')).toHaveAttribute("src", /embed\.music\.apple\.com/);
+  await expect(page.locator('iframe[title="Music player"]').first()).toHaveAttribute("src", /embed\.music\.apple\.com/);
   expect(await page.evaluate(() => localStorage.getItem("roamly-music-service"))).toBe("apple");
 });
 

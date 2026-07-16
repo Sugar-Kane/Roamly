@@ -1,10 +1,11 @@
-// First-run tour: quick cards that walk a new user through the app. Each step
-// switches to the real tab it describes AND spotlights the actual section on
-// screen (a dimmed backdrop with a cutout ring around the target), so the user
-// looks at the real UI being explained. Finishing or skipping sets a
-// localStorage flag; the header "?" button and the profile menu's "App tour"
-// row bring it back anytime. Steps without a target (or whose target isn't on
-// screen yet) fall back to a plain dimmed backdrop, so the tour never breaks.
+// Guided tour: quick cards that walk a user through the app. Never opens
+// automatically — it's launched from the header "?", the profile menu's "App
+// tour" row, or the "How Roamly Flow works" explainer. Each step switches to
+// the real tab it describes AND spotlights the actual section on screen (a
+// dimmed backdrop with a cutout ring around the target), so the user looks at
+// the real UI being explained; exiting restores the tab the tour started
+// from. Steps without a target (or whose target isn't on screen yet) fall
+// back to a plain dimmed backdrop, so the tour never breaks.
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -19,16 +20,16 @@ export const TUTORIAL_SEEN_KEY = "roamly-tutorial-seen";
 // without one (e.g. the install tip) just dim the screen.
 const STEPS: { view: View; icon: LucideIcon; title: string; body: string; target?: string }[] = [
   {
-    view: "focus", icon: Timer, title: "Welcome to Roamly", target: '[data-tour="timer"]',
-    body: "This is your study timer. Tap “Select timer” to pick a rhythm, like 25 minutes of focus, then a 5-minute break, and hit Start. Roamly runs the cycles for you.",
+    view: "focus", icon: Timer, title: "Welcome to Roamly Flow", target: '[data-tour="timer"]',
+    body: "This is your study timer. Tap “Select timer” to pick a rhythm, like 25 minutes of focus, then a 5-minute break, and hit Start. Roamly Flow runs the cycles for you.",
   },
   {
     view: "tasks", icon: ListChecks, title: "Queue your studying", target: '[data-tour="tasks"]',
     body: "Add tasks by subject and tick them off as you finish. Drag to change priority. Premium members can even upload lecture notes and let AI write the task list.",
   },
   {
-    view: "focus", icon: Smartphone, title: "Put Roamly on your Home Screen",
-    body: "On iPhone: tap Safari's Share button (the square with the arrow), then “Add to Home Screen”. Roamly opens full-screen like a real app, with its own icon. On Android or desktop, use the browser menu, then “Install app”.",
+    view: "focus", icon: Smartphone, title: "Put Roamly Flow on your Home Screen",
+    body: "On iPhone: tap Safari's Share button (the square with the arrow), then “Add to Home Screen”. Roamly Flow opens full-screen like a real app, with its own icon. On Android or desktop, use the browser menu, then “Install app”.",
   },
   {
     view: "rooms", icon: Users, title: "Study together", target: '[data-tour="rooms"]',
@@ -54,7 +55,7 @@ function scrollTargetIntoView(el: Element) {
   window.scrollBy({ top: rect.top + visibleHeight / 2 - anchor, behavior: "smooth" });
 }
 
-export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onClose: () => void }) {
+export function Tutorial({ setView, returnView = "focus", onClose }: { setView: (v: View) => void; returnView?: View; onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -65,7 +66,9 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
   const finish = () => {
     track("tutorial_done");
     savePref(TUTORIAL_SEEN_KEY, "1");
-    setView("focus");
+    // The tour switches tabs to spotlight real UI; exiting puts the user back
+    // on whichever tab they started it from instead of dumping them on Focus.
+    setView(returnView);
     onClose();
   };
 

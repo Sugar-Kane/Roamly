@@ -83,9 +83,12 @@ export default function App() {
   // User-editable values for the Custom method (minutes).
   const [custom, setCustom] = useState({ focus: 30, short: 7, long: 20, cycles: 4 });
 
-  // First-run tour: shows once on a fresh device; the header "?" and the
-  // profile menu's "App tour" row reopen it on demand.
-  const [showTutorial, setShowTutorial] = useState(() => loadPref("roamly-tutorial-seen") !== "1");
+  // The tour never opens automatically — the timer is the arrival experience.
+  // It's reachable from the header "?", the profile menu's "App tour" row, and
+  // the "How Roamly Flow works" explainer. On exit it returns the user to
+  // whichever tab they were on when they started it.
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tourReturnView, setTourReturnView] = useState<View>("focus");
   const [showFeedback, setShowFeedback] = useState(false);
   const [showAd, setShowAd] = useState(false);
 
@@ -477,6 +480,10 @@ export default function App() {
     setFocusSound(null);
     savePref("roamly-focus-sound", "off");
     setEmbed(t);
+    // Picking music IS the intentional activation — surface the mini-player
+    // (it stays completely closed until this moment on a fresh device).
+    setDockClosed(false);
+    savePref("roamly-dock-closed", "0");
   };
   // The selected service lives in state (not just the pref) so the dock's
   // fallback stays on the chosen service even after `embed` is cleared —
@@ -515,9 +522,15 @@ export default function App() {
     return window.innerWidth < 640;
   });
   const toggleDockMin = () => setDockMin((m) => { savePref("roamly-dock-min", m ? "0" : "1"); return !m; });
-  // The mini-player can be dismissed entirely; reopened from the Music panel.
-  // Closing only hides it (opacity/inert like `hidden`), so playback continues.
-  const [dockClosed, setDockClosed] = useState(() => loadPref("roamly-dock-closed") === "1");
+  // The mini-player stays completely closed until the user intentionally
+  // starts music or opens it from the Music panel — a first-time visitor sees
+  // no floating player and no streaming iframes load with the page. Once music
+  // exists, closing only hides the dock (playback continues); the choice
+  // persists per device.
+  const [dockClosed, setDockClosed] = useState(() => {
+    const saved = loadPref("roamly-dock-closed");
+    return saved === null ? true : saved === "1";
+  });
   const closeDock = () => { setDockClosed(true); savePref("roamly-dock-closed", "1"); };
   const reopenDock = () => { setDockClosed(false); savePref("roamly-dock-closed", "0"); };
 
@@ -672,6 +685,13 @@ export default function App() {
 
   const onSignIn = () => setShowAuth(true);
   const onSignOut = () => supabase?.auth.signOut();
+  const openTutorial = useCallback(() => {
+    setTourReturnView(view);
+    setShowTutorial(true);
+  }, [view]);
+  // "How Roamly Flow works": the compact site explanation, opened only by its
+  // link (never automatically).
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const changeTheme = (id: string) => {
     setThemeId(id);
     savePref("roamly-theme", id); // guests keep it on this device; no expiry
@@ -897,7 +917,7 @@ export default function App() {
       const method = viewFromPath(window.location.pathname) === view ? "replaceState" : "pushState";
       history[method](null, "", target + window.location.search + window.location.hash);
     }
-    document.title = view === "focus" ? "Roamly Focus. Study timer for PA students" : `Roamly Focus · ${VIEW_LABELS[view]}`;
+    document.title = view === "focus" ? "Focus | Roamly Flow" : `${VIEW_LABELS[view]} | Roamly Flow`;
   }, [view]);
 
   // Browser back/forward drives the view.
@@ -956,13 +976,13 @@ export default function App() {
           a11y={a11y} setA11y={setA11y} onOpenPremium={() => setView("premium")}
           confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
-          onOpenTutorial={() => setShowTutorial(true)}
+          onOpenTutorial={openTutorial}
           themeId={themeId} setThemeId={changeTheme} theme={theme}
           onGoHome={() => setView("focus")}
           onOpenFeedback={() => (session ? setShowFeedback(true) : setShowAuth(true))} />
         {view !== "focus" && (
           <nav aria-label="Breadcrumb" className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <button onClick={() => setView("focus")} className="transition hover:text-foreground">Roamly</button>
+            <button onClick={() => setView("focus")} className="transition hover:text-foreground">Roamly Flow</button>
             <ChevronRight size={12} aria-hidden="true" />
             <span className="font-medium text-foreground" aria-current="page">{VIEW_LABELS[view]}</span>
           </nav>
@@ -987,7 +1007,7 @@ export default function App() {
               companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
               confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
               dockClosed={dockClosed} onReopenDock={reopenDock}
-              motivation={motivation} />
+              motivation={motivation} onOpenHowItWorks={() => setShowHowItWorks(true)} />
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
@@ -1041,9 +1061,14 @@ export default function App() {
       <BottomNav nav={nav} view={view} setView={setView} />
       {/* Above the focus-mode overlay (z-120) and modals; pointer-events none. */}
       <ConfettiBurst burst={confettiBurst} reduceMotion={a11y.reduceMotion} enabled={confettiOn} />
-      <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} onClose={closeDock}
-        hidden={view !== "focus" || immersive || !!pipWindow || dockClosed}
-        stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
+      {/* Not mounted at all until music is intentional — mounting would load a
+          streaming iframe on first page load. Once mounted, hiding is CSS-only
+          so playback survives tab switches. */}
+      {(embed !== null || !dockClosed) && (
+        <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} onClose={closeDock}
+          hidden={view !== "focus" || immersive || !!pipWindow || dockClosed}
+          stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
+      )}
       <FocusMode open={immersive} phase={timer.phase}
         phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
         timeText={fmt(timer.secondsLeft)} progress={timer.progress}
@@ -1133,7 +1158,7 @@ export default function App() {
                 aria-label="Skip"><SkipForward size={16} /></button>
             </>
           }
-          extra={<StreamingPlayer shown={shownEmbed} compact plain stopSignal={embedStopSignal} />} />,
+          extra={embed ? <StreamingPlayer shown={embed} compact plain stopSignal={embedStopSignal} /> : undefined} />,
         pipWindow.document.body
       )}
       {/* The pop-out is a separate document, so the main confetti canvas can't
@@ -1169,7 +1194,11 @@ export default function App() {
           onOpenFriends={() => { setShowAccount(false); setShowFriends(true); }} />
       )}
       {/* Deferred while a password prompt from an email link is up. */}
-      {showTutorial && !needsPassword && <Tutorial setView={setView} onClose={() => setShowTutorial(false)} />}
+      {showTutorial && !needsPassword && <Tutorial setView={setView} returnView={tourReturnView} onClose={() => setShowTutorial(false)} />}
+      {showHowItWorks && (
+        <HowItWorksModal onClose={() => setShowHowItWorks(false)}
+          onStartTour={() => { setShowHowItWorks(false); openTutorial(); }} />
+      )}
       {showFeedback && session && (
         <FeedbackModal userId={session.user.id} page={view} onClose={() => setShowFeedback(false)} />
       )}
@@ -1230,8 +1259,7 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
             WebkitMask: "url(/logo-arc-mask.png) center / contain no-repeat",
           }} />
         </span>
-        <span className="font-display text-xl font-semibold tracking-tight text-gradient sm:text-2xl">Roamly</span>
-        <span className="hidden font-mono text-[11px] uppercase tracking-[0.22em] text-primary sm:inline">Focus</span>
+        <span className="font-display text-xl font-semibold tracking-tight text-gradient sm:text-2xl">Roamly Flow</span>
       </button>
       <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
         <span className="hidden sm:block"><StreakBadge streak={streak} /></span>
@@ -1249,9 +1277,9 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
             <Crown size={15} /> <span className="hidden sm:inline">Premium</span>
           </button>
         ) : (!session || profile) && (
-          <button onClick={onOpenPremium} aria-label="Try Premium"
+          <button onClick={onOpenPremium} aria-label="Premium plans"
             className="grid h-9 w-9 shrink-0 place-items-center rounded-full gradient-primary font-semibold text-white shadow-glow transition active:scale-95 sm:flex sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5 sm:text-xs">
-            <Crown size={15} /> <span className="hidden sm:inline">Try Premium</span>
+            <Crown size={15} /> <span className="hidden sm:inline">Premium</span>
           </button>
         )}
         {!session && (
@@ -1486,7 +1514,7 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
   };
 
   return (
-    <section className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+    <section data-exam-panel className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-semibold">
@@ -1607,12 +1635,12 @@ function NotificationToggle({ alerts }: any) {
   );
 }
 
-// A short explainer of the Pomodoro method at the top of the main page, so
-// newcomers understand what the timer is doing (from user feedback). Dismissible
-// and remembered; collapses to a small reopen link once dismissed.
+// A short explainer of the Pomodoro method beneath the timer, so newcomers
+// understand what it's doing (from user feedback). Collapsed to its link by
+// default — it never opens automatically, keeping the timer dominant.
 function PomodoroExplainer() {
-  const [open, setOpen] = useState(() => loadPref("roamly-pomodoro-explainer-seen") !== "1");
-  const dismiss = () => { savePref("roamly-pomodoro-explainer-seen", "1"); setOpen(false); };
+  const [open, setOpen] = useState(false);
+  const dismiss = () => setOpen(false);
   if (!open) {
     return (
       <button onClick={() => setOpen(true)}
@@ -1637,7 +1665,7 @@ function PomodoroExplainer() {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, runSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, companionsOn, onToggleCompanions, confettiOn, onToggleConfetti, dockClosed, onReopenDock, motivation }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, embedStopSignal, onEmbedPlaying, runSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, companionsOn, onToggleCompanions, confettiOn, onToggleConfetti, dockClosed, onReopenDock, motivation, onOpenHowItWorks }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1656,13 +1684,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 
   return (
     <div className="space-y-8">
-      <PomodoroExplainer />
+      <FocusIntro onOpenHowItWorks={onOpenHowItWorks} />
 
-      {session ? (
-        <ExamSchedulePanel exams={exams} onCreate={addExam} onUpdate={editExam} onDelete={removeExam} />
-      ) : (
-        <SignInPrompt onSignIn={onSignIn} message="Sign in to track countdowns for all of your exams." />
-      )}
+      {session && <ExamStrip exams={exams} />}
 
       <section ref={timerRef} data-tour="timer" className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
         <button onClick={() => setShowMethods(true)}
@@ -1800,15 +1824,14 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         )}
       </section>
 
+      <PomodoroExplainer />
+
       {/* Same breakKey as the focus-mode checklist, so both surfaces suggest
           the same two activities during a given break. */}
       <HealthyBreakActivities active={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
       <AdBreakPrompt active={timer.phase !== "focus" && !isPremium} onAdvertise={onAdvertise} onGoPremium={onGoPremium} />
 
-      <FocusSoundsPanel sounds={sounds} />
-
-      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying}
-        dockClosed={dockClosed} onReopenDock={onReopenDock} />
+      {!session && <GuestSavePrompt onSignIn={onSignIn} />}
 
       {showMethods && (
         <Modal label="Timer method" onClose={() => setShowMethods(false)}
@@ -1908,7 +1931,121 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           </div>
         </div>
       </div>
+
+      {session && <ExamSchedulePanel exams={exams} onCreate={addExam} onUpdate={editExam} onDelete={removeExam} />}
+
+      <FocusSoundsPanel sounds={sounds} />
+
+      <MusicPanel embed={embed} shown={shownEmbed} onPlay={playEmbed} showPlayer stopSignal={embedStopSignal} onPlaying={onEmbedPlaying}
+        dockClosed={dockClosed} onReopenDock={onReopenDock} />
     </div>
+  );
+}
+
+// Short product explanation above the timer — enough for a first-time visitor
+// to know what this is, small enough that the timer stays visible without
+// scrolling on phones. The link opens the full "How Roamly Flow works" modal.
+function FocusIntro({ onOpenHowItWorks }: { onOpenHowItWorks: () => void }) {
+  return (
+    <div>
+      <h1 className="font-display text-xl font-semibold sm:text-2xl">A focus timer built for PA school.</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Plan what to study, stay focused, and track your progress toward upcoming exams.</p>
+      <button onClick={onOpenHowItWorks}
+        className="mt-1.5 text-xs font-medium text-primary underline-offset-2 transition hover:underline">
+        How Roamly Flow works
+      </button>
+    </div>
+  );
+}
+
+// One-line countdown to the nearest upcoming exam, so signed-in users keep an
+// at-a-glance number above the fold while the full exam panel lives below the
+// timer. Tapping it jumps to the panel.
+function ExamStrip({ exams }: { exams: ExamSchedule[] }) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const next = [...exams]
+    .map((exam) => ({ exam, days: Math.ceil((new Date(`${exam.exam_date}T00:00:00`).getTime() - today.getTime()) / 86400000) }))
+    .filter(({ days }) => days >= 0)
+    .sort((a, b) => a.days - b.days)[0];
+  if (!next) return null;
+  return (
+    <button onClick={() => document.querySelector('[data-exam-panel]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
+      className="flex w-full items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2 text-left text-sm transition hover:border-primary/40">
+      <CalendarClock size={15} className="shrink-0 text-primary" />
+      <span className="min-w-0 flex-1 truncate">
+        <span className="font-medium">{next.exam.name}</span>
+        <span className="text-muted-foreground"> · {next.days === 0 ? "today" : `${next.days} day${next.days === 1 ? "" : "s"}`}</span>
+      </span>
+      <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
+    </button>
+  );
+}
+
+// Compact, dismissible account prompt below the timer for guests. The basic
+// timer needs no account — this only pitches saving progress. Dismissal
+// persists on the device; signed-in users never see it.
+function GuestSavePrompt({ onSignIn }: { onSignIn: () => void }) {
+  const [dismissed, setDismissed] = useState(() => loadPref("roamly-guest-prompt-dismissed") === "1");
+  if (dismissed) return null;
+  const dismiss = () => { savePref("roamly-guest-prompt-dismissed", "1"); setDismissed(true); };
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2.5">
+      <span className="min-w-0 flex-1 basis-52 text-sm text-muted-foreground">Save your sessions and track progress toward upcoming exams.</span>
+      <span className="flex shrink-0 items-center gap-1.5">
+        <button onClick={onSignIn} className="rounded-full gradient-primary px-3.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95">
+          Create free account
+        </button>
+        <button onClick={onSignIn} className="rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground">
+          Sign in
+        </button>
+        <button onClick={dismiss} aria-label="Dismiss"
+          className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground">
+          <X size={14} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+// The compact site explanation ("How Roamly Flow works"), opened only from its
+// link or Help — never automatically. Ends in the two paths forward: start
+// focusing (close) or take the guided tour.
+function HowItWorksModal({ onClose, onStartTour }: { onClose: () => void; onStartTour: () => void }) {
+  const points: [string, string][] = [
+    ["Focus", "Pick a timer method and study in focused blocks with built-in breaks."],
+    ["Tasks & exams", "Queue what you'll study by subject and count down to your upcoming exams."],
+    ["Progress", "Every finished session lands in your analytics: streaks, goals, and subject breakdowns."],
+    ["Rooms", "Join live study rooms and focus alongside other PA students in real time."],
+    ["Music", "Built-in soundscapes follow your timer, or connect Spotify and Apple Music."],
+    ["Garden", "Earn XP, collect pets, and grow plants as your study time adds up."],
+  ];
+  return (
+    <Modal label="How Roamly Flow works" onClose={onClose}
+      cardClassName="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-xl">
+      <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <h3 className="font-display text-lg font-semibold">How Roamly Flow works</h3>
+        <button onClick={onClose} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground transition hover:bg-secondary hover:text-foreground">
+          <X size={16} />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        {points.map(([title, body]) => (
+          <div key={title}>
+            <p className="text-sm font-semibold">{title}</p>
+            <p className="text-sm text-muted-foreground">{body}</p>
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">The timer works without an account. A free account adds tasks, exams, rooms, and synced progress.</p>
+      </div>
+      <div className="flex gap-2 border-t border-border px-5 py-4">
+        <button onClick={onClose} className="flex-1 rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
+          Start focusing
+        </button>
+        <button onClick={onStartTour} className="flex-1 rounded-full border border-border bg-card py-2.5 text-sm font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+          Take the quick tour
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -2168,7 +2305,9 @@ function MusicPanel({ embed, shown, onPlay, showPlayer = false, stopSignal, onPl
 
       {/* Hidden (not unmounted) when collapsed, so a playing embed keeps going. */}
       <div id="focus-music-body" className={collapsed ? "h-0 overflow-hidden" : ""} inert={collapsed} aria-hidden={collapsed}>
-        {showPlayer && shown && <StreamingPlayer shown={shown} stopSignal={stopSignal} onPlaying={onPlaying} />}
+        {/* The inline player mounts only after the user actually picks music —
+            never on page load (a mounted embed means a streaming iframe). */}
+        {showPlayer && embed && <StreamingPlayer shown={embed} stopSignal={stopSignal} onPlaying={onPlaying} />}
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
           <button onClick={() => setService("spotify")}
             className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
