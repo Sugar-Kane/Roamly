@@ -40,6 +40,20 @@ const STEPS: { view: View; icon: LucideIcon; title: string; body: string; target
   },
 ];
 
+// Scroll the target into the part of the screen the tour card doesn't cover:
+// on phones the card is a bottom sheet over the lower ~40% of the viewport, so
+// the target's center is aimed at ~30% height; on larger screens the card is
+// centered, so the target aims a bit above center. Very tall targets are
+// anchored by their top portion so at least their start is visible.
+function scrollTargetIntoView(el: Element) {
+  const rect = el.getBoundingClientRect();
+  const viewport = window.innerHeight;
+  const phone = window.innerWidth < 640;
+  const anchor = viewport * (phone ? 0.3 : 0.42);
+  const visibleHeight = Math.min(rect.height, viewport * (phone ? 0.45 : 0.7));
+  window.scrollBy({ top: rect.top + visibleHeight / 2 - anchor, behavior: "smooth" });
+}
+
 export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
@@ -69,8 +83,8 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
     const locate = () => {
       const el = document.querySelector(selector);
       if (el) {
-        el.scrollIntoView({ block: "center", behavior: "smooth" });
-        settle = window.setTimeout(() => setRect(el.getBoundingClientRect()), 260);
+        scrollTargetIntoView(el);
+        settle = window.setTimeout(() => setRect(el.getBoundingClientRect()), 320);
       } else if (tries++ < 30) {
         raf = requestAnimationFrame(locate);
       }
@@ -79,14 +93,28 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
     return () => { cancelAnimationFrame(raf); window.clearTimeout(settle); };
   }, [step, s.view, s.target, setView]);
 
-  // Keep the spotlight aligned while the page scrolls or resizes.
+  // Keep the spotlight aligned while the page scrolls or resizes — including
+  // device rotation and mobile browser toolbar show/hide (visualViewport).
   useEffect(() => {
     if (!s.target) return;
     const selector = s.target;
     const update = () => { const el = document.querySelector(selector); if (el) setRect(el.getBoundingClientRect()); };
+    // Rotation reflows the whole layout; re-scroll so the target stays in the
+    // uncovered part of the screen, then re-measure once things settle.
+    const onOrientation = () => {
+      const el = document.querySelector(selector);
+      if (el) { scrollTargetIntoView(el); window.setTimeout(update, 350); }
+    };
     window.addEventListener("scroll", update, true);
     window.addEventListener("resize", update);
-    return () => { window.removeEventListener("scroll", update, true); window.removeEventListener("resize", update); };
+    window.visualViewport?.addEventListener("resize", update);
+    window.addEventListener("orientationchange", onOrientation);
+    return () => {
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", onOrientation);
+    };
   }, [s.target]);
 
   // Focus the card and close on Escape.
@@ -118,7 +146,7 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
           above it), centered from sm up. */}
       <div className="pointer-events-none fixed inset-x-0 bottom-0 flex justify-center p-5 sm:inset-0 sm:items-center">
         <div ref={cardRef} tabIndex={-1}
-          className="pointer-events-auto mb-[calc(4.25rem+env(safe-area-inset-bottom))] w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl outline-none sm:mb-0">
+          className="pointer-events-auto mb-[calc(4.25rem+env(safe-area-inset-bottom))] max-h-[min(70dvh,calc(100dvh-5rem))] w-full max-w-sm overflow-y-auto overscroll-contain rounded-3xl border border-border bg-card p-5 shadow-xl outline-none sm:mb-0 sm:p-6">
           <div className="flex items-start justify-between gap-3">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl gradient-primary shadow-glow">
               <Icon size={22} className="text-white" />
@@ -130,10 +158,13 @@ export function Tutorial({ setView, onClose }: { setView: (v: View) => void; onC
           <h3 className="mt-4 font-display text-xl font-semibold">{s.title}</h3>
           <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{s.body}</p>
           <div className="mt-5 flex items-center justify-between gap-3">
-            <div className="flex shrink-0 gap-1.5" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
-              {STEPS.map((_, i) => (
-                <span key={i} className={`h-1.5 rounded-full transition-all ${i === step ? "w-5 bg-primary" : "w-1.5 bg-border"}`} />
-              ))}
+            <div className="flex shrink-0 items-center gap-2" aria-label={`Step ${step + 1} of ${STEPS.length}`}>
+              <span className="flex gap-1.5">
+                {STEPS.map((_, i) => (
+                  <span key={i} className={`h-1.5 rounded-full transition-all ${i === step ? "w-5 bg-primary" : "w-1.5 bg-border"}`} />
+                ))}
+              </span>
+              <span aria-hidden className="font-mono text-[10px] text-muted-foreground">{step + 1} of {STEPS.length}</span>
             </div>
             <div className="flex items-center gap-2">
               {step > 0 && (
