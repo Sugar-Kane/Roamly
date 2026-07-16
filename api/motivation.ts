@@ -28,6 +28,13 @@ const MAX_FIELD_CHARS = 120;
 const MAX_TOPICS = 6;
 const MAX_MESSAGE_CHARS = 280;
 
+// DB-enforced spend backstop (see reserve_motivation). Generous for real use —
+// 40 focus sessions in a day is already heavy — but a hard per-user ceiling so
+// the endpoint isn't relying solely on the fail-open Upstash limiter. The
+// app-wide daily cap bounds total Anthropic spend regardless of account count.
+const MOTIVATION_DAILY_CAP = 40;
+const GLOBAL_MOTIVATION_DAILY_CAP = 5000;
+
 const cleanField = (v: unknown): string | null => {
   if (typeof v !== "string") return null;
   const t = v.replace(/\s+/g, " ").trim();
@@ -115,6 +122,32 @@ export async function POST(request: Request): Promise<Response> {
   const context = lines.length > 0
     ? `<user_context>\n${lines.join("\n")}\n</user_context>`
     : "No specific context is available. Write a high-quality general message about giving one focused session real attention.";
+
+  // Hard DB backstop underneath the (fail-open) burst limiter: a per-user daily
+  // cap and an app-wide daily circuit breaker on Anthropic spend. Reserved
+  // right before the model call (so malformed requests don't consume a slot).
+  // If the migration isn't applied yet the RPC is missing — fall through rather
+  // than break motivation (the limiter and the Anthropic console spend limit
+  // still stand); any other error is treated as a reservation failure and
+  // blocked, so a broken counter can't silently leak spend.
+  {
+    const { data: outcome, error: reserveError } = await admin.rpc("reserve_motivation", {
+      p_user: userData.user.id,
+      p_daily_cap: MOTIVATION_DAILY_CAP,
+      p_global_cap: GLOBAL_MOTIVATION_DAILY_CAP,
+    });
+    if (reserveError) {
+      const missing = reserveError.message.includes("does not exist") || reserveError.message.includes("find the function");
+      if (!missing) {
+        apiLog("motivation", "reserve_failed", { user: userData.user.id, message: reserveError.message });
+        return jsonResponse({ error: "generation_failed" }, 503);
+      }
+    } else if (outcome === "daily_exceeded") {
+      return jsonResponse({ error: "daily_limit" }, 429);
+    } else if (outcome === "at_capacity") {
+      return jsonResponse({ error: "at_capacity" }, 503);
+    }
+  }
 
   try {
     const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 20_000, maxRetries: 1 });

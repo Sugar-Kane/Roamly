@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Timer, ListChecks, Smartphone, Users, BarChart3, type LucideIcon } from "lucide-react";
-import type { View } from "./App";
+import type { View } from "./appTypes";
 import { track } from "./track";
 import { savePref } from "./storage";
 

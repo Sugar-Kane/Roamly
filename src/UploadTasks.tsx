@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Sparkles, X, Check } from "lucide-react";
-import { uploadStudyMaterial, getAccessToken } from "./db";
+import { uploadStudyMaterial, getAccessToken, type Profile } from "./db";
 import { InfoTip } from "./FocusMode";
+import type { Task } from "./data";
+import type { Session } from "@supabase/supabase-js";
 
 export const FREE_MONTHLY_UPLOAD_QUOTA = 3;
 // Mirrors PREMIUM_MONTHLY_QUOTA in api/generate-tasks.ts.
@@ -50,7 +52,13 @@ export function currentUploadPeriod() {
 
 type Stage = "idle" | "uploading" | "reading" | "done";
 
-export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBuyCredits }: any) {
+export function UploadTasksPanel({ profile, session, onImported, onUpgrade, onBuyCredits }: {
+  profile: Profile | null;
+  session: Session | null;
+  onImported: (tasks: Task[]) => void;
+  onUpgrade: () => void;
+  onBuyCredits?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [stage, setStage] = useState<Stage>("idle");
   const [progress, setProgress] = useState(0);

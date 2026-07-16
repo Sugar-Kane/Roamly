@@ -22,8 +22,18 @@ export async function GET(): Promise<Response> {
     if (!present) ok = false;
   }
 
+  // Optional infra: the Upstash rate limiter fails OPEN, so its absence must
+  // NOT flip overall status to degraded — but a deploy running with all burst
+  // guards disabled should be visible to monitoring, so report presence (both
+  // vars are needed for the limiter to engage) and a rate_limiting boolean.
+  const optional: Record<string, boolean> = {
+    UPSTASH_REDIS_REST_URL: Boolean(process.env.UPSTASH_REDIS_REST_URL),
+    UPSTASH_REDIS_REST_TOKEN: Boolean(process.env.UPSTASH_REDIS_REST_TOKEN),
+  };
+  const rateLimiting = optional.UPSTASH_REDIS_REST_URL && optional.UPSTASH_REDIS_REST_TOKEN;
+
   return new Response(
-    JSON.stringify({ status: ok ? "ok" : "degraded", time: new Date().toISOString(), env }),
+    JSON.stringify({ status: ok ? "ok" : "degraded", time: new Date().toISOString(), env, optional, rateLimiting }),
     { status: ok ? 200 : 503, headers: { "content-type": "application/json", "cache-control": "no-store" } }
   );
 }
