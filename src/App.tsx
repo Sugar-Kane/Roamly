@@ -795,6 +795,15 @@ export default function App() {
     if (session?.user.id) updateTask(id, { title: nextTitle });
   }, [session?.user.id]);
 
+  // Move a task into another subject (from the task's subject badge). The
+  // task list re-groups instantly because grouping derives from the tag.
+  const setTaskTag = useCallback((id: string, tag: string) => {
+    const nextTag = tag.trim().slice(0, 24);
+    if (!nextTag) return;
+    setTasks((prev) => prev.map((task) => task.id === id ? { ...task, tag: nextTag } : task));
+    if (session?.user.id) updateTask(id, { tag: nextTag });
+  }, [session?.user.id]);
+
   // How many focus sessions a task is planned to take (1 = done in a single
   // Pomodoro). Reaching the estimate auto-completes the task.
   const setTaskEst = useCallback((id: string, est: number) => {
@@ -954,7 +963,7 @@ export default function App() {
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
-              addTask={addTask} editTask={editTask} setTaskEst={setTaskEst} toggleTask={toggleTask} removeTask={removeTask}
+              addTask={addTask} editTask={editTask} setTaskTag={setTaskTag} setTaskEst={setTaskEst} toggleTask={toggleTask} removeTask={removeTask}
               reorderTask={reorderTask} onFocusTask={focusTask}
               session={session} onSignIn={onSignIn} tasksLoaded={tasksLoaded}
               guestLimit={GUEST_TASK_LIMIT}
@@ -2277,21 +2286,31 @@ function ConfirmModal({ title, body, confirmLabel, onConfirm, onClose }: {
   );
 }
 
-// Themed replacements for the old window.prompt() dialogs — same look as
-// every other Roamly modal instead of a bare browser popup.
-function TaskTitleModal({ task, onSave, onClose }: any) {
-  const [draft, setDraft] = useState(task.title);
-  const commit = () => { const v = draft.trim(); if (v) onSave(v); onClose(); };
+// Themed picker opened from a task's subject badge: choose another existing
+// subject to move the task into. New subjects are still created through the
+// add-task row's "＋ New subject…" flow.
+function TaskCategoryModal({ task, tags, onPick, onClose }: {
+  task: Task; tags: string[]; onPick: (tag: string) => void; onClose: () => void;
+}) {
   return (
-    <Modal label="Edit task" onClose={onClose} cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
-      <h3 className="font-display text-lg font-semibold">Edit task</h3>
-      <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") commit(); }} aria-label="Task title"
-        className="mt-3 w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
-      <div className="mt-4 flex gap-2">
-        <button onClick={onClose} className="flex-1 rounded-full border border-border bg-card py-2 text-sm text-muted-foreground transition hover:border-primary/40">Cancel</button>
-        <button onClick={commit} className="flex-1 rounded-full gradient-primary py-2 text-sm font-semibold text-white shadow-glow transition active:scale-95">Save</button>
+    <Modal label="Change subject" onClose={onClose} cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-6 shadow-xl">
+      <h3 className="font-display text-lg font-semibold">Move to subject</h3>
+      <p className="mt-1 truncate text-xs text-muted-foreground">“{task.title}”</p>
+      <div className="mt-3 max-h-[50dvh] space-y-1.5 overflow-y-auto overscroll-contain">
+        {tags.map((tag) => {
+          const current = tag === task.tag;
+          const c = tagColor(tag);
+          return (
+            <button key={tag} onClick={() => { if (!current) onPick(tag); onClose(); }} aria-pressed={current}
+              className={`flex min-h-[2.75rem] w-full items-center gap-2.5 rounded-xl border px-3 py-2 text-left text-sm transition ${current ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 hover:border-primary/40"}`}>
+              <span aria-hidden className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c }} />
+              <span className="min-w-0 flex-1 break-words">{tag}</span>
+              {current && <Check size={15} className="shrink-0 text-primary" />}
+            </button>
+          );
+        })}
       </div>
+      <p className="mt-3 text-[11px] text-muted-foreground">Need a new subject? Create it with “＋ New subject…” when adding a task.</p>
     </Modal>
   );
 }
@@ -2312,13 +2331,27 @@ function TaskEstModal({ task, onPick, onClose }: any) {
   );
 }
 
-function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit, autoCompleteEstimates, onToggleAutoComplete, plannedSessions, onCreatePlan, onUpdatePlan, onDeletePlan }: any) {
+function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEst, toggleTask, removeTask, reorderTask, onFocusTask, session, onSignIn, tasksLoaded, profile, addImportedTasks, onSubscribe, onBuyCredits, guestLimit, autoCompleteEstimates, onToggleAutoComplete, plannedSessions, onCreatePlan, onUpdatePlan, onDeletePlan }: any) {
   const [draft, setDraft] = useState("");
   const [tag, setTag] = useState("");
   const [customTag, setCustomTag] = useState<string | null>(null); // non-null while typing a new subject
   const [showDone, setShowDone] = useState(false);
-  const [editTarget, setEditTarget] = useState<Task | null>(null); // themed title editor
   const [estTarget, setEstTarget] = useState<Task | null>(null);   // themed sessions picker
+  const [tagPickTarget, setTagPickTarget] = useState<Task | null>(null); // themed subject picker
+
+  // --- Inline title editing (click the task name; Enter saves, Esc cancels) ---
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const startEdit = (t: Task) => { setEditingId(t.id); setEditDraft(t.title); };
+  const cancelEdit = () => setEditingId(null);
+  const commitEdit = () => {
+    if (!editingId) return;
+    const next = editDraft.trim();
+    const current = tasks.find((t: Task) => t.id === editingId);
+    // An empty title is never saved — the original is restored instead.
+    if (next && current && next !== current.title) editTask(editingId, next);
+    setEditingId(null);
+  };
 
   // --- Drag reordering (grip handle, or press-and-hold anywhere on the row) ---
   // Grab the ⋮⋮ handle (instant with a mouse, ~0.1s on touch) or hold the row
@@ -2441,18 +2474,114 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
   const open = sorted.filter((t: Task) => !t.done);
   const doneTasks = sorted.filter((t: Task) => t.done);
   const groupNames: string[] = [...new Set<string>(open.map((t: Task) => t.tag))];
-  // Subject groups themselves can be reordered (▲▼ on each header); the order
-  // persists on this device. Unlisted subjects keep their natural position.
+  // Subject groups themselves can be reordered — drag the header's ⋮⋮ handle
+  // (arrow keys work on it too) — and the order persists on this device.
+  // Unlisted subjects keep their natural position.
   const [tagOrder, setTagOrder] = useState<string[]>(() => { try { return JSON.parse(loadPref("roamly-tag-order") ?? "[]") as string[]; } catch { return []; } });
   const groupRank = (g: string) => { const i = tagOrder.indexOf(g); return i === -1 ? 1000 + groupNames.indexOf(g) : i; };
   const orderedGroupNames = [...groupNames].sort((a, b) => groupRank(a) - groupRank(b));
+  const applyGroupOrder = (next: string[]) => {
+    setTagOrder(next);
+    savePref("roamly-tag-order", JSON.stringify(next));
+  };
   const moveGroup = (g: string, dir: -1 | 1) => {
     const cur = orderedGroupNames.slice();
     const i = cur.indexOf(g); const j = i + dir;
     if (i < 0 || j < 0 || j >= cur.length) return;
     [cur[i], cur[j]] = [cur[j], cur[i]];
-    setTagOrder(cur);
-    savePref("roamly-tag-order", JSON.stringify(cur));
+    applyGroupOrder(cur);
+  };
+
+  // Collapsed subject sections (click a header to toggle); persists per device.
+  const [collapsedTags, setCollapsedTags] = useState<string[]>(() => { try { return JSON.parse(loadPref("roamly-collapsed-tags") ?? "[]") as string[]; } catch { return []; } });
+  const toggleCollapsed = (g: string) => setCollapsedTags((prev) => {
+    const next = prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g];
+    savePref("roamly-collapsed-tags", JSON.stringify(next));
+    return next;
+  });
+
+  // --- Drag reordering for whole subject sections (via the header handle) ---
+  // Same pointer mechanics as task rows: lift, translate with the pointer,
+  // find the nearest section midpoint, drop to commit. Dragging never toggles
+  // collapse because the handle is a separate control from the header button.
+  const groupRefs = useRef(new Map<string, HTMLElement>());
+  const [groupDrag, setGroupDrag] = useState<{ g: string; from: number; over: number; dy: number; height: number } | null>(null);
+  const groupDragRef = useRef<typeof groupDrag>(null);
+  useEffect(() => { groupDragRef.current = groupDrag; }, [groupDrag]);
+  const groupPress = useRef<{ g: string; index: number; y: number; el: HTMLElement; pointerId: number; timer: number } | null>(null);
+  const groupRects = useRef<{ g: string; mid: number }[]>([]);
+
+  const onGroupHandleDown = (e: React.PointerEvent<HTMLButtonElement>, g: string, index: number) => {
+    if (groupPress.current) return;
+    const el = e.currentTarget;
+    const pointerId = e.pointerId;
+    const holdMs = e.pointerType === "mouse" ? 0 : 120;
+    const timer = window.setTimeout(() => {
+      const p = groupPress.current;
+      if (!p) return;
+      groupRects.current = orderedGroupNames.map((name) => {
+        const r = groupRefs.current.get(name)?.getBoundingClientRect();
+        return { g: name, mid: r ? r.top + r.height / 2 : 0 };
+      });
+      try { p.el.setPointerCapture(p.pointerId); } catch { /* pointer already gone */ }
+      (navigator as any).vibrate?.(10);
+      const height = groupRefs.current.get(g)?.getBoundingClientRect().height ?? 0;
+      setGroupDrag({ g, from: p.index, over: p.index, dy: 0, height });
+    }, holdMs);
+    groupPress.current = { g, index, y: e.clientY, el, pointerId, timer };
+  };
+
+  const onGroupHandleMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const p = groupPress.current;
+    const d = groupDragRef.current;
+    if (!p || !d) return;
+    const dy = e.clientY - p.y;
+    const center = groupRects.current[d.from]?.mid + dy;
+    let over = d.from, best = Infinity;
+    groupRects.current.forEach((r, i) => {
+      const dist = Math.abs(center - r.mid);
+      if (dist < best) { best = dist; over = i; }
+    });
+    setGroupDrag({ ...d, dy, over });
+  };
+
+  const onGroupHandleUp = () => {
+    const p = groupPress.current;
+    const d = groupDragRef.current;
+    if (p) clearTimeout(p.timer);
+    groupPress.current = null;
+    if (d) {
+      if (d.over !== d.from) {
+        const next = orderedGroupNames.slice();
+        next.splice(d.from, 1);
+        next.splice(d.over, 0, d.g);
+        applyGroupOrder(next);
+      }
+      setGroupDrag(null);
+    }
+  };
+
+  // While a section drag is live, stop the page from scrolling under the finger.
+  useEffect(() => {
+    if (!groupDrag) return;
+    const stop = (e: TouchEvent) => e.preventDefault();
+    document.addEventListener("touchmove", stop, { passive: false });
+    document.body.style.userSelect = "none";
+    return () => {
+      document.removeEventListener("touchmove", stop);
+      document.body.style.userSelect = "";
+    };
+  }, [groupDrag !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const groupDragStyle = (g: string, index: number): React.CSSProperties | undefined => {
+    if (!groupDrag) return undefined;
+    if (g === groupDrag.g) {
+      return { transform: `translateY(${groupDrag.dy}px)`, zIndex: 30, position: "relative", boxShadow: "0 12px 32px rgba(0,0,0,0.18)", transition: "none" };
+    }
+    const shift = groupDrag.height + 24; // 24px = mt-6 between sections
+    if (index > groupDrag.from && index <= groupDrag.over) return { transform: `translateY(${-shift}px)`, transition: "transform 0.15s ease" };
+    if (index < groupDrag.from && index >= groupDrag.over) return { transform: `translateY(${shift}px)`, transition: "transform 0.15s ease" };
+    return { transition: "transform 0.15s ease" };
   };
 
   return (
@@ -2460,7 +2589,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Each task is sized in focus sessions. When it reaches that estimate, Roamly asks before completing it unless automatic completion is enabled below. Drag ⋮⋮ to reorder within a subject; ▲▼ moves whole subjects." />
+        <InfoTip text="Click a task's name to edit it (Enter saves, Esc cancels). The n/n counter shows focus sessions done vs. planned — tap it to change the plan. Press ▶ to start focusing on a task. Tap a subject header to collapse it, drag ⋮⋮ to reorder tasks or whole subjects, and tap a task's subject badge to move it to another subject." />
       </p>
       <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-border bg-card/70 px-3 py-2.5">
         <span className="min-w-0"><span className="block text-sm font-medium">Complete tasks automatically</span><span className="block text-[11px] text-muted-foreground">When on, a task is checked off as soon as it reaches its planned focus-session count.</span></span>
@@ -2546,19 +2675,36 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
         const groupTasks = open.filter((t: Task) => t.tag === g);
         const groupIds = groupTasks.map((t: Task) => t.id);
         const c = tagColor(g);
+        const collapsed = collapsedTags.includes(g);
+        const beingGroupDragged = groupDrag?.g === g;
         return (
-          <section key={g} className="mt-6">
-            <div className="flex items-center justify-between">
-              <h2 className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                <span className="h-2 w-2 rounded-full" style={{ background: c }} /> {g} · {groupTasks.length}
-              </h2>
-              <span className="flex items-center gap-0.5">
-                <button onClick={() => moveGroup(g, -1)} disabled={gi === 0} aria-label={`Move ${g} up`}
-                  className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition hover:bg-primary/10 hover:text-primary disabled:opacity-30"><ChevronUp size={13} /></button>
-                <button onClick={() => moveGroup(g, 1)} disabled={gi === orderedGroupNames.length - 1} aria-label={`Move ${g} down`}
-                  className="grid h-6 w-6 place-items-center rounded-md text-muted-foreground transition hover:bg-primary/10 hover:text-primary disabled:opacity-30"><ChevronDown size={13} /></button>
-              </span>
+          <section key={g} className={`mt-6 ${beingGroupDragged ? "rounded-2xl bg-card/95 p-2 ring-2 ring-primary/50" : ""}`}
+            ref={(el) => { if (el) groupRefs.current.set(g, el); else groupRefs.current.delete(g); }}
+            style={groupDragStyle(g, gi)}>
+            <div className="flex items-center gap-1">
+              <button data-group-handle onPointerDown={(e) => onGroupHandleDown(e, g, gi)} onPointerMove={onGroupHandleMove}
+                onPointerUp={onGroupHandleUp} onPointerCancel={onGroupHandleUp}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp") { e.preventDefault(); moveGroup(g, -1); }
+                  if (e.key === "ArrowDown") { e.preventDefault(); moveGroup(g, 1); }
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+                aria-label={`Reorder subject ${g}. Drag, or press the up and down arrow keys.`}
+                className="grid h-8 w-6 shrink-0 cursor-grab place-items-center rounded-md text-muted-foreground/60 transition hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 active:cursor-grabbing"
+                style={{ touchAction: "none", WebkitTouchCallout: "none" }}>
+                <GripVertical size={14} />
+              </button>
+              <button onClick={() => toggleCollapsed(g)} aria-expanded={!collapsed}
+                aria-label={`${collapsed ? "Expand" : "Collapse"} subject ${g} (${groupTasks.length} task${groupTasks.length === 1 ? "" : "s"})`}
+                className="flex min-h-[2.5rem] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl px-1.5 py-1 text-left transition hover:bg-primary/5">
+                <span className="flex min-w-0 items-center gap-2 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: c }} />
+                  <span className="min-w-0 truncate">{g}</span> · {groupTasks.length}
+                </span>
+                <ChevronDown size={14} className={`shrink-0 text-muted-foreground transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+              </button>
             </div>
+            {!collapsed && (
             <div className="mt-2 space-y-2">
               {groupTasks.map((t: Task, i: number) => {
                 const active = activeTask === t.id;
@@ -2585,16 +2731,32 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
                       </button>
                       <button data-nodrag onClick={() => toggleTask(t.id)} aria-label={`Mark ${t.title} done`}
                         className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-muted-foreground/40 transition hover:border-primary" />
-                      <button onClick={() => { if (!justDragged.current) setActiveTask(t.id); }} className="min-w-0 flex-1 basis-52 text-left">
-                        <span className="block min-w-0 break-words text-sm leading-snug">{t.title}</span>
-                        <span className="mt-1 flex items-center gap-2">
-                          <TagPill tag={t.tag} />
+                      {editingId === t.id ? (
+                        <span data-nodrag className="min-w-0 flex-1 basis-52">
+                          <input autoFocus value={editDraft} onChange={(e) => setEditDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") cancelEdit(); }}
+                            onBlur={commitEdit} aria-label={`Edit task title, currently ${t.title}`}
+                            className="w-full rounded-lg border border-primary bg-card px-2 py-1 text-sm outline-none ring-2 ring-primary/20" />
+                          <span className="mt-1 block text-[10px] text-muted-foreground">Enter saves · Esc cancels · empty titles aren't saved</span>
+                        </span>
+                      ) : (
+                        <button onClick={() => { if (!justDragged.current) startEdit(t); }} className="min-w-0 flex-1 basis-52 rounded-lg text-left transition hover:bg-primary/5"
+                          aria-label={`Edit task ${t.title}`} title="Click to edit">
+                          <span className="block min-w-0 break-words text-sm leading-snug">{t.title}</span>
                           {active && (
-                            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-                              <Timer size={10} /> Focusing
+                            <span className="mt-1 flex items-center gap-2">
+                              <span className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                                <Timer size={10} /> Focusing
+                              </span>
                             </span>
                           )}
-                        </span>
+                        </button>
+                      )}
+                      <button data-nodrag onClick={() => setTagPickTarget(t)} aria-label={`Change subject for ${t.title}, currently ${t.tag}`}
+                        title="Click to move this task to another subject"
+                        className="mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold transition hover:ring-2 hover:ring-primary/30"
+                        style={{ background: `${tagColor(t.tag)}1f`, color: tagColor(t.tag) }}>
+                        {t.tag}
                       </button>
                       <div data-nodrag className="ml-auto flex shrink-0 items-center gap-0.5">
                         {!active && (
@@ -2603,10 +2765,6 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
                             <Play size={13} />
                           </button>
                         )}
-                        <button onClick={() => setEditTarget(t)} aria-label={`Edit ${t.title}`}
-                          className="grid h-7 w-7 place-items-center rounded-lg text-muted-foreground transition hover:bg-primary/10 hover:text-primary">
-                          <Pencil size={13} />
-                        </button>
                         <button data-nodrag onClick={() => setEstTarget(t)} title="Focus sessions done / planned. Click to change"
                           className="rounded-md px-1.5 py-0.5 text-center font-mono text-xs text-muted-foreground transition hover:bg-primary/10 hover:text-primary"
                           aria-label={`${t.poms} of ${t.est} focus sessions done for ${t.title}. Change estimate`}>
@@ -2622,6 +2780,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
                 );
               })}
             </div>
+            )}
           </section>
         );
       })}
@@ -2654,7 +2813,7 @@ function TasksView({ tasks, activeTask, setActiveTask, addTask, editTask, setTas
         </section>
       )}
 
-      {editTarget && <TaskTitleModal task={editTarget} onSave={(title: string) => editTask(editTarget.id, title)} onClose={() => setEditTarget(null)} />}
+      {tagPickTarget && <TaskCategoryModal task={tagPickTarget} tags={tags} onPick={(next: string) => setTaskTag(tagPickTarget.id, next)} onClose={() => setTagPickTarget(null)} />}
       {estTarget && <TaskEstModal task={estTarget} onPick={(n: number) => setTaskEst(estTarget.id, n)} onClose={() => setEstTarget(null)} />}
     </div>
   );
