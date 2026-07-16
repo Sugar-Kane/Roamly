@@ -2742,7 +2742,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
                         </span>
                       ) : (
                         <button onClick={() => { if (!justDragged.current) startEdit(t); }} className="min-w-0 flex-1 basis-52 rounded-lg text-left transition hover:bg-primary/5"
-                          aria-label={`Edit task ${t.title}`} title="Click to edit">
+                          aria-label={`${t.title} — edit task title`} title="Click to edit">
                           <span className="block min-w-0 break-words text-sm leading-snug">{t.title}</span>
                           {active && (
                             <span className="mt-1 flex items-center gap-2">
