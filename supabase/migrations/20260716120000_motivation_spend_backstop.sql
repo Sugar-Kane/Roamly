@@ -18,6 +18,15 @@ create table if not exists public.motivation_usage (
 -- policies, so the anon/authenticated keys can neither read nor write it.
 alter table public.motivation_usage enable row level security;
 
+-- One shared row per UTC day serializes the global reservation. Without this,
+-- concurrent requests for different users can all observe an incomplete SUM
+-- and overshoot the spending ceiling.
+create table if not exists public.motivation_global_usage (
+  day date primary key,
+  count int not null default 0 check (count >= 0)
+);
+alter table public.motivation_global_usage enable row level security;
+
 -- Reserve one motivation message for p_user today. Atomic: the upsert's row
 -- lock serializes concurrent requests for the same user so the per-user cap
 -- holds under parallelism. Returns 'ok' | 'daily_exceeded' | 'at_capacity'.
@@ -30,9 +39,22 @@ as $$
 declare
   v_day date := (now() at time zone 'utc')::date;
   v_count int;
-  v_global bigint;
 begin
-  -- Check + increment in one statement. On first use today the INSERT wins;
+  -- Reserve the shared daily capacity first. The conflicting-row update takes
+  -- a row lock, serializing callers across all users. No returned row means the
+  -- global cap was already reached.
+  insert into public.motivation_global_usage (day, count)
+    values (v_day, 1)
+  on conflict (day) do update
+    set count = public.motivation_global_usage.count + 1
+    where public.motivation_global_usage.count < p_global_cap
+  returning count into v_count;
+
+  if v_count is null then
+    return 'at_capacity';
+  end if;
+
+  -- Check + increment the user's row. On first use today the INSERT wins;
   -- afterwards the conflicting row is updated only while under the cap, so an
   -- over-cap request affects 0 rows and RETURNING yields nothing.
   insert into public.motivation_usage (user_id, day, count)
@@ -43,19 +65,10 @@ begin
   returning count into v_count;
 
   if v_count is null then
-    return 'daily_exceeded';
-  end if;
-
-  -- App-wide daily ceiling (circuit breaker for the Anthropic bill). Checked
-  -- after our own increment, so racers can only overshoot by in-flight requests.
-  select coalesce(sum(count), 0) into v_global
-    from public.motivation_usage
-   where day = v_day;
-  if v_global > p_global_cap then
-    update public.motivation_usage
+    update public.motivation_global_usage
        set count = greatest(count - 1, 0)
-     where user_id = p_user and day = v_day;
-    return 'at_capacity';
+     where day = v_day;
+    return 'daily_exceeded';
   end if;
 
   return 'ok';
