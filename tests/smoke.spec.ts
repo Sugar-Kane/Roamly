@@ -23,6 +23,16 @@ async function goTab(page: Page, tab: string) {
   await page.getByTestId("more-sheet").getByRole("button", { name: tab }).click();
 }
 
+test("admin dashboard is gated: signed-out visitors get no access and no data", async ({ page }) => {
+  await page.goto("/admin");
+  await expect(page.getByRole("heading", { name: "Admin", exact: true })).toBeVisible();
+  await expect(page.getByText("You don't have admin access.")).toBeVisible();
+  // The BI dashboard chrome and its sections never render for a non-admin.
+  await expect(page.getByText("Admin dashboard")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Overview" })).toHaveCount(0);
+  await expect(page.getByText("Key metrics")).toHaveCount(0);
+});
+
 test("homepage loads with the timer", async ({ page }) => {
   await goHome(page);
   await expect(page).toHaveTitle(/Roamly/);

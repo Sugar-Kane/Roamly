@@ -342,6 +342,76 @@ export async function adminEventStatsToday(): Promise<AdminEventStat[]> {
   return (data ?? []) as AdminEventStat[];
 }
 
+// ---- Admin BI dashboard (Phase 1) ----
+// Read-only, UTC-bucketed aggregates from admin_dashboard_aggregates.sql. Every
+// RPC is SECURITY DEFINER + is_admin()-gated, so a non-admin gets nothing. All
+// return safe fallbacks when the migration isn't deployed yet.
+export type AdminPlanScope = "all" | "free" | "premium";
+export type AdminDeviceScope = "all" | "phone" | "tablet" | "pc";
+
+export type AdminKpiSummary = {
+  total_users: number; premium_users: number; trial_users: number;
+  new_users: number; active_users: number; returning_users: number;
+  dau: number; wau: number; mau: number;
+  focus_minutes: number; focus_sessions_started: number; focus_blocks_done: number;
+  tasks_created: number; tasks_completed: number;
+  rooms_created: number; room_joins: number; note_uploads: number;
+  credit_purchases: number; feedback_count: number; error_count: number;
+};
+export type AdminActivityDay = {
+  day: string; dau: number; new_users: number; returning_users: number;
+  focus_minutes: number; sessions_started: number; sessions_completed: number;
+  phone_events: number; tablet_events: number; pc_events: number;
+};
+export type AdminFunnel = {
+  signed_up: number; focused: number; created_task: number;
+  started_trial: number; converted_paid: number;
+};
+
+// A number the RPCs return as bigint text/number — coerce defensively.
+function num(v: unknown): number { const n = Number(v); return Number.isFinite(n) ? n : 0; }
+
+export async function adminKpiSummary(
+  startISO: string, endISO: string, plan: AdminPlanScope = "all", device: AdminDeviceScope = "all",
+): Promise<AdminKpiSummary | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_kpi_summary", {
+    p_start: startISO, p_end: endISO, p_plan: plan, p_device: device,
+  });
+  if (error) { console.warn("[Roamly] adminKpiSummary failed", error.message); return null; }
+  const row = (data ?? [])[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return Object.fromEntries(Object.entries(row).map(([k, v]) => [k, num(v)])) as unknown as AdminKpiSummary;
+}
+
+export async function adminActiveSeries(
+  startISO: string, endISO: string, plan: AdminPlanScope = "all", device: AdminDeviceScope = "all",
+): Promise<AdminActivityDay[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_active_series", {
+    p_start: startISO, p_end: endISO, p_plan: plan, p_device: device,
+  });
+  if (error) { console.warn("[Roamly] adminActiveSeries failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    day: String(r.day),
+    dau: num(r.dau), new_users: num(r.new_users), returning_users: num(r.returning_users),
+    focus_minutes: num(r.focus_minutes), sessions_started: num(r.sessions_started), sessions_completed: num(r.sessions_completed),
+    phone_events: num(r.phone_events), tablet_events: num(r.tablet_events), pc_events: num(r.pc_events),
+  }));
+}
+
+export async function adminConversionFunnel(startISO: string, endISO: string): Promise<AdminFunnel | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_conversion_funnel", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] adminConversionFunnel failed", error.message); return null; }
+  const row = (data ?? [])[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  return {
+    signed_up: num(row.signed_up), focused: num(row.focused), created_task: num(row.created_task),
+    started_trial: num(row.started_trial), converted_paid: num(row.converted_paid),
+  };
+}
+
 // Permanent account deletion (admin only). Server cancels Stripe billing first
 // and audits the action; the auth delete cascades through every app table.
 export async function adminDeleteUser(userId: string): Promise<{ ok?: boolean; billingCanceled?: boolean; stripeWarning?: string; error?: string }> {
