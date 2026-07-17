@@ -26,11 +26,11 @@ export class ErrorBoundary extends Component<Props, State> {
         <div className="max-w-sm">
           <h1 className="font-display text-2xl font-semibold">Something went wrong</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Roamly hit an unexpected error. Reloading usually fixes it, and your saved data is safe.
+            Roamly Flow hit an unexpected error. Reloading usually fixes it, and your saved data is safe.
           </p>
           <button onClick={() => window.location.reload()}
             className="mt-5 rounded-full gradient-primary px-6 py-2.5 font-semibold text-white shadow-glow transition active:scale-95">
-            Reload Roamly
+            Reload Roamly Flow
           </button>
         </div>
       </div>

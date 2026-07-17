@@ -973,6 +973,12 @@ export default function App() {
 
   return (
     <div className="min-h-dvh w-full text-foreground font-sans" style={{ background: `linear-gradient(160deg, ${theme.grad[0]} 0%, ${theme.grad[1]} 90%)` }}>
+      {/* Keyboard users land here first: a link that jumps past the header and
+          nav straight to the active tab's content. Off-screen until focused. */}
+      <a href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[200] focus:rounded-full focus:bg-card focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary">
+        Skip to content
+      </a>
       <OfflineBanner />
       {checkoutNotice && (
         <div role="status" className="fixed inset-x-0 top-3 z-[60] flex justify-center px-4">
@@ -1003,7 +1009,7 @@ export default function App() {
             <span className="font-medium text-foreground" aria-current="page">{VIEW_LABELS[view]}</span>
           </nav>
         )}
-        <main className="mt-8 flex-1">
+        <main id="main-content" tabIndex={-1} className="mt-8 flex-1 outline-none">
           {view === "focus" && (
             <FocusView method={method} methodId={methodId} setMethodId={setMethodId} timer={timer} theme={theme}
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask}
@@ -1554,7 +1560,7 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
         <div>
           <h2 className="flex items-center gap-2 text-sm font-semibold">
             <CalendarClock size={16} className="text-primary" /> Exam schedule
-            <InfoTip text="Track as many board exams, rotation exams, finals, or custom tests as you need. Roamly orders them by date and keeps a live countdown for each one." />
+            <InfoTip text="Track as many board exams, rotation exams, finals, or custom tests as you need. Roamly Flow orders them by date and keeps a live countdown for each one." />
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">Keep every upcoming test and countdown together.</p>
         </div>
@@ -1570,7 +1576,7 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
           cardClassName="w-full max-w-xl rounded-3xl border border-border bg-card p-6 shadow-xl">
           <div className="grid h-11 w-11 place-items-center rounded-2xl gradient-primary text-white shadow-glow"><CalendarClock size={20} /></div>
           <h3 className="mt-4 font-display text-xl font-semibold">{editingId === "new" ? "Add an exam" : "Edit exam"}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">Choose the exam and date Roamly should track.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Choose the exam and date Roamly Flow should track.</p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="flex min-w-0 gap-2">
               <ThemedSelect value={examPick} onChange={setExamPick} ariaLabel="Which exam" className="flex-1"
@@ -3382,7 +3388,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
 
       {isPremium && (
         <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
-          <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active. Thanks for supporting Roamly.</p>
+          <p className="flex items-center gap-2 text-sm font-medium"><Crown size={15} className="text-primary" /> Premium is active. Thanks for supporting Roamly Flow.</p>
           {session && (
             <p className="mt-2 rounded-xl bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
               AI uploads: <span className="font-medium text-foreground">{monthlyRemaining} of {monthlyQuota}</span> left this month

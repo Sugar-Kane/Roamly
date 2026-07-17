@@ -254,7 +254,7 @@ export function SetPasswordModal({ onDone }: { onDone: () => void }) {
   return (
     <Modal label="Set a password" onClose={() => {}} backdropClose={false}
       cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
-      <h3 className="font-display text-xl font-semibold">Welcome to Roamly!</h3>
+      <h3 className="font-display text-xl font-semibold">Welcome to Roamly Flow!</h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
         You're signed in. Set a password so you can sign back in next time.
       </p>

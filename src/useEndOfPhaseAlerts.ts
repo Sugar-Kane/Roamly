@@ -9,7 +9,7 @@ const PHASE_MESSAGE: Record<Phase, string> = {
   long: "Long break's over. Ready for the next block.",
 };
 
-const FLASH_TITLE = "⏰ Time's up! | Roamly";
+const FLASH_TITLE = "⏰ Time's up! | Roamly Flow";
 const FLASH_INTERVAL_MS = 1000;
 
 type Permission = NotificationPermission | "unsupported";

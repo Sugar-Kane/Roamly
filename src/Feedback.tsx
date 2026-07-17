@@ -19,7 +19,7 @@ const CATEGORIES = [
 const PLACEHOLDER: Record<string, string> = {
   bug: "What happened, and what did you expect instead? What did you tap right before it went wrong?",
   confusing: "What were you trying to do, and where did you get stuck?",
-  idea: "What would you like Roamly to do?",
+  idea: "What would you like Roamly Flow to do?",
   other: "What's on your mind?",
 };
 

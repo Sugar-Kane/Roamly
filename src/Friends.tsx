@@ -91,7 +91,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
     setInvitedEmail(addr.toLowerCase());
     setInviteMsg(
       res.status === "friend_request"
-        ? "They're already on Roamly. Friend request sent."
+        ? "They're already on Roamly Flow. Friend request sent."
         : res.note === "resent"
           ? "Invite re-sent. They'll get a fresh email."
           : "Invite sent. They'll get an email to join."
@@ -218,13 +218,13 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
                   <p className="flex items-center gap-1.5 text-xs text-roamly-green"><Check size={13} /> {inviteMsg}</p>
                 ) : (
                   <>
-                    <p className="text-xs text-muted-foreground">No Roamly account uses that email yet.</p>
+                    <p className="text-xs text-muted-foreground">No Roamly Flow account uses that email yet.</p>
                     <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={60}
                       placeholder="Their name, shown on the invite"
                       className="mt-2 w-full rounded-xl border border-border bg-card px-3 py-2 text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/20" />
                     <button onClick={() => invite(query.trim(), inviteName)} disabled={inviting}
                       className="mt-2 flex items-center gap-1.5 rounded-full gradient-primary px-3 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-50">
-                      <Mail size={12} /> {inviting ? "Sending…" : `Invite ${query.trim()} to Roamly`}
+                      <Mail size={12} /> {inviting ? "Sending…" : `Invite ${query.trim()} to Roamly Flow`}
                     </button>
                     {inviteError && <p className="mt-1.5 text-xs text-destructive">{inviteError}</p>}
                   </>

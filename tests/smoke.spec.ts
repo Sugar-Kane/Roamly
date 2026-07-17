@@ -237,6 +237,16 @@ test("pop-out timer lives in Customize Session when Document PiP is supported", 
   await expect(page.getByTestId("customize-session")).toHaveCount(0);
 });
 
+test("skip-to-content link focuses the main region", async ({ page }) => {
+  await goHome(page);
+  // First Tab from the top of the page reveals the skip link.
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await skip.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+});
+
 test("footer opens the Help & Legal drawer", async ({ page }) => {
   await goHome(page);
   await expect(page.getByText("© 2026 Roamly Flow")).toBeVisible();

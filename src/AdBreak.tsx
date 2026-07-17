@@ -34,7 +34,7 @@ export function AdBreakPrompt({ active, onAdvertise, onGoPremium }: {
     <div className="w-full rounded-2xl border border-dashed border-border bg-card/70 p-4">
       <div className="flex items-center gap-2">
         <Megaphone size={16} className="text-primary" />
-        <h3 className="font-display text-sm font-semibold">Advertise on Roamly</h3>
+        <h3 className="font-display text-sm font-semibold">Advertise on Roamly Flow</h3>
       </div>
       <p className="mt-1 text-xs leading-snug text-muted-foreground">
         Reach focused students on their break. Submit a TikTok, reel, business video, or image ad. We review each one.
@@ -85,7 +85,7 @@ export function AdSubmitModal({ userId, onClose }: { userId: string; onClose: ()
   };
 
   return (
-    <Modal label="Advertise on Roamly" onClose={onClose}
+    <Modal label="Advertise on Roamly Flow" onClose={onClose}
       overlayClassName="fixed inset-0 z-[130] grid place-items-center bg-foreground/30 p-5 backdrop-blur-sm"
       cardClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-xl">
       <div className="flex items-start justify-between gap-3">
@@ -107,7 +107,7 @@ export function AdSubmitModal({ userId, onClose }: { userId: string; onClose: ()
         </div>
       ) : (
         <>
-          <h3 className="mt-4 font-display text-xl font-semibold">Advertise on Roamly</h3>
+          <h3 className="mt-4 font-display text-xl font-semibold">Advertise on Roamly Flow</h3>
           <p className="mt-1 text-sm text-muted-foreground">Tell us about your ad. We review every submission before it runs.</p>
 
           <p className="mt-4 text-xs font-medium text-muted-foreground">Ad type</p>
