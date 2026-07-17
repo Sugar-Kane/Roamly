@@ -1,7 +1,7 @@
 // Admin dashboard: usage metrics, feedback inbox, client-error log, invites,
 // and Premium management. Extracted from App.tsx to keep that file focused.
 // Every data call is a SECURITY DEFINER RPC gated on is_admin() server-side.
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Crown, Search, ExternalLink, Trash2, ChevronDown, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import {
   adminSearchUsers, adminListUsers, adminGrantPremium, adminRevokePremium, adminDeleteUser, adminAdjustCredits, sendInvite,
@@ -16,6 +16,9 @@ import {
 } from "./db";
 import { Modal } from "./Modal";
 import { ThemedSelect } from "./ThemedSelect";
+import {
+  AdminShell, AdminOverviewPage, SectionPlaceholder, useAdminFilters, type AdminSectionId,
+} from "./adminDashboard";
 
 const AdminActivityChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminActivityChart })));
 const DeviceDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
@@ -34,7 +37,9 @@ function relTime(iso: string): string {
 }
 
 export function AdminView({ isAdmin }: { isAdmin: boolean }) {
-  const [tab, setTab] = useState<"usage" | "feedback" | "ads" | "errors" | "users">("usage");
+  const [active, setActive] = useState<AdminSectionId>(() => (localStorage.getItem("roamly-admin-section") as AdminSectionId) || "overview");
+  const filters = useAdminFilters();
+  const setSection = (id: AdminSectionId) => { setActive(id); localStorage.setItem("roamly-admin-section", id); };
 
   if (!isAdmin) {
     return (
@@ -45,25 +50,26 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     );
   }
 
+  // Existing working sections are wrapped, not rewritten, so their mutations,
+  // GitHub sync, invites, and Premium management are preserved. Sections
+  // scheduled for later phases show a labeled placeholder rather than fake data.
+  const content: Record<AdminSectionId, ReactNode> = {
+    overview: <AdminOverviewPage state={filters} onDrill={setSection} />,
+    users: <AdminUsers />,
+    features: <AdminUsage />, // legacy feature/usage tables preserved until the Phase 2 redesign
+    feedback: <AdminFeedback />,
+    errors: <AdminErrors />,
+    ads: <AdminAds />,
+    engagement: <SectionPlaceholder title="Engagement" phase="Phase 2" contains="DAU/WAU/MAU trends, stickiness, retention cohorts, activation, and an activity heatmap." />,
+    revenue: <SectionPlaceholder title="Revenue" phase="Phase 4" contains="Subscriptions, trials, conversion, credit purchases, and (estimated) recurring revenue." />,
+    invites: <SectionPlaceholder title="Invites" phase="Phase 5" contains="Invite volume and accepted-invite conversion. Send invites today from the Users section." />,
+    explorer: <SectionPlaceholder title="Data Explorer" phase="Phase 6" contains="Pick a metric, group by day/week/month, break down by plan or device, and export." />,
+  };
+
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="font-display text-3xl font-semibold">Admin</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Usage, feedback, errors, invites, and Premium.</p>
-
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        {([["usage", "Usage"], ["feedback", "Feedback"], ["ads", "Ads"], ["errors", "Errors"], ["users", "Users"]] as const).map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} aria-pressed={tab === id}
-            className={`rounded-full border px-4 py-1.5 text-sm font-medium transition ${tab === id ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {tab === "usage" && <AdminUsage />}
-      {tab === "feedback" && <AdminFeedback />}
-      {tab === "ads" && <AdminAds />}
-      {tab === "errors" && <AdminErrors />}
-      {tab === "users" && <AdminUsers />}
+    <div className="w-full">
+      <h1 className="mx-auto mb-1 w-full max-w-6xl font-display text-2xl font-semibold">Admin dashboard</h1>
+      <AdminShell active={active} setActive={setSection}>{content[active]}</AdminShell>
     </div>
   );
 }
