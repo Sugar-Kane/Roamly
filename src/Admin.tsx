@@ -5,11 +5,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Crown, Search, ExternalLink, Trash2, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import {
   adminSearchUsers, adminListUsers, adminGrantPremium, adminRevokePremium, adminDeleteUser, adminAdjustCredits, sendInvite,
-  adminListFeedback, adminListErrors, adminFeedbackAction,
+  adminListFeedback, adminFeedbackAction,
   adminListAdSubmissions, adminSetAdSubmissionStatus, adminDeleteAdSubmission,
   type AdminUserListRow,
   type AdminUserPlanFilter, type AdminUserActivityFilter, type AdminUserSort,
-  type FeedbackRow, type ErrorRow,
+  type FeedbackRow,
   type AdSubmissionRow, type AdStatus,
 } from "./db";
 import { Modal } from "./Modal";
@@ -20,6 +20,7 @@ import {
 import { FeaturesPage, EngagementPage } from "./adminAnalytics";
 import { UserDetail } from "./adminUserDetail";
 import { RevenuePage } from "./adminRevenue";
+import { InvitesPage, ErrorsPage } from "./adminOps";
 
 
 // "3m ago" / "2h ago" / "Apr 5" — compact relative time for activity/ticket rows.
@@ -58,10 +59,10 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     features: <FeaturesPage state={filters} />,
     engagement: <EngagementPage state={filters} />,
     feedback: <AdminFeedback />,
-    errors: <AdminErrors />,
+    errors: <ErrorsPage state={filters} />,
     ads: <AdminAds />,
     revenue: <RevenuePage state={filters} />,
-    invites: <SectionPlaceholder title="Invites" phase="Phase 5" contains="Invite volume and accepted-invite conversion. Send invites today from the Users section." />,
+    invites: <InvitesPage state={filters} />,
     explorer: <SectionPlaceholder title="Data Explorer" phase="Phase 6" contains="Pick a metric, group by day/week/month, break down by plan or device, and export." />,
   };
 
@@ -673,45 +674,3 @@ function FeedbackTicket({ f, onPatch, onDelete }: {
   );
 }
 
-function AdminErrors() {
-  const [rows, setRows] = useState<ErrorRow[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
-  useEffect(() => { adminListErrors(100).then((r) => { setRows(r); setLoaded(true); }); }, []);
-
-  return (
-    <div className="mt-5 space-y-2">
-      {!loaded && <p className="text-sm text-muted-foreground">Loading errors…</p>}
-      {loaded && rows.length === 0 && (
-        <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-roamly-green">
-          No client errors reported. 🎉
-        </p>
-      )}
-      {rows.map((e) => (
-        <div key={e.id} className="rounded-2xl border border-border bg-card/70 p-4">
-          <div className="flex items-start gap-2">
-            <span className="break-words text-sm font-medium text-destructive">{e.message}</span>
-            <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
-              {new Date(e.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-            </span>
-          </div>
-          <p className="mt-1.5 truncate text-[11px] text-muted-foreground">
-            {e.email ?? "unknown"}{e.username ? ` · @${e.username}` : ""}{e.page ? ` · on ${e.page}` : ""}{e.device ? ` · ${e.device}` : ""}
-          </p>
-          {e.platform && <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">{e.platform}</p>}
-          {e.stack && (
-            <>
-              <button onClick={() => setOpen(open === e.id ? null : e.id)}
-                className="mt-2 text-[11px] text-primary underline-offset-2 hover:underline">
-                {open === e.id ? "Hide" : "Show"} details
-              </button>
-              {open === e.id && (
-                <pre className="mt-1.5 max-h-48 overflow-auto rounded-lg border border-border bg-background/60 p-2.5 text-[10px] leading-snug text-muted-foreground">{e.stack}</pre>
-              )}
-            </>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}

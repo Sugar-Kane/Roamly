@@ -449,6 +449,59 @@ export async function adminRevenueSeries(startISO: string, endISO: string): Prom
   }));
 }
 
+// ---- Admin BI dashboard (Phase 5: Invites + Errors operational views) ----
+// Read-only, is_admin()-gated. Invite "accepted" counts are cohort-based
+// (invite created in the window that has since been accepted) — invitations
+// has no accept timestamp. Error groups key on message + page; client_errors
+// has no severity/status (deferred schema change).
+export type AdminInviteSummary = {
+  total_invites: number; accepted: number; pending: number; unique_inviters: number;
+  sent_in_window: number; accepted_in_window: number;
+};
+export type AdminInviteDay = { day: string; sent: number; accepted: number };
+export type AdminErrorGroup = {
+  message: string; page: string; occurrences: number; affected_users: number;
+  first_seen: string; last_seen: string;
+};
+export type AdminErrorDay = { day: string; errors: number; affected_users: number };
+
+export async function adminInviteSummary(startISO: string, endISO: string): Promise<AdminInviteSummary | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_invite_summary", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] adminInviteSummary failed", error.message); return null; }
+  const r = (data ?? [])[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    total_invites: num(r.total_invites), accepted: num(r.accepted), pending: num(r.pending),
+    unique_inviters: num(r.unique_inviters), sent_in_window: num(r.sent_in_window), accepted_in_window: num(r.accepted_in_window),
+  };
+}
+
+export async function adminInviteSeries(startISO: string, endISO: string): Promise<AdminInviteDay[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_invite_series", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] adminInviteSeries failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({ day: String(r.day), sent: num(r.sent), accepted: num(r.accepted) }));
+}
+
+export async function adminErrorGroups(startISO: string, endISO: string, limit = 50): Promise<AdminErrorGroup[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_error_groups", { p_start: startISO, p_end: endISO, p_limit: limit });
+  if (error) { console.warn("[Roamly] adminErrorGroups failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    message: String(r.message), page: r.page ? String(r.page) : "",
+    occurrences: num(r.occurrences), affected_users: num(r.affected_users),
+    first_seen: String(r.first_seen), last_seen: String(r.last_seen),
+  }));
+}
+
+export async function adminErrorSeries(startISO: string, endISO: string): Promise<AdminErrorDay[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_error_series", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] adminErrorSeries failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({ day: String(r.day), errors: num(r.errors), affected_users: num(r.affected_users) }));
+}
+
 // ---- Admin BI dashboard (Phase 2: Features + Engagement) ----
 export type AdminFeatureStat = {
   name: string; total: number; unique_users: number; free_uses: number; premium_uses: number;
