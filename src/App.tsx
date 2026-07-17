@@ -1286,19 +1286,15 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
     <header className="flex items-center justify-between gap-1.5 sm:gap-3">
       <button onClick={onGoHome} aria-label="Go to the Focus home screen"
         className="flex shrink-0 items-center gap-2.5 rounded-lg transition hover:opacity-80">
-        <span aria-hidden="true" className="relative h-9 w-9 shrink-0 overflow-hidden rounded-full sm:h-10 sm:w-10"
-          style={{ background: `linear-gradient(145deg, ${theme.ring}, ${theme.rest})` }}>
-          <span className="absolute inset-0" style={{
-            backgroundColor: `hsl(${theme.vars["--foreground"]})`,
-            mask: "url(/logo-r-mask.png) center / contain no-repeat",
-            WebkitMask: "url(/logo-r-mask.png) center / contain no-repeat",
-          }} />
-          <span className="absolute inset-0" style={{
-            backgroundColor: `hsl(${theme.vars["--card"]})`,
-            mask: "url(/logo-arc-mask.png) center / contain no-repeat",
-            WebkitMask: "url(/logo-arc-mask.png) center / contain no-repeat",
-          }} />
-        </span>
+        {/* The original timer mark (matches the app icon / favicon): a dark
+            rounded square with a dashed ring and center dot. The ring + dot
+            use the active theme's accent so the logo recolors with the site
+            theme. */}
+        <svg aria-hidden="true" viewBox="0 0 32 32" className="h-9 w-9 shrink-0 sm:h-10 sm:w-10">
+          <rect width="32" height="32" rx="7" fill="#16181D" />
+          <circle cx="16" cy="16" r="9" fill="none" stroke={theme.ring} strokeWidth="2.5" strokeDasharray="42 14" strokeLinecap="round" />
+          <circle cx="16" cy="16" r="2.5" fill={theme.ring} />
+        </svg>
         <span className="font-display text-xl font-semibold tracking-tight text-gradient sm:text-2xl">Roamly Flow</span>
       </button>
       <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
@@ -1693,7 +1689,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
     <div className="space-y-8">
       <FocusIntro onOpenHowItWorks={onOpenHowItWorks} />
 
-      {session && <ExamStrip exams={exams} />}
+      {/* Exam dates sit above the timer so the countdown to the next exam is
+          the first thing a signed-in student sees. */}
+      {session && <ExamSchedulePanel exams={exams} onCreate={addExam} onUpdate={editExam} onDelete={removeExam} />}
 
       <section ref={timerRef} data-tour="timer" className="overflow-hidden rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur sm:p-8">
         <button onClick={() => setShowMethods(true)}
@@ -1946,8 +1944,6 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         </div>
       </div>
 
-      {session && <ExamSchedulePanel exams={exams} onCreate={addExam} onUpdate={editExam} onDelete={removeExam} />}
-
       <MusicPanel embed={embed} service={shownEmbed.service} onServiceChange={onPickService} onPlay={playEmbed}
         dockClosed={dockClosed} onReopenDock={onReopenDock} sounds={sounds} />
     </div>
@@ -1979,29 +1975,6 @@ function FocusIntro({ onOpenHowItWorks }: { onOpenHowItWorks: () => void }) {
       </div>
       {pomOpen && <PomodoroExplainerPanel onClose={() => setPomOpen(false)} />}
     </div>
-  );
-}
-
-// One-line countdown to the nearest upcoming exam, so signed-in users keep an
-// at-a-glance number above the fold while the full exam panel lives below the
-// timer. Tapping it jumps to the panel.
-function ExamStrip({ exams }: { exams: ExamSchedule[] }) {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const next = [...exams]
-    .map((exam) => ({ exam, days: calendarDayNumber(new Date(`${exam.exam_date}T00:00:00`)) - calendarDayNumber(today) }))
-    .filter(({ days }) => days >= 0)
-    .sort((a, b) => a.days - b.days)[0];
-  if (!next) return null;
-  return (
-    <button onClick={() => document.querySelector('[data-exam-panel]')?.scrollIntoView({ behavior: "smooth", block: "center" })}
-      className="flex w-full items-center gap-2 rounded-xl border border-border bg-card/60 px-3 py-2 text-left text-sm transition hover:border-primary/40">
-      <CalendarClock size={15} className="shrink-0 text-primary" />
-      <span className="min-w-0 flex-1 truncate">
-        <span className="font-medium">{next.exam.name}</span>
-        <span className="text-muted-foreground"> · {next.days === 0 ? "today" : `${next.days} day${next.days === 1 ? "" : "s"}`}</span>
-      </span>
-      <ChevronDown size={14} className="shrink-0 text-muted-foreground" />
-    </button>
   );
 }
 
