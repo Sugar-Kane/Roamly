@@ -190,7 +190,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
           Click it to activate your account.
         </p>
         <p className="mt-2 rounded-xl border border-dashed border-border p-2.5 text-center text-xs text-muted-foreground">
-          Nothing there after a minute? <span className="font-medium text-foreground">Check your spam folder</span>. The sender is Roamly.
+          Nothing there after a minute? <span className="font-medium text-foreground">Check your spam folder</span>. The sender is Roamly Flow.
         </p>
         <button onClick={onClose} className="mt-4 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
           Got it
@@ -254,7 +254,7 @@ export function SetPasswordModal({ onDone }: { onDone: () => void }) {
   return (
     <Modal label="Set a password" onClose={() => {}} backdropClose={false}
       cardClassName="w-full max-w-sm rounded-3xl border border-border bg-card p-7 shadow-xl">
-      <h3 className="font-display text-xl font-semibold">Welcome to Roamly!</h3>
+      <h3 className="font-display text-xl font-semibold">Welcome to Roamly Flow!</h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
         You're signed in. Set a password so you can sign back in next time.
       </p>

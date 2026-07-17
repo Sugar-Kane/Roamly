@@ -92,7 +92,7 @@ export function useDocumentPip(theme: Theme, a11y: A11ySettings) {
     // Style + theme land before the portal mounts, so there's no unstyled flash.
     copyStylesToPip(pip);
     applyThemeToPip(pip, theme, a11y);
-    try { pip.document.title = "Roamly timer"; } catch { /* ignore */ }
+    try { pip.document.title = "Roamly Flow timer"; } catch { /* ignore */ }
     // pagehide is the single "closed" signal — fires for the window's X and for
     // a programmatic close() — so clearing state here unmounts the portal once.
     pip.addEventListener("pagehide", () => setPipWindow(null), { once: true });

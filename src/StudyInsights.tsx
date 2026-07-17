@@ -134,7 +134,7 @@ function StudyPostMortem({ plans, range }: { plans: PlannedStudySession[]; range
   return <section className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
     <div>
       <h2 className="text-sm font-semibold">Study post-mortem</h2>
-      <p className="mt-0.5 text-xs text-muted-foreground">Skipped sessions are feedback, not failure. Tag what got in the way and Roamly will turn it into patterns you can use.</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">Skipped sessions are feedback, not failure. Tag what got in the way and Roamly Flow will turn it into patterns you can use.</p>
     </div>
     <div className="mt-4 grid grid-cols-3 gap-3">
       <Metric label="Follow-through" value={analysis.completionRate === null ? "-" : `${analysis.completionRate}%`} />
@@ -356,7 +356,7 @@ function ThemedDateTimePicker({ value, onChange }: { value: string; onChange: (v
 }
 
 function personName(person: PublicProfile | undefined): string {
-  return person?.display_name || person?.username || "Roamly friend";
+  return person?.display_name || person?.username || "Roamly Flow friend";
 }
 
 type PlanUpdate = Partial<PlannedStudyDraft> & {
@@ -616,7 +616,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
         </span>
       </label>
     </div>
-    <p className="mt-1.5 text-[11px] text-muted-foreground">Duration sets the calendar block length and when Roamly considers the planned event overdue.</p>
+    <p className="mt-1.5 text-[11px] text-muted-foreground">Duration sets the calendar block length and when Roamly Flow considers the planned event overdue.</p>
 
     {targetType === "category" && (
       <label className="mt-3 flex items-start gap-2 rounded-xl border border-border bg-card/60 p-3">
@@ -703,7 +703,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
           {(["google", "apple", "outlook"] as const).map((provider) => <button key={provider} onClick={() => addToCalendar(plan, provider)} className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-primary/40"><ExternalLink size={10} className="mr-1 inline" />{provider === "apple" ? "Apple" : provider[0].toUpperCase() + provider.slice(1)}</button>)}
           {overdue.includes(plan) && <button onClick={() => onUpdatePlan(plan.id, { status: "completed", missed_reason: null })} className="rounded-full border border-roamly-green/40 px-2.5 py-1 text-xs text-roamly-green"><Check size={11} className="inline" /> Completed</button>}
         </div>
-        {overdue.includes(plan) && <div className="mt-2 rounded-xl bg-secondary/70 p-2.5"><p className="mb-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">What got in the way?</span> Tagging this helps Roamly spot patterns. No guilt, just useful data.</p><div className="flex flex-wrap gap-1.5">{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground transition hover:border-primary/40 hover:text-primary">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="text-[11px] text-muted-foreground underline">Not now</button></div></div>}
+        {overdue.includes(plan) && <div className="mt-2 rounded-xl bg-secondary/70 p-2.5"><p className="mb-2 text-xs text-muted-foreground"><span className="font-medium text-foreground">What got in the way?</span> Tagging this helps Roamly Flow spot patterns. No guilt, just useful data.</p><div className="flex flex-wrap gap-1.5">{MISSED_REASONS.map((reason) => <button key={reason} onClick={() => onUpdatePlan(plan.id, { status: "missed", missed_reason: reason })} className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground transition hover:border-primary/40 hover:text-primary">{reason}</button>)}<button onClick={() => setDismissed((ids) => [...ids, plan.id])} className="text-[11px] text-muted-foreground underline">Not now</button></div></div>}
       </div>;
     })}
     {missed.length >= 3 && commonReason && <p className="mt-3 rounded-xl bg-secondary p-3 text-xs text-muted-foreground"><Clock3 size={13} className="mr-1 inline text-primary" />Across {missed.length} tagged misses, your most common reason is <span className="font-semibold text-foreground">{commonReason[0]}</span> ({commonReason[1]}).</p>}

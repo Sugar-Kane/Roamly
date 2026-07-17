@@ -180,8 +180,9 @@ test("guest count-up completion is saved to analytics", async ({ page }) => {
   await goTab(page, "Analytics");
   await expect(page.getByText("2 / 120 min")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Study time by category" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Study post-mortem" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Unlock Study post-mortem with Premium" })).toBeVisible();
+  // Free accounts see one consolidated Premium pitch, not per-feature cards.
+  await expect(page.getByRole("heading", { name: "Deeper insights" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Unlock with Premium: Deeper insights" })).toBeVisible();
   await page.reload();
   await goTab(page, "Analytics");
   await expect(page.getByText("2 / 120 min")).toBeVisible();
@@ -236,6 +237,34 @@ test("pop-out timer lives in Customize Session when Document PiP is supported", 
   await expect(page.getByTestId("customize-session")).toHaveCount(0);
 });
 
+test("skip-to-content link focuses the main region", async ({ page }) => {
+  await goHome(page);
+  // First Tab from the top of the page reveals the skip link.
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await skip.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+});
+
+test("footer opens the Help & Legal drawer", async ({ page }) => {
+  await goHome(page);
+  await expect(page.getByText("© 2026 Roamly Flow")).toBeVisible();
+  await page.getByRole("button", { name: "Help & Legal" }).click();
+  const drawer = page.getByTestId("help-legal");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "How Roamly Flow works" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Contact support / send feedback" })).toBeVisible();
+  // Privacy tab: plain-language summaries expand on tap.
+  await drawer.getByRole("tab", { name: "Privacy" }).click();
+  await drawer.getByText("What we store").click();
+  await expect(drawer.getByText(/local storage/)).toBeVisible();
+  await drawer.getByRole("tab", { name: "Terms" }).click();
+  await expect(drawer.getByText("Billing", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: /Done/ }).click();
+  await expect(page.getByTestId("help-legal")).toHaveCount(0);
+});
+
 test("AI upload requires sign-in when logged out", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
@@ -286,13 +315,23 @@ test("Release 2 pricing and credit packages render", async ({ page }) => {
   await expect(page.getByText("Premium account", { exact: true })).toBeVisible();
   await expect(page.getByText("5 on this device", { exact: true })).toBeVisible();
   await expect(page.getByText("Themes", { exact: true })).toHaveCount(0);
+  // Comparison table is grouped, annual card shows the monthly equivalence,
+  // and the FAQ renders with expandable answers.
+  await expect(page.getByRole("columnheader", { name: "Community" })).toBeVisible();
+  await expect(page.getByText("$2.50 a month equivalent · save $6 a year")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Common questions" })).toBeVisible();
+  const faq = page.getByText("Can I cancel anytime?");
+  await expect(faq).toBeVisible();
+  await faq.click();
+  await expect(page.getByText(/no partial-month charges/)).toBeVisible();
 });
 
 test("planned study lives in Tasks and requires an account", async ({ page }) => {
   await goHome(page);
   await goTab(page, "Analytics");
-  await expect(page.getByRole("heading", { name: "Study breakdown" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Unlock Study breakdown with Premium" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Deeper insights" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Unlock with Premium: Deeper insights" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Study breakdown" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "All time" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();

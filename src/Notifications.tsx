@@ -54,6 +54,10 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
   const [actors, setActors] = useState<Map<string, PublicProfile>>(new Map());
   const [roomInfo, setRoomInfo] = useState<Map<string, { name: string; mine: boolean }>>(new Map());
   const [open, setOpen] = useState(false);
+  // Browser-alert permission for timer notifications, surfaced as a footer row
+  // so a blocked state is discoverable somewhere users actually look.
+  const [alertPerm, setAlertPerm] = useState<NotificationPermission | null>(
+    () => ("Notification" in window ? Notification.permission : null));
   const panelRef = useRef<HTMLDivElement>(null);
 
   const userId = session.user.id;
@@ -103,6 +107,8 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
   const toggle = () => {
     const next = !open;
     setOpen(next);
+    // Re-read on each open: the user may have changed the site setting since.
+    if (next && "Notification" in window) setAlertPerm(Notification.permission);
     if (next && unread > 0) {
       markAllNotificationsRead(userId);
       setItems((prev) => prev.map((n) => ({ ...n, read: true })));
@@ -183,6 +189,20 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
               );
             })}
           </div>
+          {alertPerm === "denied" && (
+            <p className="shrink-0 border-t border-border/50 px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+              Browser alerts for timer endings are blocked. Allow notifications for this site in your browser settings to get them.
+            </p>
+          )}
+          {alertPerm === "default" && (
+            <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/50 px-2.5 py-1.5">
+              <p className="text-[11px] leading-snug text-muted-foreground">Get a browser alert when a timer ends.</p>
+              <button onClick={() => Notification.requestPermission().then(setAlertPerm)}
+                className="shrink-0 rounded-full border border-primary/50 bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary transition hover:bg-primary/20">
+                Enable
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

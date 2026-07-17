@@ -215,7 +215,7 @@ function AdminUsers() {
   const grant = async (u: AdminUserListRow, months: 1 | 12) => {
     setBusyId(`${u.id}:${months}`);
     setError(null);
-    const result = await adminGrantPremium(u.id, months, "Granted from Roamly admin portal");
+    const result = await adminGrantPremium(u.id, months, "Granted from Roamly Flow admin portal");
     setBusyId(null);
     if (result.error) { setError(result.error); return; }
     patchRow(u.id, { is_premium: true, premium_expires_at: result.expiresAt ?? u.premium_expires_at });
@@ -268,7 +268,7 @@ function AdminUsers() {
     <>
       <div className="mt-6 rounded-2xl border border-border bg-card/70 p-4">
         <h2 className="text-sm font-semibold">Invite by email</h2>
-        <p className="mt-0.5 text-xs text-muted-foreground">Emails them an invite to join Roamly (or sends a friend request if they're already a user).</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">Emails them an invite to join Roamly Flow (or sends a friend request if they're already a user).</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <input value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={60}
             placeholder="Their name"
@@ -892,7 +892,7 @@ function AdminAds() {
       {!loaded && <p className="text-sm text-muted-foreground">Loading ad submissions…</p>}
       {loaded && rows.length === 0 && (
         <p className="rounded-2xl border border-dashed border-border bg-card/60 p-4 text-sm text-muted-foreground">
-          No ad submissions yet. Non-premium users can submit one from the break-time “Advertise on Roamly” prompt.
+          No ad submissions yet. Non-premium users can submit one from the break-time “Advertise on Roamly Flow” prompt.
         </p>
       )}
       {rows.map((a) => (
