@@ -19,6 +19,7 @@ import {
 } from "./adminDashboard";
 import { FeaturesPage, EngagementPage } from "./adminAnalytics";
 import { UserDetail } from "./adminUserDetail";
+import { RevenuePage } from "./adminRevenue";
 
 
 // "3m ago" / "2h ago" / "Apr 5" — compact relative time for activity/ticket rows.
@@ -59,7 +60,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     feedback: <AdminFeedback />,
     errors: <AdminErrors />,
     ads: <AdminAds />,
-    revenue: <SectionPlaceholder title="Revenue" phase="Phase 4" contains="Subscriptions, trials, conversion, credit purchases, and (estimated) recurring revenue." />,
+    revenue: <RevenuePage state={filters} />,
     invites: <SectionPlaceholder title="Invites" phase="Phase 5" contains="Invite volume and accepted-invite conversion. Send invites today from the Users section." />,
     explorer: <SectionPlaceholder title="Data Explorer" phase="Phase 6" contains="Pick a metric, group by day/week/month, break down by plan or device, and export." />,
   };

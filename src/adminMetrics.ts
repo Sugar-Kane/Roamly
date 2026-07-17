@@ -55,6 +55,18 @@ export function fmtMinutes(m: number): string {
   return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
 }
 
+// USD from integer cents. Whole-dollar amounts drop the ".00" so KPI tiles stay
+// compact ($3, $1,250); fractional amounts keep two places ($2.50). Used for the
+// Revenue page's estimated MRR/ARR and credit-revenue figures.
+export function fmtCents(cents: number): string {
+  const dollars = cents / 100;
+  const whole = Number.isInteger(dollars);
+  return `$${dollars.toLocaleString(undefined, {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: whole ? 0 : 2,
+  })}`;
+}
+
 // Deterministic, calculation-backed insights — never AI-generated claims. Each
 // line states the metric, direction, magnitude, and the raw before→after.
 export function buildInsights(cur: AdminKpiSummary, prev: AdminKpiSummary, funnel: AdminFunnel | null): string[] {
