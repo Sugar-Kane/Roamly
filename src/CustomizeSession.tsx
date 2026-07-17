@@ -6,7 +6,7 @@
 // chips did, so nothing resets or migrates.
 
 import { Drawer, DrawerSection, DrawerRow } from "./Drawer";
-import { Bell, BellOff, PictureInPicture2 } from "lucide-react";
+import { Bell, BellOff } from "lucide-react";
 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
@@ -17,7 +17,7 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, confettiOn, onToggleConfetti, autoFlow, onToggleAutoFlow, pipSupported, pipActive, onPopOut, onClosePip, alerts }: {
+export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, confettiOn, onToggleConfetti, autoFlow, onToggleAutoFlow, alerts }: {
   onClose: () => void;
   companionsOn: boolean;
   onToggleCompanions: () => void;
@@ -25,10 +25,6 @@ export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, co
   onToggleConfetti: () => void;
   autoFlow: boolean;
   onToggleAutoFlow: () => void;
-  pipSupported: boolean;
-  pipActive: boolean;
-  onPopOut: () => void;
-  onClosePip: () => void;
   alerts: {
     permission: string;
     requestPermission: () => void;
@@ -51,14 +47,6 @@ export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, co
         <DrawerRow label="Auto-flow" hint="Focus rolls into break and back without pressing Start.">
           <Toggle on={autoFlow} onClick={onToggleAutoFlow} label="Auto-flow" />
         </DrawerRow>
-        {pipSupported && (
-          <DrawerRow label="Pop-out timer" hint="A small floating window that stays on top of other apps. Desktop Chrome/Edge.">
-            <button onClick={() => (pipActive ? onClosePip() : onPopOut())} aria-pressed={pipActive}
-              className={`flex min-h-[2.5rem] items-center gap-1.5 rounded-full border px-3.5 text-xs font-medium transition ${pipActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-              <PictureInPicture2 size={13} /> {pipActive ? "Close" : "Open"}
-            </button>
-          </DrawerRow>
-        )}
       </DrawerSection>
 
       <DrawerSection title="Session ending">

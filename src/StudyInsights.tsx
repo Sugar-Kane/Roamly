@@ -364,7 +364,7 @@ type PlanUpdate = Partial<PlannedStudyDraft> & {
   missed_reason?: MissedReason | null;
 };
 
-export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, onUpgrade, onCreatePlan, onUpdatePlan, onDeletePlan }: {
+export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, onUpgrade, onCreatePlan, onUpdatePlan, onDeletePlan, bare = false }: {
   tasks: Task[];
   plans: PlannedStudySession[];
   userId: string | null;
@@ -374,6 +374,9 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
   onCreatePlan: (row: PlannedStudyDraft) => Promise<PlannedStudySession | null>;
   onUpdatePlan: (id: string, fields: PlanUpdate) => Promise<boolean>;
   onDeletePlan: (id: string) => Promise<boolean>;
+  // When true, drop the standalone card chrome (border/margin/padding) so the
+  // panel can nest inside another disclosure — e.g. under Task preferences.
+  bare?: boolean;
 }) {
   const [when, setWhen] = useState("");
   const [targetType, setTargetType] = useState<PlannedStudyTarget>("task");
@@ -529,7 +532,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
   };
 
   if (!userId) {
-    return <section className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+    return <section className={bare ? "" : "mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm"}>
       <div className="flex items-center gap-2">
         <span className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-primary"><Lock size={15} /></span>
         <div>
@@ -545,14 +548,14 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
   }
 
   if (isPremium === null) {
-    return <section aria-label="Loading planned study" className="mt-6 animate-pulse rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+    return <section aria-label="Loading planned study" className={bare ? "animate-pulse" : "mt-6 animate-pulse rounded-2xl border border-border bg-card/80 p-5 shadow-sm"}>
       <div className="h-4 w-32 rounded-full bg-border/60" />
       <div className="mt-3 h-3 w-3/4 rounded-full bg-border/40" />
     </section>;
   }
 
   if (!isPremium) {
-    return <section className="mt-6 rounded-2xl border border-primary/30 bg-card/80 p-5 shadow-sm">
+    return <section className={bare ? "" : "mt-6 rounded-2xl border border-primary/30 bg-card/80 p-5 shadow-sm"}>
       <div className="flex items-center gap-2">
         <span className="grid h-8 w-8 place-items-center rounded-full bg-primary/10 text-primary"><Crown size={15} /></span>
         <div>
@@ -569,7 +572,7 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
 
   const canSave = !!when && (targetType === "task" ? !!effectiveTaskId : !!effectiveCategory);
 
-  return <section className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+  return <section className={bare ? "" : "mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm"}>
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <h2 className="flex items-center gap-1.5 text-sm font-semibold"><CalendarPlus size={15} className="text-primary" /> Planned study</h2>

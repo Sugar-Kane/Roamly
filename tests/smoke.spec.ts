@@ -13,14 +13,17 @@ async function goHome(page: Page) {
   await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
 }
 
-// Navigate via the bottom bar. Analytics and Premium live in the More sheet
-// on phones (four primary tabs + More below the sm breakpoint) and in the bar
-// itself from sm up.
+// Navigate via the bottom bar. Analytics is a primary tab at every width now;
+// Premium is not a bottom-bar tab on phones (it lives in the header crown), so
+// fall back to that when the direct tab isn't present.
 async function goTab(page: Page, tab: string) {
   const direct = page.getByRole("button", { name: tab, exact: true });
   if (await direct.isVisible()) { await direct.click(); return; }
-  await page.getByRole("button", { name: "More", exact: true }).click();
-  await page.getByTestId("more-sheet").getByRole("button", { name: tab }).click();
+  if (tab === "Premium") {
+    await page.getByRole("button", { name: /^Premium (plans|account)$/ }).first().click();
+    return;
+  }
+  throw new Error(`goTab: "${tab}" is not reachable from the bottom bar`);
 }
 
 test("admin dashboard is gated: signed-out visitors get no access and no data", async ({ page }) => {
@@ -239,20 +242,26 @@ test("premium feature prompts sign-in when logged out", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 });
 
-test("pop-out timer lives in Customize Session when Document PiP is supported", async ({ page }) => {
+test("pop-out timer lives on the timer and in focus mode, not in Customize Session", async ({ page }) => {
   // localhost is a secure context, so Chromium exposes documentPictureInPicture
-  // and the gated pop-out row renders inside the Customize Session drawer.
+  // and the gated pop-out button renders on the timer's quick controls.
   await goHome(page);
-  await page.getByRole("button", { name: "Customize Session" }).click();
+  await expect(page.getByRole("button", { name: "Pop out timer" })).toBeVisible();
+  // It no longer lives in the Customize Session drawer, but the relocated
+  // pets/confetti/auto-flow settings still do.
+  await page.getByRole("button", { name: "Customize Session" }).first().click();
   const drawer = page.getByTestId("customize-session");
   await expect(drawer).toBeVisible();
-  await expect(drawer.getByText("Pop-out timer")).toBeVisible();
-  // The drawer also carries the relocated pets/confetti/auto-flow settings.
+  await expect(drawer.getByText("Pop-out timer")).toHaveCount(0);
   await expect(drawer.getByRole("switch", { name: "Show pets during focus" })).toBeVisible();
   await expect(drawer.getByRole("switch", { name: "Completion confetti" })).toBeVisible();
   await expect(drawer.getByRole("switch", { name: "Auto-flow" })).toBeVisible();
   await drawer.getByRole("button", { name: /Done/ }).click();
   await expect(page.getByTestId("customize-session")).toHaveCount(0);
+  // Focus mode also exposes the pop-out button in its controls.
+  await page.getByRole("button", { name: "Focus mode" }).click();
+  await expect(page.getByRole("button", { name: "Exit focus mode" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pop out timer" }).first()).toBeVisible();
 });
 
 test("skip-to-content link focuses the main region", async ({ page }) => {
@@ -353,12 +362,17 @@ test("planned study lives in Tasks and requires an account", async ({ page }) =>
   await expect(page.getByRole("button", { name: "All time" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  // Planned study is a disclosure under Task preferences, collapsed by default,
+  // so its heading only appears once expanded.
+  await expect(page.getByRole("heading", { name: "Planned study" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Planned study" }).click();
   await expect(page.getByRole("heading", { name: "Planned study" })).toBeVisible();
+  // It now sits above the task-creation box (moved up under Task preferences).
   const taskCreationBox = await page.getByPlaceholder(/Add a study task/).boundingBox();
   const plannedStudyBox = await page.getByRole("heading", { name: "Planned study" }).boundingBox();
   expect(taskCreationBox).not.toBeNull();
   expect(plannedStudyBox).not.toBeNull();
-  expect(taskCreationBox!.y).toBeLessThan(plannedStudyBox!.y);
+  expect(plannedStudyBox!.y).toBeLessThan(taskCreationBox!.y);
   await expect(page.getByText("Account required", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in to plan" })).toBeVisible();
   await expect(page.getByLabel("Planned study time")).toHaveCount(0);
@@ -499,8 +513,8 @@ test("app preferences live in the Settings modal opened from the profile menu", 
 
 test("release mobile breakpoints remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "single cross-breakpoint audit");
-  // 6 widths × 5 tabs, with More-sheet hops at phone widths — give the sweep
-  // double the default budget.
+  // 6 widths × 5 tabs, with a header-crown hop for Premium at phone widths —
+  // give the sweep double the default budget.
   test.setTimeout(60_000);
   for (const width of [320, 375, 390, 430, 768, 1280]) {
     await page.setViewportSize({ width, height: width >= 768 ? 800 : 844 });
