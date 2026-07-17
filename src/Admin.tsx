@@ -18,6 +18,7 @@ import {
   AdminShell, AdminOverviewPage, SectionPlaceholder, useAdminFilters, type AdminSectionId,
 } from "./adminDashboard";
 import { FeaturesPage, EngagementPage } from "./adminAnalytics";
+import { UserDetail } from "./adminUserDetail";
 
 
 // "3m ago" / "2h ago" / "Apr 5" — compact relative time for activity/ticket rows.
@@ -156,6 +157,7 @@ function AdminUsers() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<{ kind: "revoke" | "delete"; user: AdminUserListRow } | null>(null);
+  const [detailUser, setDetailUser] = useState<AdminUserListRow | null>(null);
 
   // Debounced search — typing doesn't fire a request per keystroke.
   useEffect(() => {
@@ -339,7 +341,11 @@ function AdminUsers() {
             <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-3">
               <div className="flex min-w-0 items-start gap-2 sm:flex-1 sm:items-center">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{u.display_name || u.username || u.email || "Unnamed user"}</p>
+                <button type="button" onClick={() => setDetailUser(u)}
+                  className="block max-w-full truncate rounded text-left text-sm font-medium text-foreground underline-offset-2 outline-none transition hover:text-primary hover:underline focus-visible:ring-2 focus-visible:ring-primary/40"
+                  aria-label={`View details for ${u.display_name || u.username || u.email || "this user"}`}>
+                  {u.display_name || u.username || u.email || "Unnamed user"}
+                </button>
                 <p className="truncate text-xs text-muted-foreground">{u.email}{u.username ? ` · @${u.username}` : ""}</p>
                 <p className="flex flex-wrap items-center gap-1 truncate text-[11px] text-muted-foreground">
                   <button onClick={() => adjustCredits(u, -1)} disabled={busyId !== null || (u.ai_credits ?? 0) === 0}
@@ -405,6 +411,8 @@ function AdminUsers() {
           </button>
         </div>
       )}
+
+      {detailUser && <UserDetail user={detailUser} onClose={() => setDetailUser(null)} />}
 
       {pending?.kind === "revoke" && (
         <AdminConfirmDialog title="Revoke Premium?"
