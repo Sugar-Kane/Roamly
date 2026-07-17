@@ -3087,3 +3087,604 @@ $$;
 
 revoke execute on function public.room_occupancy(uuid[]) from public, anon;
 grant execute on function public.room_occupancy(uuid[]) to authenticated;
+
+
+-- ===================================================================
+-- HAND-FOLDED MIGRATIONS (2026-07-16) — appended, not regenerated.
+--
+-- schema.sql is assembled by hand and had fallen behind supabase/migrations/.
+-- The ADDITIVE / self-contained migrations below are folded in so a freshly
+-- provisioned DB matches production. All idempotent (if-not-exists /
+-- on-conflict / drop-if-exists). The notifications index is folded WITHOUT
+-- CONCURRENTLY (its migration uses CONCURRENTLY for a live build; that cannot
+-- run inside a bulk/transactional schema script and is pointless on a fresh DB).
+--
+-- STILL NOT FOLDED (they redefine shared objects — notifications_kind_check
+-- and planned_study_sessions RLS — so a tail-append could regress the partial
+-- fold; capture via `supabase db dump` instead):
+--   * 20260713223000_planned_study_categories_and_invites
+--   * 20260714004311_gate_planned_study_to_premium
+-- TODO: replace this whole file with generated `supabase db dump` output.
+-- ===================================================================
+
+
+-- ---- folded from 20260713230320_profile_avatars_private.sql ----
+-- User-owned private profile pictures. The app generates short-lived signed
+-- URLs after authentication, and every object operation is owner-scoped.
+
+alter table public.profiles
+  add column if not exists avatar_path text
+  constraint profiles_avatar_path_length check (avatar_path is null or char_length(avatar_path) <= 500);
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'avatars',
+  'avatars',
+  false,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+create policy "avatars_insert_own"
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "avatars_select_own"
+on storage.objects for select to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "avatars_update_own"
+on storage.objects for update to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+)
+with check (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "avatars_delete_own"
+on storage.objects for delete to authenticated
+using (
+  bucket_id = 'avatars'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+
+-- ---- folded from 20260714230000_release_14_catalog_expansion.sql ----
+-- Release 14: catalog expansion — more achievements, companions & level rewards.
+--
+-- Adds 10 achievements (new long-term streak/hour/session/task tiers plus a
+-- group-room counter), 9 companions extending the session curve to 1000, and
+-- 12 level rewards extending the level curve to 30. Existing pet sort values
+-- are renumbered so the collection stays ordered by unlock milestone.
+-- sync_my_gamification() is recreated with the new award conditions and one
+-- new metric (count of room sessions). Mirror of src/petCatalog.ts — keep the
+-- two in sync.
+
+-- ============ pets ============
+update public.pet_catalog set sort = 7  where id = 'fox';
+update public.pet_catalog set sort = 9  where id = 'penguin';
+update public.pet_catalog set sort = 11 where id = 'owl';
+update public.pet_catalog set sort = 13 where id = 'turtle';
+
+insert into public.pet_catalog(id, species, name, unlock_sessions, sort) values
+  ('duck',     'duck',     'Puddles the Duck',  40,   6),
+  ('frog',     'frog',     'Lilypad Louie',     80,   8),
+  ('raccoon',  'raccoon',  'Bandit',            120,  10),
+  ('hedgehog', 'hedgehog', 'Pokey',             200,  12),
+  ('koala',    'koala',    'Eucalyptus Eddie',  350,  14),
+  ('sloth',    'sloth',    'Slowmo the Sloth',  450,  15),
+  ('panda',    'panda',    'Bamboo',            600,  16),
+  ('dragon',   'dragon',   'Cinder the Dragon', 800,  17),
+  ('unicorn',  'unicorn',  'Stardust',          1000, 18)
+on conflict (id) do nothing;
+
+-- ============ level rewards ============
+insert into public.reward_catalog(id, kind, name, unlock_level, meta, sort) values
+  ('cactus',         'plant',     'Desert Cactus',  16, '{"emoji":"🌵"}', 15),
+  ('study_cap',      'accessory', 'Study Cap',      17, '{"emoji":"🧢"}', 16),
+  ('mushroom_grove', 'plant',     'Mushroom Grove', 18, '{"emoji":"🍄"}', 17),
+  ('wishing_bamboo', 'tree',      'Wishing Bamboo', 19, '{"emoji":"🎋"}', 18),
+  ('rainbow_theme',  'theme',     'Rainbow Theme',  20, '{"emoji":"🌈"}', 19),
+  ('cool_shades',    'accessory', 'Cool Shades',    21, '{"emoji":"🕶️"}', 20),
+  ('hibiscus',       'plant',     'Hibiscus',       22, '{"emoji":"🌺"}', 21),
+  ('evergreen',      'tree',      'Evergreen',      24, '{"emoji":"🎄"}', 22),
+  ('lotus',          'plant',     'Lotus',          25, '{"emoji":"🪷"}', 23),
+  ('top_hat',        'accessory', 'Top Hat',        26, '{"emoji":"🎩"}', 24),
+  ('grape_arbor',    'tree',      'Grape Arbor',    28, '{"emoji":"🍇"}', 25),
+  ('galaxy_theme',   'theme',     'Galaxy Theme',   30, '{"emoji":"🌌"}', 26)
+on conflict (id) do nothing;
+
+-- ============ achievements ============
+insert into public.achievement_catalog(id, name, hint, xp, sort) values
+  ('streak_14',     'Fortnight of focus',   'Study 14 days in a row',           120,  13),
+  ('task_50',       'Task master',          'Complete 50 tasks',                120,  14),
+  ('ultra_day',     'Ultra day',            '5 hours of focus in one day',      150,  15),
+  ('squad_scholar', 'Squad scholar',        'Finish 10 sessions in group rooms', 100, 16),
+  ('total_100h',    'Triple digits',        '100 hours of total focus',         250,  17),
+  ('sessions_100',  'Session centurion',    'Complete 100 focus sessions',      150,  18),
+  ('task_100',      'Checklist champion',   'Complete 100 tasks',               200,  19),
+  ('total_250h',    'Scholar in residence', '250 hours of total focus',         500,  20),
+  ('sessions_500',  'Marathon mind',        'Complete 500 focus sessions',      500,  21),
+  ('streak_100',    'Centurion',            'Study 100 days in a row',          1000, 22)
+on conflict (id) do nothing;
+
+-- ============ sync: recompute & award (idempotent) ============
+-- Same body as release_11 plus v_room_sessions and the new award conditions.
+create or replace function public.sync_my_gamification()
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  v_user uuid := (select auth.uid());
+  v_total_min bigint := 0;
+  v_best_day bigint := 0;
+  v_streak int := 0;
+  v_sessions int := 0;
+  v_done_tasks int := 0;
+  v_has_room boolean := false;
+  v_room_sessions int := 0;
+  v_activity_xp int := 0;
+  v_ach_xp int := 0;
+  v_xp int := 0;
+  v_level int := 1;
+  v_new_ach text[] := '{}';
+  v_new_pets text[] := '{}';
+  v_new_rewards text[] := '{}';
+begin
+  if v_user is null then return '{}'::jsonb; end if;
+
+  select coalesce(sum(minutes), 0), coalesce(max(minutes), 0)
+    into v_total_min, v_best_day
+    from public.focus_sessions where user_id = v_user;
+
+  select count(*) into v_sessions from public.study_session_events where user_id = v_user;
+  select count(*) into v_done_tasks from public.tasks where user_id = v_user and done;
+  select count(*) into v_room_sessions
+    from public.study_session_events where user_id = v_user and session_kind = 'room';
+  v_has_room := v_room_sessions > 0;
+  select coalesce(sum(10 * least(3.0, 1 + 0.25 * (group_size - 1))), 0)::int
+    into v_activity_xp
+    from public.study_session_events where user_id = v_user;
+
+  -- Current streak = length of the most recent consecutive run of active days,
+  -- counted only if it reaches today or yesterday (a one-day grace).
+  with active as (
+    select distinct date d from public.focus_sessions
+     where user_id = v_user and minutes > 0 and date <= current_date
+  ), ranked as (
+    select d, (d - (row_number() over (order by d))::int) grp from active
+  ), runs as (
+    select grp, count(*) len, max(d) last_day from ranked group by grp
+  )
+  select coalesce((select len from runs where last_day >= current_date - 1 order by last_day desc limit 1), 0)
+    into v_streak;
+
+  -- Award newly-earned achievements from real metrics.
+  with ins as (
+    insert into public.user_achievements(user_id, achievement_id)
+    select v_user, a.id from (values
+      ('first_focus',    v_total_min > 0),
+      ('streak_3',       v_streak >= 3),
+      ('streak_7',       v_streak >= 7),
+      ('century_day',    v_best_day >= 100),
+      ('deep_day',       v_best_day >= 180),
+      ('total_10h',      v_total_min >= 600),
+      ('total_25h',      v_total_min >= 1500),
+      ('task_finisher',  v_done_tasks >= 10),
+      ('total_50h',      v_total_min >= 3000),
+      ('sessions_50',    v_sessions >= 50),
+      ('social_studier', v_has_room),
+      ('streak_30',      v_streak >= 30),
+      ('streak_14',      v_streak >= 14),
+      ('task_50',        v_done_tasks >= 50),
+      ('ultra_day',      v_best_day >= 300),
+      ('squad_scholar',  v_room_sessions >= 10),
+      ('total_100h',     v_total_min >= 6000),
+      ('sessions_100',   v_sessions >= 100),
+      ('task_100',       v_done_tasks >= 100),
+      ('total_250h',     v_total_min >= 15000),
+      ('sessions_500',   v_sessions >= 500),
+      ('streak_100',     v_streak >= 100)
+    ) as a(id, earned)
+    where a.earned
+    on conflict (user_id, achievement_id) do nothing
+    returning achievement_id
+  )
+  select coalesce(array_agg(achievement_id), '{}'::text[]) into v_new_ach from ins;
+
+  select coalesce(sum(c.xp), 0) into v_ach_xp
+    from public.user_achievements ua
+    join public.achievement_catalog c on c.id = ua.achievement_id
+   where ua.user_id = v_user;
+
+  v_xp := v_ach_xp + v_activity_xp;
+  v_level := public.level_for_xp(v_xp);
+
+  -- Award pets by cumulative completed sessions (dog + cat unlock at 0).
+  with ins as (
+    insert into public.user_pets(user_id, pet_id)
+    select v_user, p.id from public.pet_catalog p where p.unlock_sessions <= v_sessions
+    on conflict (user_id, pet_id) do nothing
+    returning pet_id
+  )
+  select coalesce(array_agg(pet_id), '{}'::text[]) into v_new_pets from ins;
+
+  -- Award level rewards.
+  with ins as (
+    insert into public.user_rewards(user_id, reward_id)
+    select v_user, r.id from public.reward_catalog r where r.unlock_level <= v_level
+    on conflict (user_id, reward_id) do nothing
+    returning reward_id
+  )
+  select coalesce(array_agg(reward_id), '{}'::text[]) into v_new_rewards from ins;
+
+  -- Ensure a starter pet and starter plant are active so something always shows.
+  if not exists (select 1 from public.user_pets where user_id = v_user and is_active) then
+    update public.user_pets set is_active = true where user_id = v_user and pet_id = 'dog';
+  end if;
+  if not exists (
+    select 1 from public.user_rewards ur join public.reward_catalog rc on rc.id = ur.reward_id
+     where ur.user_id = v_user and ur.is_active and rc.kind in ('plant', 'tree')
+  ) then
+    update public.user_rewards ur set is_active = true
+      from public.reward_catalog rc
+     where ur.reward_id = rc.id and ur.user_id = v_user and rc.kind in ('plant', 'tree')
+       and rc.unlock_level = (
+         select min(rc2.unlock_level) from public.user_rewards ur2
+           join public.reward_catalog rc2 on rc2.id = ur2.reward_id
+          where ur2.user_id = v_user and rc2.kind in ('plant', 'tree')
+       );
+  end if;
+
+  -- Growth of the active plant/tree scales with cumulative completed sessions.
+  update public.user_rewards ur set growth_points = v_sessions
+    from public.reward_catalog rc
+   where ur.reward_id = rc.id and ur.user_id = v_user and rc.kind in ('plant', 'tree') and ur.is_active;
+
+  insert into public.gamification_state(user_id, xp, level, sessions_completed, updated_at)
+  values (v_user, v_xp, v_level, v_sessions, now())
+  on conflict (user_id) do update
+    set xp = excluded.xp, level = excluded.level,
+        sessions_completed = excluded.sessions_completed, updated_at = now();
+
+  return jsonb_build_object(
+    'xp', v_xp,
+    'level', v_level,
+    'sessions_completed', v_sessions,
+    'new_achievements', to_jsonb(v_new_ach),
+    'new_pets', to_jsonb(v_new_pets),
+    'new_rewards', to_jsonb(v_new_rewards)
+  );
+end;
+$$;
+revoke execute on function public.sync_my_gamification() from public, anon;
+grant execute on function public.sync_my_gamification() to authenticated;
+
+
+-- ---- folded from 20260715010000_release_15_functional_accessories.sql ----
+-- Release 15: functional accessories.
+--
+-- Every accessory now does something on the pet stage, keyed by a "slot" in
+-- its meta (one active per slot, enforced client-side like plants):
+--   bed  — pets nap on it during focus
+--   toy  — a ball pets kick around
+--   bowl — pets wander over for snacks
+--   hat / face — worn by the pets
+-- The cosmetic-only Party Hat is removed (its emoji was confetti and it did
+-- nothing) in favor of the Bouncy Ball at the same level; a Snack Bowl fills
+-- the previously-empty level 13. Mirror of src/petCatalog.ts — keep in sync.
+
+-- Party Hat out (user rows first for the FK).
+delete from public.user_rewards where reward_id = 'party_hat';
+delete from public.reward_catalog where id = 'party_hat';
+
+-- Make room for the Snack Bowl at sort 13 (guarded so a re-run can't bump twice).
+update public.reward_catalog set sort = sort + 1
+ where sort >= 13
+   and not exists (select 1 from public.reward_catalog where id = 'snack_bowl');
+
+-- Slots for the existing accessories.
+update public.reward_catalog set meta = meta || '{"slot":"bed"}'::jsonb  where id = 'pet_bed';
+update public.reward_catalog set meta = meta || '{"slot":"hat"}'::jsonb  where id in ('crown', 'study_cap', 'top_hat');
+update public.reward_catalog set meta = meta || '{"slot":"face"}'::jsonb where id = 'cool_shades';
+
+-- New functional accessories.
+insert into public.reward_catalog(id, kind, name, unlock_level, meta, sort) values
+  ('ball',       'accessory', 'Bouncy Ball', 7,  '{"emoji":"🎾","slot":"toy"}',  7),
+  ('snack_bowl', 'accessory', 'Snack Bowl',  13, '{"emoji":"🥣","slot":"bowl"}', 13)
+on conflict (id) do nothing;
+
+
+-- ---- folded from 2026-07-16_admin_users_pagination.sql ----
+-- Admin Users tab scalability (~1,000+ users): server-side pagination,
+-- sorting, and filtering with a total count, replacing the client's habit of
+-- pulling the whole roster (admin_search_users caps at 200 rows and has no
+-- count, so the old UI both over-fetched and silently truncated).
+--
+-- Same security model as every other admin RPC: SECURITY DEFINER gated on
+-- public.is_admin() inside the query itself, EXECUTE revoked from anon. A
+-- non-admin calling it directly gets zero rows.
+--
+-- admin_search_users is left in place untouched — the client falls back to it
+-- when this migration hasn't been applied yet.
+
+create or replace function public.admin_list_users(
+  p_query text default '',
+  p_plan text default 'all',        -- 'all' | 'premium' | 'free' | 'admin'
+  p_activity text default 'all',    -- 'all' | 'active' (events in 30d) | 'inactive'
+  p_sort text default 'created_at', -- 'created_at' | 'email' | 'name' | 'credits' | 'last_active'
+  p_dir text default 'desc',        -- 'asc' | 'desc'
+  p_limit int default 25,
+  p_offset int default 0
+)
+returns table (
+  id uuid, email text, username text, display_name text, is_premium boolean,
+  ai_credits int, ai_uploads_count int, ai_uploads_period text,
+  premium_expires_at timestamptz, created_at timestamptz, last_active timestamptz,
+  total_count bigint
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  with filtered as (
+    select p.id, p.email, p.username, p.display_name, p.is_premium,
+           coalesce(p.ai_credits, 0) as ai_credits,
+           coalesce(p.ai_uploads_count, 0) as ai_uploads_count,
+           p.ai_uploads_period,
+           (select max(e.expires_at) from public.premium_entitlements e
+             where e.user_id = p.id and e.status = 'active' and e.expires_at > now()) as premium_expires_at,
+           p.created_at,
+           -- app_events (user_id, created_at desc) index makes this a cheap
+           -- backward index scan per row.
+           (select max(a.created_at) from public.app_events a where a.user_id = p.id) as last_active
+      from public.profiles p
+     where public.is_admin()
+       and (length(trim(coalesce(p_query, ''))) = 0
+         or p.email ilike '%' || trim(p_query) || '%'
+         or p.username ilike '%' || trim(p_query) || '%'
+         or p.display_name ilike '%' || trim(p_query) || '%')
+       and (case
+              when p_plan = 'premium' then p.is_premium
+              when p_plan = 'free' then not p.is_premium
+              when p_plan = 'admin' then exists (select 1 from public.admins ad where ad.user_id = p.id)
+              else true
+            end)
+  ),
+  activity_filtered as (
+    select f.* from filtered f
+     where case
+             when p_activity = 'active' then f.last_active > now() - interval '30 days'
+             when p_activity = 'inactive' then f.last_active is null or f.last_active <= now() - interval '30 days'
+             else true
+           end
+  )
+  select af.*, count(*) over () as total_count
+    from activity_filtered af
+   order by
+     (case when p_sort = 'email' and p_dir = 'asc' then lower(af.email) end) asc nulls last,
+     (case when p_sort = 'email' and p_dir <> 'asc' then lower(af.email) end) desc nulls last,
+     (case when p_sort = 'name' and p_dir = 'asc' then lower(coalesce(af.display_name, af.username, af.email)) end) asc nulls last,
+     (case when p_sort = 'name' and p_dir <> 'asc' then lower(coalesce(af.display_name, af.username, af.email)) end) desc nulls last,
+     (case when p_sort = 'credits' and p_dir = 'asc' then af.ai_credits end) asc,
+     (case when p_sort = 'credits' and p_dir <> 'asc' then af.ai_credits end) desc,
+     (case when p_sort = 'last_active' and p_dir = 'asc' then af.last_active end) asc nulls last,
+     (case when p_sort = 'last_active' and p_dir <> 'asc' then af.last_active end) desc nulls last,
+     (case when p_sort = 'created_at' and p_dir = 'asc' then af.created_at end) asc,
+     af.created_at desc
+   limit greatest(1, least(coalesce(p_limit, 25), 100))
+  offset greatest(0, coalesce(p_offset, 0));
+$$;
+
+revoke execute on function public.admin_list_users(text, text, text, text, text, int, int) from public, anon;
+grant execute on function public.admin_list_users(text, text, text, text, text, int, int) to authenticated;
+
+-- Signup-date sorting hits this directly; ~free at 1k rows but keeps the
+-- common default sort index-backed as the table grows.
+create index if not exists profiles_created_at on public.profiles (created_at desc);
+
+
+-- ---- folded from 20260716120000_motivation_spend_backstop.sql ----
+-- Motivation AI spend backstop (2026-07-16).
+--
+-- /api/motivation was protected only by the Upstash burst limiter, which fails
+-- OPEN when Upstash isn't configured — so with the limiter down, N valid JWTs
+-- could drive unbounded Anthropic calls. This adds a DB-enforced per-user daily
+-- cap plus an app-wide daily circuit breaker, mirroring reserve_ai_upload, so a
+-- hard ceiling stands underneath the (best-effort) rate limiter. Server-only:
+-- the endpoint calls reserve_motivation via the service-role client.
+
+create table if not exists public.motivation_usage (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  day date not null,
+  count int not null default 0,
+  primary key (user_id, day)
+);
+
+-- Service-role only (like the other usage/billing tables): RLS on, no client
+-- policies, so the anon/authenticated keys can neither read nor write it.
+alter table public.motivation_usage enable row level security;
+
+-- One shared row per UTC day serializes the global reservation. Without this,
+-- concurrent requests for different users can all observe an incomplete SUM
+-- and overshoot the spending ceiling.
+create table if not exists public.motivation_global_usage (
+  day date primary key,
+  count int not null default 0 check (count >= 0)
+);
+alter table public.motivation_global_usage enable row level security;
+
+-- Reserve one motivation message for p_user today. Atomic: the upsert's row
+-- lock serializes concurrent requests for the same user so the per-user cap
+-- holds under parallelism. Returns 'ok' | 'daily_exceeded' | 'at_capacity'.
+create or replace function public.reserve_motivation(p_user uuid, p_daily_cap int, p_global_cap int)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_day date := (now() at time zone 'utc')::date;
+  v_count int;
+begin
+  -- Reserve the shared daily capacity first. The conflicting-row update takes
+  -- a row lock, serializing callers across all users. No returned row means the
+  -- global cap was already reached.
+  insert into public.motivation_global_usage (day, count)
+    values (v_day, 1)
+  on conflict (day) do update
+    set count = public.motivation_global_usage.count + 1
+    where public.motivation_global_usage.count < p_global_cap
+  returning count into v_count;
+
+  if v_count is null then
+    return 'at_capacity';
+  end if;
+
+  -- Check + increment the user's row. On first use today the INSERT wins;
+  -- afterwards the conflicting row is updated only while under the cap, so an
+  -- over-cap request affects 0 rows and RETURNING yields nothing.
+  insert into public.motivation_usage (user_id, day, count)
+    values (p_user, v_day, 1)
+  on conflict (user_id, day) do update
+    set count = public.motivation_usage.count + 1
+    where public.motivation_usage.count < p_daily_cap
+  returning count into v_count;
+
+  if v_count is null then
+    update public.motivation_global_usage
+       set count = greatest(count - 1, 0)
+     where day = v_day;
+    return 'daily_exceeded';
+  end if;
+
+  return 'ok';
+end;
+$$;
+
+revoke execute on function public.reserve_motivation(uuid, int, int) from public, anon, authenticated;
+grant execute on function public.reserve_motivation(uuid, int, int) to service_role;
+
+
+-- ---- folded from 20260716121000_study_uploads_bucket_rls.sql ----
+-- Lock down the study-uploads bucket (2026-07-16).
+--
+-- Clients upload lecture material directly with the anon key, and
+-- api/generate-tasks re-checks that the path is under `${auth.uid()}/` before
+-- signing it — but that server check only protects the read it performs. The
+-- direct-upload/read surface is governed entirely by storage RLS, and that
+-- config lived only in the dashboard, never in the repo. This commits it:
+-- the bucket is PRIVATE and every object op is owner-folder scoped, so one
+-- user can't read or write another user's uploaded notes with the client key.
+--
+-- The bucket already exists in production, so ON CONFLICT only forces the
+-- security-critical `public = false` and leaves any intentional prod tuning of
+-- size/mime in place; a fresh project gets sensible defaults matching the
+-- server-side validation in api/generate-tasks.ts (12MB, same media types).
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'study-uploads',
+  'study-uploads',
+  false,
+  12582912,
+  array[
+    'application/pdf',
+    'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+    'text/plain', 'text/markdown', 'text/csv',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ]
+)
+on conflict (id) do update set public = false;
+
+-- Owner-folder-scoped object policies. Dropped first so this migration is
+-- idempotent whether or not equivalent dashboard policies already exist.
+drop policy if exists "study_uploads_insert_own" on storage.objects;
+drop policy if exists "study_uploads_select_own" on storage.objects;
+drop policy if exists "study_uploads_update_own" on storage.objects;
+drop policy if exists "study_uploads_delete_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_insert_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_select_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_update_own" on storage.objects;
+drop policy if exists "study_uploads_restrict_delete_own" on storage.objects;
+
+create policy "study_uploads_insert_own"
+on storage.objects for insert to authenticated
+with check (
+  bucket_id = 'study-uploads'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "study_uploads_select_own"
+on storage.objects for select to authenticated
+using (
+  bucket_id = 'study-uploads'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "study_uploads_update_own"
+on storage.objects for update to authenticated
+using (
+  bucket_id = 'study-uploads'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+)
+with check (
+  bucket_id = 'study-uploads'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+create policy "study_uploads_delete_own"
+on storage.objects for delete to authenticated
+using (
+  bucket_id = 'study-uploads'
+  and (storage.foldername(name))[1] = (select auth.uid())::text
+);
+
+-- Restrictive guards are ANDed with every permissive policy. This keeps any
+-- differently named legacy dashboard policy from widening access to this
+-- bucket, while leaving policies for all other buckets untouched.
+create policy "study_uploads_restrict_insert_own"
+on storage.objects as restrictive for insert to authenticated
+with check (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
+
+create policy "study_uploads_restrict_select_own"
+on storage.objects as restrictive for select to authenticated
+using (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
+
+create policy "study_uploads_restrict_update_own"
+on storage.objects as restrictive for update to authenticated
+using (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text)
+with check (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
+
+create policy "study_uploads_restrict_delete_own"
+on storage.objects as restrictive for delete to authenticated
+using (bucket_id <> 'study-uploads' or (storage.foldername(name))[1] = (select auth.uid())::text);
+
+
+-- ---- folded from 20260716122000_notifications_room_id_index.sql (CONCURRENTLY stripped for bulk script) ----
+-- Index notifications.room_id (2026-07-16).
+--
+-- notifications.room_id references rooms(id) ON DELETE SET NULL, but the table
+-- was indexed only on (user_id, created_at). Rooms are reaped aggressively —
+-- reap_stale_rooms() runs via pg_cron every minute plus best-effort on lobby
+-- loads — and each room deletion has to null out room_id on matching
+-- notification rows. Without this index that's a sequential scan of the whole
+-- notifications table on every reap, growing costlier as the table does.
+-- Partial (room_id is not null) since the column is null for most rows.
+
+create index if not exists notifications_room_id_idx
+  on public.notifications (room_id)
+  where room_id is not null;
