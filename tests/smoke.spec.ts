@@ -381,7 +381,7 @@ test("optional break tasks join the focus-mode checklist on breaks", async ({ pa
   await overlay.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(2);
   // Ticking one removes it from the list (never required).
-  await overlay.getByRole("button", { name: /Mark optional break task/ }).first().click();
+  await overlay.getByRole("button", { name: /Clear optional break task/ }).first().click();
   await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(1);
   // Back in focus, the optional rows disappear entirely.
   await overlay.getByRole("button", { name: "Skip", exact: true }).click();

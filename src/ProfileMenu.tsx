@@ -2,9 +2,9 @@
 // launcher: the identity summary, a jump into the full Account settings panel
 // (where display name, username, photo, privacy, data export, and account
 // deletion live), and fast links (plan, friends, admin, settings, feedback).
-// The app preferences (timer confetti, accessibility, app tour) live in the
-// Settings modal, and deeper account management in AccountSettings, so this
-// stays a small, one-glance menu.
+// The app preferences (accessibility, app tour) live in the Settings modal,
+// and deeper account management in AccountSettings, so this stays a small,
+// one-glance menu.
 
 import { useEffect, useRef, useState } from "react";
 import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, MessageSquare, SlidersHorizontal } from "lucide-react";
@@ -176,7 +176,7 @@ export function ProfileMenu({ session, profile, isPremium, onSignIn, onSignOut, 
               <SlidersHorizontal size={15} className="shrink-0 text-primary" />
               <span className="min-w-0">
                 <span className="block text-sm font-medium">Settings</span>
-                <span className="block truncate text-[11px] text-muted-foreground">Confetti, accessibility, and the app tour</span>
+                <span className="block truncate text-[11px] text-muted-foreground">Accessibility and the app tour</span>
               </span>
             </span>
             <ChevronRight size={15} className="shrink-0 text-muted-foreground" />

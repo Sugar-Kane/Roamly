@@ -21,7 +21,7 @@ import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { AccountSettings } from "./AccountSettings";
 import { SettingsModal } from "./SettingsModal";
 import { RoomsLive } from "./RoomsLive";
-import { FocusMode, CompactSounds, TimeDisplay, InfoTip } from "./FocusMode";
+import { FocusMode, TimeDisplay, InfoTip } from "./FocusMode";
 import { PipTimer } from "./PipTimer";
 import { useDocumentPip, applyThemeToPip } from "./useDocumentPip";
 import { useCountUpTimer } from "./useCountUpTimer";
@@ -1148,8 +1148,9 @@ export default function App() {
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask}
               estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached}
               breakActive={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
-            <div className="w-full rounded-2xl border border-border bg-card/70 p-3"><CompactSounds sounds={sounds} /></div>
-            <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed} />
+            {/* One music panel: built-in Focus sounds on top, then Spotify and
+                Apple — same layout as the non-immersive Focus tab. */}
+            <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed} sounds={sounds} />
           </div>
         } />
       {/* Shared Customize Session drawer — opened from the normal timer's button
@@ -2266,7 +2267,7 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
       <div className={`flex items-center justify-between ${collapsed ? "" : "mb-3"}`}>
         <div className="flex items-center gap-2">
           <Music size={16} className="text-primary" />
-          <h2 className="font-display text-lg font-semibold">{sounds ? "Sounds & music" : "Music"}</h2>
+          <h2 className="font-display text-lg font-semibold">Music</h2>
         </div>
         <div className="flex items-center gap-1.5">
           {dockClosed && onReopenDock && (
@@ -3505,11 +3506,12 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimate
           {breakPicks.filter((a: Activity) => !breakDone.includes(a.id)).map((a: Activity) => (
             <div key={a.id}
               className="flex w-full items-center gap-2 rounded-xl border border-roamly-green/40 bg-roamly-green/5 px-3 py-2 transition">
+              {/* Empty box: tapping clears this one task and nothing else.
+                  No check icon (even on hover) so a neighbor that shifts under
+                  the finger never looks auto-checked. */}
               <button onClick={() => setBreakDone((v) => [...v, a.id])}
-                aria-label={`Mark optional break task ${a.title} done`}
-                className="group/chk grid h-6 w-6 shrink-0 place-items-center rounded-md border border-roamly-green/50 transition hover:border-roamly-green hover:bg-roamly-green/10">
-                <Check size={14} className="text-roamly-green opacity-0 transition-opacity group-hover/chk:opacity-60" />
-              </button>
+                aria-label={`Clear optional break task ${a.title}`}
+                className="grid h-6 w-6 shrink-0 place-items-center rounded-md border border-roamly-green/50 transition hover:border-roamly-green hover:bg-roamly-green/10" />
               <span className="min-w-0 flex-1 truncate text-sm" title={a.instruction}>{a.title}</span>
               <span className="shrink-0 rounded-full bg-roamly-green/10 px-2 py-0.5 text-[10px] font-semibold text-roamly-green">Optional</span>
             </div>
