@@ -237,6 +237,24 @@ test("pop-out timer lives in Customize Session when Document PiP is supported", 
   await expect(page.getByTestId("customize-session")).toHaveCount(0);
 });
 
+test("footer opens the Help & Legal drawer", async ({ page }) => {
+  await goHome(page);
+  await expect(page.getByText("© 2026 Roamly Flow")).toBeVisible();
+  await page.getByRole("button", { name: "Help & Legal" }).click();
+  const drawer = page.getByTestId("help-legal");
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "How Roamly Flow works" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Contact support / send feedback" })).toBeVisible();
+  // Privacy tab: plain-language summaries expand on tap.
+  await drawer.getByRole("tab", { name: "Privacy" }).click();
+  await drawer.getByText("What we store").click();
+  await expect(drawer.getByText(/local storage/)).toBeVisible();
+  await drawer.getByRole("tab", { name: "Terms" }).click();
+  await expect(drawer.getByText("Billing", { exact: true })).toBeVisible();
+  await drawer.getByRole("button", { name: /Done/ }).click();
+  await expect(page.getByTestId("help-legal")).toHaveCount(0);
+});
+
 test("AI upload requires sign-in when logged out", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Tasks", exact: true }).click();

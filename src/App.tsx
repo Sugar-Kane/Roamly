@@ -29,6 +29,7 @@ import { Tutorial } from "./Tutorial";
 import { AdminView } from "./Admin";
 import { Modal } from "./Modal";
 import LockedFeaturePreview from "./LockedFeaturePreview";
+import { HelpLegal } from "./HelpLegal";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel, currentUploadPeriod, FREE_MONTHLY_UPLOAD_QUOTA, PREMIUM_MONTHLY_UPLOAD_QUOTA } from "./UploadTasks";
@@ -701,6 +702,7 @@ export default function App() {
   // "How Roamly Flow works": the compact site explanation, opened only by its
   // link (never automatically).
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showHelpLegal, setShowHelpLegal] = useState(false);
   const changeTheme = (id: string) => {
     setThemeId(id);
     savePref("roamly-theme", id); // guests keep it on this device; no expiry
@@ -1071,6 +1073,12 @@ export default function App() {
           )}
           {view === "admin" && <AdminView isAdmin={isAdmin} />}
         </main>
+        <footer className="mt-12 text-center text-xs text-muted-foreground">
+          © 2026 Roamly Flow ·{" "}
+          <button onClick={() => setShowHelpLegal(true)} className="underline-offset-2 transition hover:text-foreground hover:underline">
+            Help &amp; Legal
+          </button>
+        </footer>
       </div>
       <BottomNav nav={nav} view={view} setView={setView} session={session}
         onOpenTour={openTutorial} onOpenHowItWorks={() => setShowHowItWorks(true)}
@@ -1223,6 +1231,12 @@ export default function App() {
       )}
       {showFeedback && session && (
         <FeedbackModal userId={session.user.id} page={view} onClose={() => setShowFeedback(false)} />
+      )}
+      {showHelpLegal && (
+        <HelpLegal onClose={() => setShowHelpLegal(false)}
+          onOpenHowItWorks={() => setShowHowItWorks(true)}
+          onOpenTour={openTutorial}
+          onOpenFeedback={() => (session ? setShowFeedback(true) : setShowAuth(true))} />
       )}
       {showAd && session && (
         <AdSubmitModal userId={session.user.id} onClose={() => setShowAd(false)} />
