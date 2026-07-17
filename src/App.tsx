@@ -24,6 +24,7 @@ import { RoomsLive } from "./RoomsLive";
 import { FocusMode, TimeDisplay, InfoTip } from "./FocusMode";
 import { PipTimer } from "./PipTimer";
 import { useDocumentPip, applyThemeToPip } from "./useDocumentPip";
+import { useVideoPip, type PipFrame } from "./useVideoPip";
 import { useCountUpTimer } from "./useCountUpTimer";
 import { Tutorial } from "./Tutorial";
 import { AdminView } from "./Admin";
@@ -439,6 +440,29 @@ export default function App() {
   // Picture-in-Picture: pop the timer into a small always-on-top window so it
   // stays visible while the user studies in other apps/tabs (desktop Chromium).
   const { pipWindow, supported: pipSupported, openPip, closePip } = useDocumentPip(theme, a11y);
+  // Safari (and other non-Chromium engines) can't do Document PiP, so the
+  // PERSONAL timer falls back to a display-only video-PiP window. Rooms keep
+  // Document-PiP only. The frame is read live each redraw from the timer.
+  const pipFrame = useCallback((): PipFrame => ({
+    timeText: fmt(timer.secondsLeft),
+    phaseLabel: timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break",
+    progress: timer.progress,
+    ring: timer.phase === "focus" ? theme.ring : theme.rest,
+    bg: `hsl(${theme.vars["--background"]})`,
+    fg: `hsl(${theme.vars["--foreground"]})`,
+    muted: `hsl(${theme.vars["--muted-foreground"]})`,
+  }), [timer, theme]);
+  const videoPip = useVideoPip(pipFrame);
+  const personalPipSupported = pipSupported || videoPip.supported;
+  const personalPipActive = !!pipWindow || videoPip.active;
+  const openPersonalPip = useCallback(
+    () => (pipSupported ? openPip() : videoPip.open()),
+    [pipSupported, openPip, videoPip],
+  );
+  const closePersonalPip = useCallback(
+    () => { if (pipSupported) closePip(); else videoPip.close(); },
+    [pipSupported, closePip, videoPip],
+  );
 
   // --- Built-in focus sounds (free for everyone) ---
   // Melody is preselected so music plays the moment anyone hits Start, with no
@@ -1027,8 +1051,8 @@ export default function App() {
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
               dockClosed={dockClosed} onReopenDock={reopenDock}
               onOpenCustomize={() => setShowCustomize(true)}
-              pipSupported={pipSupported} pipActive={!!pipWindow}
-              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
+              pipSupported={personalPipSupported} pipActive={personalPipActive}
+              onPopOut={() => openPersonalPip().then((ok) => { if (ok) track("pip_open"); })} onClosePip={closePersonalPip}
               motivation={motivation} onOpenHowItWorks={() => setShowHowItWorks(true)} />
           )}
           {view === "tasks" && (
@@ -1126,8 +1150,8 @@ export default function App() {
                 <Moon size={14} /> {petSleep.asleep ? "Wake pets" : "Too distracting"}
               </button>
             )}
-            {pipSupported && (
-              <button onClick={() => { setImmersive(false); openPip().then((pip) => { if (pip) track("pip_open", "from_focus"); }); }}
+            {personalPipSupported && (
+              <button onClick={() => { setImmersive(false); openPersonalPip().then((ok) => { if (ok) track("pip_open", "from_focus"); }); }}
                 className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
                 <PictureInPicture2 size={14} /> Pop out timer
               </button>
