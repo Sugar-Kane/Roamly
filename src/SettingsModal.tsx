@@ -1,8 +1,8 @@
-// App settings in one place: the on-device preferences (timer confetti and the
-// accessibility toggles) plus a replay of the app tour. These used to be a
-// grab-bag of rows crammed into the profile dropdown; consolidating them here
-// keeps that menu to a one-glance launcher. Everything works signed-out (the
-// prefs are device-local), so this modal never requires an account.
+// App settings in one place: the on-device accessibility toggles plus a replay
+// of the app tour. These used to be a grab-bag of rows crammed into the profile
+// dropdown; consolidating them here keeps that menu to a one-glance launcher.
+// Everything works signed-out (the prefs are device-local), so this modal never
+// requires an account. (Completion confetti lives in Customize Session.)
 import { HelpCircle, X, ChevronRight } from "lucide-react";
 import { Modal } from "./Modal";
 import type { A11ySettings } from "./ProfileMenu";
@@ -44,11 +44,9 @@ function ToggleRow({ label, hint, on, onClick }: { label: string; hint: string; 
   );
 }
 
-export function SettingsModal({ a11y, setA11y, confettiOn, onToggleConfetti, onReplayTutorial, onClose }: {
+export function SettingsModal({ a11y, setA11y, onReplayTutorial, onClose }: {
   a11y: A11ySettings;
   setA11y: (next: A11ySettings) => void;
-  confettiOn: boolean;
-  onToggleConfetti: () => void;
   onReplayTutorial: () => void;
   onClose: () => void;
 }) {
@@ -66,12 +64,6 @@ export function SettingsModal({ a11y, setA11y, confettiOn, onToggleConfetti, onR
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 pt-1">
-        <Section title="Timer">
-          <ToggleRow label="Completion confetti"
-            hint="Celebrate finished focus sessions. Reduce motion also turns it off."
-            on={confettiOn} onClick={onToggleConfetti} />
-        </Section>
-
         <Section title="Accessibility">
           {A11Y_OPTIONS.map((o) => (
             <ToggleRow key={o.key} label={o.label} hint={o.hint} on={a11y[o.key]} onClick={() => flip(o.key)} />

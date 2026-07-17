@@ -1,6 +1,6 @@
 // Guided tour: quick cards that walk a user through the app. Never opens
-// automatically — it's launched from the header "?", the profile menu's "App
-// tour" row, or the "How Roamly Flow works" explainer. Each step switches to
+// automatically — it's launched from Settings' "App tour" row, the mobile
+// More menu, or the "How Roamly Flow works" explainer. Each step switches to
 // the real tab it describes AND spotlights the actual section on screen (a
 // dimmed backdrop with a cutout ring around the target), so the user looks at
 // the real UI being explained; exiting restores the tab the tour started
@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, Smartphone, Users, BarChart3, type LucideIcon } from "lucide-react";
+import { Timer, ListChecks, Smartphone, Users, BarChart3, Sprout, type LucideIcon } from "lucide-react";
 import type { View } from "./App";
 import { track } from "./track";
 import { savePref } from "./storage";
@@ -25,19 +25,23 @@ const STEPS: { view: View; icon: LucideIcon; title: string; body: string; target
   },
   {
     view: "tasks", icon: ListChecks, title: "Queue your studying", target: '[data-tour="tasks"]',
-    body: "Add tasks by subject and tick them off as you finish. Drag to change priority. Premium members can even upload lecture notes and let AI write the task list.",
-  },
-  {
-    view: "focus", icon: Smartphone, title: "Put Roamly Flow on your Home Screen",
-    body: "On iPhone: tap Safari's Share button (the square with the arrow), then “Add to Home Screen”. Roamly Flow opens full-screen like a real app, with its own icon. On Android or desktop, use the browser menu, then “Install app”.",
+    body: "Add tasks by subject and tick them off as you finish. Drag to reorder, or drag a task onto another subject to move it. Premium members can even upload lecture notes and let AI write the task list.",
   },
   {
     view: "rooms", icon: Users, title: "Study together", target: '[data-tour="rooms"]',
     body: "Every room's timer is already running. Just hit Join to drop in. You focus in silence alongside everyone inside, then chat and voice open at each break. Premium members can host private rooms for friends.",
   },
   {
+    view: "garden", icon: Sprout, title: "Grow a garden and pets", target: '[data-tour="garden"]',
+    body: "Your focus sessions grow a little garden and its companions. Keep studying to unlock plants, pets, and accessories — a gentle nudge to come back each day.",
+  },
+  {
     view: "analytics", icon: BarChart3, title: "Watch it add up", target: '[data-tour="analytics"]',
-    body: "Every session lands here: your daily goal, streak, subject breakdown, and achievements. Replay this tour anytime from the ? button up top or your profile menu.",
+    body: "Every session lands here: your daily goal, streak, subject breakdown, and achievements. Replay this tour anytime from your profile menu.",
+  },
+  {
+    view: "focus", icon: Smartphone, title: "Put Roamly Flow on your Home Screen",
+    body: "On iPhone: tap Safari's Share button (the square with the arrow), then “Add to Home Screen”. Roamly Flow opens full-screen like a real app, with its own icon. On Android or desktop, use the browser menu, then “Install app”.",
   },
 ];
 

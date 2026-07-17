@@ -45,10 +45,12 @@ test("tour never auto-opens; a fresh device sees the timer immediately", async (
   await expect(page.getByTestId("tutorial")).toHaveCount(0);
   await expect(page.getByTestId("music-dock")).toHaveCount(0);
   await expect(page.locator('iframe[title="Music player"]')).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "A focus timer built for PA school." })).toBeVisible();
-  await expect(page.getByText("What's the Pomodoro method?")).toBeVisible();
-  // The tour still opens on demand (header "?" → replay) and restores state.
-  await page.getByRole("button", { name: "Replay the app tour" }).click();
+  await expect(page.getByRole("heading", { name: "The Pomodoro method built for PA school." })).toBeVisible();
+  await expect(page.getByRole("button", { name: "What's the Pomodoro method?" })).toBeVisible();
+  // The tour still opens on demand (How Roamly Flow works → quick tour) and
+  // restores state.
+  await page.getByRole("button", { name: "How Roamly Flow works" }).click();
+  await page.getByRole("button", { name: "Take the quick tour" }).click();
   await expect(page.getByTestId("tutorial")).toBeVisible();
   await expect(page.getByText("Welcome to Roamly Flow")).toBeVisible();
   await page.getByText("Skip tour").click();
@@ -204,11 +206,17 @@ test("a trivially short count-up is not offered for saving", async ({ page }) =>
 
 test("completion sound preference persists", async ({ page }) => {
   await goHome(page);
-  const toggle = page.getByRole("switch", { name: /Completion sound on/ });
+  // The completion-sound switch now lives in the Customize Session drawer.
+  await page.getByRole("button", { name: "Customize Session" }).click();
+  const toggle = page.getByTestId("customize-session").getByRole("switch", { name: "Completion sound" });
+  const before = await toggle.getAttribute("aria-checked");
+  const after = before === "true" ? "false" : "true";
   await toggle.click();
-  await expect(page.getByRole("switch", { name: /Completion sound off/ })).toHaveAttribute("aria-checked", "false");
+  await expect(toggle).toHaveAttribute("aria-checked", after);
   await page.reload();
-  await expect(page.getByRole("switch", { name: /Completion sound off/ })).toHaveAttribute("aria-checked", "false");
+  await page.getByRole("button", { name: "Customize Session" }).click();
+  await expect(page.getByTestId("customize-session").getByRole("switch", { name: "Completion sound" }))
+    .toHaveAttribute("aria-checked", after);
 });
 
 test("premium feature prompts sign-in when logged out", async ({ page }) => {
@@ -289,7 +297,7 @@ test("mobile header controls do not overlap the Roamly wordmark", async ({ page 
     await page.setViewportSize({ width, height: 844 });
     await goHome(page);
     const brandBox = await page.getByText("Roamly Flow", { exact: true }).first().boundingBox();
-    const controlBox = await page.getByRole("button", { name: "Replay the app tour" }).boundingBox();
+    const controlBox = await page.getByRole("button", { name: "Change theme" }).boundingBox();
     expect(brandBox, `wordmark missing at ${width}px`).not.toBeNull();
     expect(controlBox, `header controls missing at ${width}px`).not.toBeNull();
     expect(brandBox!.x + brandBox!.width, `header overlaps wordmark at ${width}px`).toBeLessThanOrEqual(controlBox!.x - 4);
@@ -463,8 +471,9 @@ test("app preferences live in the Settings modal opened from the profile menu", 
   await page.getByRole("button", { name: /^Settings/ }).click();
   const modal = page.getByTestId("settings-modal");
   await expect(modal).toBeVisible();
-  // The relocated groups: timer confetti, accessibility toggles, and the tour.
-  await expect(modal.getByRole("switch", { name: "Completion confetti" })).toBeVisible();
+  // The relocated groups: accessibility toggles and the tour. (Completion
+  // confetti now lives only in Customize Session.)
+  await expect(modal.getByRole("switch", { name: "Completion confetti" })).toHaveCount(0);
   await expect(modal.getByRole("switch", { name: "Reduce motion" })).toBeVisible();
   await expect(modal.getByRole("switch", { name: "Color-blind friendly" })).toBeVisible();
   await expect(modal.getByRole("button", { name: /App tour/ })).toBeVisible();

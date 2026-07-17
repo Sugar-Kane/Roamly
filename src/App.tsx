@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon, PawPrint, PartyPopper, Settings2, MoreHorizontal, CircleCheck } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon, PawPrint, PartyPopper, Settings2, MoreHorizontal, CircleCheck } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
@@ -998,7 +998,6 @@ export default function App() {
           onOpenPremium={() => setView("premium")}
           onOpenSettings={() => setShowSettings(true)}
           isAdmin={isAdmin} onOpenAdmin={() => setView("admin")}
-          onOpenTutorial={openTutorial}
           themeId={themeId} setThemeId={changeTheme} theme={theme}
           onGoHome={() => setView("focus")}
           onOpenFeedback={() => (session ? setShowFeedback(true) : setShowAuth(true))} />
@@ -1065,13 +1064,15 @@ export default function App() {
               onImportedTasks={addImportedTasks as (rows: unknown[]) => void} onUpgrade={startCheckout} />
           </div>
           {view === "garden" && (
-            session ? (
-              <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
-                onSignIn={onSignIn} onToggle={onToggleCompanion}
-                companionsOn={companionsOn} onToggleCompanions={toggleCompanions} />
-            ) : (
-              <GardenLock onSignIn={onSignIn} />
-            )
+            <div data-tour="garden">
+              {session ? (
+                <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
+                  onSignIn={onSignIn} onToggle={onToggleCompanion}
+                  companionsOn={companionsOn} onToggleCompanions={toggleCompanions} />
+              ) : (
+                <GardenLock onSignIn={onSignIn} />
+              )}
+            </div>
           )}
           {view === "premium" && (
             <PremiumView isPremium={isPremium} session={session} profile={profile} onSubscribe={startCheckout}
@@ -1226,7 +1227,7 @@ export default function App() {
           onOpenFriends={() => { setShowAccount(false); setShowFriends(true); }} />
       )}
       {showSettings && (
-        <SettingsModal a11y={a11y} setA11y={setA11y} confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
+        <SettingsModal a11y={a11y} setA11y={setA11y}
           onReplayTutorial={() => setShowTutorial(true)} onClose={() => setShowSettings(false)} />
       )}
       {/* Deferred while a password prompt from an email link is up. */}
@@ -1280,7 +1281,7 @@ function StreakBadge({ streak }: any) {
   );
 }
 
-function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenAccount, onOpenRoom, onOpenFriends, onOpenPlannedStudy, onOpenPremium, isAdmin, onOpenAdmin, onOpenTutorial, onOpenSettings, themeId, setThemeId, theme, onGoHome, onOpenFeedback }: any) {
+function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOpenAccount, onOpenRoom, onOpenFriends, onOpenPlannedStudy, onOpenPremium, isAdmin, onOpenAdmin, onOpenSettings, themeId, setThemeId, theme, onGoHome, onOpenFeedback }: any) {
   // Single row on every screen size: the avatar (with the profile menu behind
   // it) is always pinned to the top right. Plan status and sign out live
   // inside the menu instead of loose header chips.
@@ -1305,10 +1306,6 @@ function Header({ isPremium, streak, session, profile, onSignIn, onSignOut, onOp
       </button>
       <div className="flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
         <span className="hidden sm:block"><StreakBadge streak={streak} /></span>
-        <button onClick={onOpenTutorial} aria-label="Replay the app tour"
-          className="grid h-8 w-8 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-          <HelpCircle size={15} />
-        </button>
         <ThemeMenu themeId={themeId} setThemeId={setThemeId} />
         {session && <NotificationsBell session={session} onOpenRoom={onOpenRoom} onOpenFriends={onOpenFriends} onOpenPlannedStudy={onOpenPlannedStudy} />}
         {/* Wait for a signed-in profile before rendering plan status so a
@@ -1653,51 +1650,14 @@ function ExamSchedulePanel({ exams, onCreate, onUpdate, onDelete }: {
   );
 }
 
-function NotificationToggle({ alerts, soundOnly = false }: any) {
-  const soundToggle = (
-    <button role="switch" aria-checked={alerts.soundEnabled} onClick={() => alerts.setSoundEnabled(!alerts.soundEnabled)}
-      className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${alerts.soundEnabled ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-      {alerts.soundEnabled ? <Volume2 size={13} /> : <BellOff size={13} />} Completion sound {alerts.soundEnabled ? "on" : "off"}
-    </button>
-  );
-  // Quick-controls row shows only the sound switch; the browser-notification
-  // status and enable action live in the Customize Session drawer, so a
-  // permanent blocked/enable chip never sits beside the timer.
-  if (soundOnly || alerts.permission === "unsupported") return soundToggle;
-  if (alerts.permission === "granted") {
-    return (
-      <><span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Bell size={13} /> Notifications on</span>{soundToggle}</>
-    );
-  }
-  if (alerts.permission === "denied") {
-    return (
-      <><span className="flex items-center gap-1.5 text-xs text-muted-foreground"><BellOff size={13} /> Notifications blocked in browser settings</span>{soundToggle}</>
-    );
-  }
+// The expanded "What's the Pomodoro method?" explanation. The trigger lives in
+// the top-right of the FocusIntro heading; this renders below it when opened.
+function PomodoroExplainerPanel({ onClose }: { onClose: () => void }) {
   return (
-    <><button onClick={alerts.requestPermission} className="flex items-center gap-1.5 self-start rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/15"><Bell size={13} /> Enable notifications</button>{soundToggle}</>
-  );
-}
-
-// A short explainer of the Pomodoro method beneath the timer, so newcomers
-// understand what it's doing (from user feedback). Collapsed to its link by
-// default — it never opens automatically, keeping the timer dominant.
-function PomodoroExplainer() {
-  const [open, setOpen] = useState(false);
-  const dismiss = () => setOpen(false);
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 transition hover:text-foreground hover:underline">
-        <HelpCircle size={13} /> What's the Pomodoro method?
-      </button>
-    );
-  }
-  return (
-    <div className="rounded-2xl border border-dashed border-border bg-card/60 p-4">
+    <div className="mt-3 rounded-2xl border border-dashed border-border bg-card/60 p-4">
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold"><HelpCircle size={15} className="text-primary" /> What's the Pomodoro method?</h2>
-        <button onClick={dismiss} className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">Got it</button>
+        <button onClick={onClose} className="shrink-0 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">Got it</button>
       </div>
       <p className="mt-2.5 text-sm text-muted-foreground">
         It's a simple way to study without burning out: focus in short, timed blocks, classically <span className="font-medium text-foreground">25 minutes</span>, then take a <span className="font-medium text-foreground">5-minute break</span>. After about four blocks you take a longer break. The countdown keeps you honest during focus, and the breaks keep you fresh.
@@ -1802,8 +1762,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <SkipForward size={19} />
               </button>
             </div>
-            {/* Quick controls only — Focus mode, Auto-flow, completion sound,
-                and Customize Session. Everything else (pets, confetti,
+            {/* Quick controls only — Focus mode and Customize Session.
+                Everything else (auto-flow, completion sound, pets, confetti,
                 pop-out, notifications) lives in the Customize Session drawer
                 so the timer stays the dominant element. */}
             <div className="flex flex-wrap items-center gap-2">
@@ -1812,13 +1772,6 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <Timer size={13} /> Focus mode
               </button>
               <InfoTip text="Focus mode fills your whole screen with the timer, your music, and your task list. Start opens it automatically, and this button gets you back in." />
-              <button onClick={onToggleAutoFlow}
-                className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${autoFlow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
-                aria-pressed={autoFlow}>
-                <Play size={13} /> Auto-flow {autoFlow ? "on" : "off"}
-              </button>
-              <InfoTip text="Auto-flow starts the next phase by itself: focus rolls into break and back without pressing Start. Turn it off to start each block yourself." />
-              <NotificationToggle alerts={alerts} soundOnly />
               {showCompanions && (
                 <button onClick={onToggleSleep} aria-pressed={petsAsleep}
                   className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${petsAsleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
@@ -1862,8 +1815,6 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         </div>
         )}
       </section>
-
-      <PomodoroExplainer />
 
       {/* Same breakKey as the focus-mode checklist, so both surfaces suggest
           the same two activities during a given break. */}
@@ -2010,10 +1961,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           alerts={alerts} />
       )}
 
-      <FocusSoundsPanel sounds={sounds} />
-
       <MusicPanel embed={embed} service={shownEmbed.service} onServiceChange={onPickService} onPlay={playEmbed}
-        dockClosed={dockClosed} onReopenDock={onReopenDock} />
+        dockClosed={dockClosed} onReopenDock={onReopenDock} sounds={sounds} />
     </div>
   );
 }
@@ -2022,14 +1971,26 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
 // to know what this is, small enough that the timer stays visible without
 // scrolling on phones. The link opens the full "How Roamly Flow works" modal.
 function FocusIntro({ onOpenHowItWorks }: { onOpenHowItWorks: () => void }) {
+  const [pomOpen, setPomOpen] = useState(false);
   return (
     <div>
-      <h1 className="font-display text-xl font-semibold sm:text-2xl">A focus timer built for PA school.</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Plan what to study, stay focused, and track your progress toward upcoming exams.</p>
-      <button onClick={onOpenHowItWorks}
-        className="mt-1.5 text-xs font-medium text-primary underline-offset-2 transition hover:underline">
-        How Roamly Flow works
-      </button>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="font-display text-xl font-semibold sm:text-2xl">The Pomodoro method built for PA school.</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Plan what to study, stay focused, and track your progress toward upcoming exams.</p>
+          <button onClick={onOpenHowItWorks}
+            className="mt-1.5 text-xs font-medium text-primary underline-offset-2 transition hover:underline">
+            How Roamly Flow works
+          </button>
+        </div>
+        {/* The explainer trigger sits in the top-right of the heading; the panel
+            opens full-width beneath it. */}
+        <button onClick={() => setPomOpen((o) => !o)} aria-expanded={pomOpen} aria-label="What's the Pomodoro method?"
+          className="mt-0.5 flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+          <HelpCircle size={13} /> <span className="hidden sm:inline">What's the Pomodoro method?</span>
+        </button>
+      </div>
+      {pomOpen && <PomodoroExplainerPanel onClose={() => setPomOpen(false)} />}
     </div>
   );
 }
@@ -2245,10 +2206,11 @@ function ThemeMenu({ themeId, setThemeId }: any) {
 }
 
 // Built-in ambient sounds, free for everyone. Unlike the streaming embeds,
-// the app owns this audio, so it can follow the timer perfectly.
-function FocusSoundsPanel({ sounds }: any) {
-  return (
-    <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
+// the app owns this audio, so it can follow the timer perfectly. `bare` drops
+// the outer card so it can nest as a section inside the combined Music panel.
+function FocusSoundsPanel({ sounds, bare = false }: any) {
+  const body = (
+    <>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Volume2 size={16} className="text-primary" />
@@ -2297,8 +2259,9 @@ function FocusSoundsPanel({ sounds }: any) {
           className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-border accent-[hsl(var(--primary))]" />
       </div>
       {musicCredit() && <p className="mt-2 px-1 text-[10px] text-muted-foreground">{musicCredit()}</p>}
-    </div>
+    </>
   );
+  return bare ? body : <div className="rounded-2xl border border-border bg-card/80 p-4 shadow-sm">{body}</div>;
 }
 
 // Controller for the ONE persistent streaming player (the mini-dock App
@@ -2306,7 +2269,7 @@ function FocusSoundsPanel({ sounds }: any) {
 // up to App via onPlay — the iframe itself lives in the dock, so it keeps
 // playing across tab switches and pop-out timers instead of dying when this
 // panel unmounts.
-function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = false, onReopenDock }: any) {
+function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = false, onReopenDock, sounds }: any) {
   const [spotifyCustomUrl, setSpotifyCustomUrl] = useState("");
   const [spotifyCustomError, setSpotifyCustomError] = useState(false);
   const [appleCustomUrl, setAppleCustomUrl] = useState("");
@@ -2343,7 +2306,7 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
       <div className={`flex items-center justify-between ${collapsed ? "" : "mb-3"}`}>
         <div className="flex items-center gap-2">
           <Music size={16} className="text-primary" />
-          <h2 className="font-display text-lg font-semibold">Music</h2>
+          <h2 className="font-display text-lg font-semibold">{sounds ? "Sounds & music" : "Music"}</h2>
         </div>
         <div className="flex items-center gap-1.5">
           {dockClosed && onReopenDock && (
@@ -2362,6 +2325,12 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
 
       {/* Hidden (not unmounted) when collapsed, so a playing embed keeps going. */}
       <div id="focus-music-body" className={collapsed ? "h-0 overflow-hidden" : ""} inert={collapsed} aria-hidden={collapsed}>
+        {/* Focus sounds first, then the streaming services below. */}
+        {sounds && (
+          <div className="mb-4 border-b border-border pb-4">
+            <FocusSoundsPanel sounds={sounds} bare />
+          </div>
+        )}
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
           <button onClick={() => onServiceChange("spotify")}
             className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
@@ -2607,6 +2576,12 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
   const press = useRef<{ id: string; group: string; groupIds: string[]; index: number; y: number; el: HTMLDivElement; pointerId: number; timer: number; fromHandle: boolean } | null>(null);
   const rects = useRef<{ id: string; mid: number }[]>([]);
   const justDragged = useRef(false);
+  // Dragging a row over a *different* subject section reassigns its category on
+  // drop (instead of the within-group reorder). Highlight that target section
+  // while the finger is over it.
+  const [dropTag, setDropTag] = useState<string | null>(null);
+  const dropTagRef = useRef<string | null>(null);
+  useEffect(() => { dropTagRef.current = dropTag; }, [dropTag]);
 
   const onRowPointerDown = (e: React.PointerEvent<HTMLDivElement>, id: string, group: string, groupIds: string[], index: number) => {
     if ((e.target as HTMLElement).closest("[data-nodrag]")) return;
@@ -2650,6 +2625,14 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
       if (dist < best) { best = dist; over = i; }
     });
     setDrag({ ...d, dy, over });
+    // Hit-test the finger against every subject section; over a different one
+    // means "drop to move category" rather than "reorder within this one".
+    let target: string | null = null;
+    for (const [name, el] of groupRefs.current) {
+      const r = el.getBoundingClientRect();
+      if (e.clientY >= r.top && e.clientY <= r.bottom) { target = name; break; }
+    }
+    setDropTag(target && target !== d.group ? target : null);
   };
 
   const onRowPointerUp = () => {
@@ -2658,10 +2641,14 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
     if (p) clearTimeout(p.timer);
     press.current = null;
     if (d) {
-      if (d.over !== d.from) reorderTask(d.id, d.over);
+      const target = dropTagRef.current;
+      // Dropped over another subject → reassign; otherwise reorder in place.
+      if (target && target !== d.group) setTaskTag(d.id, target);
+      else if (d.over !== d.from) reorderTask(d.id, d.over);
       justDragged.current = true;
       window.setTimeout(() => { justDragged.current = false; }, 80);
       setDrag(null);
+      setDropTag(null);
     }
   };
 
@@ -2669,7 +2656,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
     const p = press.current;
     if (p) clearTimeout(p.timer);
     press.current = null;
-    if (dragRef.current) setDrag(null);
+    if (dragRef.current) { setDrag(null); setDropTag(null); }
   };
 
   // While a drag is live, stop the page from scrolling under the finger.
@@ -2839,7 +2826,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
       <h1 className="font-display text-3xl font-semibold">Tasks</h1>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
         Queue what you'll study. Pick one to focus on.
-        <InfoTip text="Click a task's name to edit it (Enter saves, Esc cancels). The n/n counter shows focus sessions done vs. planned — tap it to change the plan. Press ▶ to start focusing on a task. Tap a subject header to collapse it, drag ⋮⋮ to reorder tasks or whole subjects, and tap a task's subject badge to move it to another subject." />
+        <InfoTip text="Click a task's name to edit it (Enter saves, Esc cancels). The n/n counter shows focus sessions done vs. planned — tap it to change the plan. Press ▶ to start focusing on a task. Tap a subject header to collapse it, drag ⋮⋮ to reorder tasks or whole subjects, and drag a task onto another subject (or tap its badge) to move it there." />
       </p>
       {/* Secondary preference tucked into a collapsed disclosure so task
           creation stays the page's primary action. */}
@@ -2918,10 +2905,6 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
         </button>
       </div>
       {!session && tasks.length >= guestLimit && <p role="status" className="mt-2 text-sm text-muted-foreground">You reached the 5-task guest limit. Sign in to create and sync more tasks.</p>}
-      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
-        isPremium={session ? (profile ? !!profile.is_premium : null) : false}
-        onSignIn={onSignIn} onUpgrade={onSubscribe}
-        onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
 
       {session && !tasksLoaded && (
         <p className="mt-6 rounded-2xl border border-dashed border-border bg-card/60 p-4 text-center text-sm text-muted-foreground">
@@ -2941,8 +2924,9 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
         const c = tagColor(g);
         const collapsed = collapsedTags.includes(g);
         const beingGroupDragged = groupDrag?.g === g;
+        const isDropTarget = dropTag === g;
         return (
-          <section key={g} className={`mt-6 ${beingGroupDragged ? "rounded-2xl bg-card/95 p-2 ring-2 ring-primary/50" : ""}`}
+          <section key={g} className={`mt-6 ${beingGroupDragged ? "rounded-2xl bg-card/95 p-2 ring-2 ring-primary/50" : ""} ${isDropTarget ? "rounded-2xl bg-primary/10 p-2 ring-2 ring-primary/60" : ""}`}
             ref={(el) => { if (el) groupRefs.current.set(g, el); else groupRefs.current.delete(g); }}
             style={groupDragStyle(g, gi)}>
             <div className="flex items-center gap-1">
@@ -3076,6 +3060,12 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
           )}
         </section>
       )}
+
+      {/* Planned study lives below the task list. */}
+      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
+        isPremium={session ? (profile ? !!profile.is_premium : null) : false}
+        onSignIn={onSignIn} onUpgrade={onSubscribe}
+        onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
 
       {tagPickTarget && <TaskCategoryModal task={tagPickTarget} tags={tags} onPick={(next: string) => setTaskTag(tagPickTarget.id, next)} onClose={() => setTagPickTarget(null)} />}
       {estTarget && <TaskEstModal task={estTarget} onPick={(n: number) => setTaskEst(estTarget.id, n)} onClose={() => setEstTarget(null)} />}
