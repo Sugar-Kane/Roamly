@@ -463,6 +463,73 @@ export async function adminRetentionCohorts(weeks = 8): Promise<AdminCohortRow[]
   }));
 }
 
+// ---- Phase 3: user explorer detail ----
+// One user's profile snapshot plus lifetime and trailing-30-day aggregates,
+// a recent event timeline (keyed by user_id), and a daily focus/activity
+// series for the in-drawer sparkline. All three RPCs are is_admin()-gated.
+export type AdminUserDetail = {
+  id: string; email: string | null; username: string | null; display_name: string | null;
+  is_premium: boolean; is_admin_user: boolean;
+  created_at: string | null; last_active: string | null; first_active: string | null;
+  ai_credits: number; ai_uploads_count: number; ai_uploads_period: string | null;
+  premium_source: string | null; premium_status: string | null;
+  premium_starts_at: string | null; premium_expires_at: string | null; cancel_at_period_end: boolean | null;
+  focus_minutes: number; focus_days: number; focus_blocks_done: number;
+  focus_minutes_30d: number; active_days_30d: number; events_30d: number;
+  tasks_created: number; tasks_completed: number;
+  rooms_created: number; room_joins: number; note_uploads: number;
+  credit_purchases: number; feedback_count: number; error_count: number;
+  total_events: number; activated: boolean;
+};
+export type AdminUserEvent = { name: string; meta: string | null; device: string | null; created_at: string };
+export type AdminUserDailyPoint = { day: string; focus_minutes: number; events: number };
+
+export async function adminUserDetail(userId: string): Promise<AdminUserDetail | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_user_detail", { p_user: userId });
+  if (error) { console.warn("[Roamly] adminUserDetail failed", error.message); return null; }
+  const r = (data ?? [])[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    id: String(r.id), email: r.email ? String(r.email) : null,
+    username: r.username ? String(r.username) : null, display_name: r.display_name ? String(r.display_name) : null,
+    is_premium: !!r.is_premium, is_admin_user: !!r.is_admin_user,
+    created_at: r.created_at ? String(r.created_at) : null,
+    last_active: r.last_active ? String(r.last_active) : null,
+    first_active: r.first_active ? String(r.first_active) : null,
+    ai_credits: num(r.ai_credits), ai_uploads_count: num(r.ai_uploads_count),
+    ai_uploads_period: r.ai_uploads_period ? String(r.ai_uploads_period) : null,
+    premium_source: r.premium_source ? String(r.premium_source) : null,
+    premium_status: r.premium_status ? String(r.premium_status) : null,
+    premium_starts_at: r.premium_starts_at ? String(r.premium_starts_at) : null,
+    premium_expires_at: r.premium_expires_at ? String(r.premium_expires_at) : null,
+    cancel_at_period_end: r.cancel_at_period_end == null ? null : !!r.cancel_at_period_end,
+    focus_minutes: num(r.focus_minutes), focus_days: num(r.focus_days), focus_blocks_done: num(r.focus_blocks_done),
+    focus_minutes_30d: num(r.focus_minutes_30d), active_days_30d: num(r.active_days_30d), events_30d: num(r.events_30d),
+    tasks_created: num(r.tasks_created), tasks_completed: num(r.tasks_completed),
+    rooms_created: num(r.rooms_created), room_joins: num(r.room_joins), note_uploads: num(r.note_uploads),
+    credit_purchases: num(r.credit_purchases), feedback_count: num(r.feedback_count), error_count: num(r.error_count),
+    total_events: num(r.total_events), activated: !!r.activated,
+  };
+}
+
+export async function adminUserEvents(userId: string, limit = 50): Promise<AdminUserEvent[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_user_events", { p_user: userId, p_limit: limit });
+  if (error) { console.warn("[Roamly] adminUserEvents failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    name: String(r.name), meta: r.meta ? String(r.meta) : null,
+    device: r.device ? String(r.device) : null, created_at: String(r.created_at),
+  }));
+}
+
+export async function adminUserDaily(userId: string, days = 30): Promise<AdminUserDailyPoint[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_user_daily", { p_user: userId, p_days: days });
+  if (error) { console.warn("[Roamly] adminUserDaily failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({ day: String(r.day), focus_minutes: num(r.focus_minutes), events: num(r.events) }));
+}
+
 // Permanent account deletion (admin only). Server cancels Stripe billing first
 // and audits the action; the auth delete cascades through every app table.
 export async function adminDeleteUser(userId: string): Promise<{ ok?: boolean; billingCanceled?: boolean; stripeWarning?: string; error?: string }> {
