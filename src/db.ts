@@ -412,6 +412,43 @@ export async function adminConversionFunnel(startISO: string, endISO: string): P
   };
 }
 
+// ---- Admin BI dashboard (Phase 4: Revenue & conversion) ----
+// Read-only, is_admin()-gated, from premium_entitlements + credit_ledger ONLY
+// (no Stripe). All money fields are ESTIMATES at list price — see the RPC and
+// the Revenue page for the assumptions. Snapshot fields are "as of" the window
+// end; flow fields cover the window. Call twice (current + previous) for Δ.
+export type AdminRevenueSummary = {
+  active_subscriptions: number; paying_users: number; active_trials: number;
+  mrr_cents: number; canceling: number;
+  new_subscriptions: number; new_trials: number; trials_converted: number;
+  credit_purchases: number; credits_sold: number; credit_revenue_cents: number;
+};
+export type AdminRevenueDay = { day: string; new_subscriptions: number; new_trials: number; credit_revenue_cents: number };
+
+export async function adminRevenueSummary(startISO: string, endISO: string): Promise<AdminRevenueSummary | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_revenue_summary", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] adminRevenueSummary failed", error.message); return null; }
+  const r = (data ?? [])[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    active_subscriptions: num(r.active_subscriptions), paying_users: num(r.paying_users), active_trials: num(r.active_trials),
+    mrr_cents: num(r.mrr_cents), canceling: num(r.canceling),
+    new_subscriptions: num(r.new_subscriptions), new_trials: num(r.new_trials), trials_converted: num(r.trials_converted),
+    credit_purchases: num(r.credit_purchases), credits_sold: num(r.credits_sold), credit_revenue_cents: num(r.credit_revenue_cents),
+  };
+}
+
+export async function adminRevenueSeries(startISO: string, endISO: string): Promise<AdminRevenueDay[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_revenue_series", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] adminRevenueSeries failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    day: String(r.day), new_subscriptions: num(r.new_subscriptions),
+    new_trials: num(r.new_trials), credit_revenue_cents: num(r.credit_revenue_cents),
+  }));
+}
+
 // ---- Admin BI dashboard (Phase 2: Features + Engagement) ----
 export type AdminFeatureStat = {
   name: string; total: number; unique_users: number; free_uses: number; premium_uses: number;

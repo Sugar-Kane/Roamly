@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { resolveRange, pctChange, fmtMinutes, buildInsights, type AdminFilters } from "../src/adminMetrics";
+import { resolveRange, pctChange, fmtMinutes, fmtCents, buildInsights, type AdminFilters } from "../src/adminMetrics";
 import { featureLabel, featureCategory, EVENT_LABELS } from "../src/adminLabels";
 import type { AdminKpiSummary, AdminFunnel } from "../src/db";
 
@@ -49,6 +49,19 @@ test.describe("pctChange", () => {
 test("fmtMinutes formats hours and minutes", () => {
   expect(fmtMinutes(45)).toBe("45m");
   expect(fmtMinutes(125)).toBe("2h 5m");
+});
+
+test.describe("fmtCents (estimated revenue formatting)", () => {
+  test("whole dollars drop the cents; fractional dollars keep two places", () => {
+    expect(fmtCents(300)).toBe("$3");        // $3/mo subscription
+    expect(fmtCents(250)).toBe("$2.50");     // annual, $2.50/mo equivalent
+    expect(fmtCents(0)).toBe("$0");
+    expect(fmtCents(100)).toBe("$1");        // 2-credit pack
+  });
+  test("thousands are grouped", () => {
+    expect(fmtCents(125000)).toBe("$1,250");
+    expect(fmtCents(125050)).toBe("$1,250.50");
+  });
 });
 
 test.describe("feature labels (no raw event names leak)", () => {
