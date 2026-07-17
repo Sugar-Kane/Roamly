@@ -379,11 +379,10 @@ test("optional break tasks join the focus-mode checklist on breaks", async ({ pa
   await expect(overlay).toBeVisible();
   await overlay.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(2);
-  // Ticking one works but is never required.
-  const tick = overlay.getByRole("button", { name: /Mark optional break task/ }).first();
-  await tick.click();
-  await expect(tick).toHaveAttribute("aria-pressed", "true");
-  // Back in focus, the optional rows disappear.
+  // Ticking one removes it from the list (never required).
+  await overlay.getByRole("button", { name: /Mark optional break task/ }).first().click();
+  await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(1);
+  // Back in focus, the optional rows disappear entirely.
   await overlay.getByRole("button", { name: "Skip", exact: true }).click();
   await expect(overlay.getByText("Optional", { exact: true })).toHaveCount(0);
 });
@@ -450,19 +449,23 @@ test("pets can be toggled from focus mode and the choice persists", async ({ pag
   await page.getByRole("button", { name: "Start", exact: true }).click();
   const overlay = page.getByTestId("focus-overlay");
   await expect(overlay).toBeVisible();
-  // The control is always present (even with pets off) so they can be restored.
-  const petToggle = overlay.getByRole("button", { name: /pets during focus/i });
+  // Focus mode now uses the same Customize Session drawer as the normal timer.
+  await overlay.getByRole("button", { name: "Customize Session" }).click();
+  const drawer = page.getByTestId("customize-session");
+  const petToggle = drawer.getByRole("switch", { name: "Show pets during focus" });
   await expect(petToggle).toBeVisible();
-  const before = await petToggle.getAttribute("aria-pressed");
+  const before = await petToggle.getAttribute("aria-checked");
+  const after = before === "true" ? "false" : "true";
   await petToggle.click();
-  await expect(overlay.getByRole("button", { name: /pets during focus/i }))
-    .toHaveAttribute("aria-pressed", before === "true" ? "false" : "true");
+  await expect(petToggle).toHaveAttribute("aria-checked", after);
+  await drawer.getByRole("button", { name: /Done/ }).click();
   // The preference persists across a reload.
   await page.reload();
   await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
   await page.getByRole("button", { name: "Start", exact: true }).click();
-  await expect(page.getByTestId("focus-overlay").getByRole("button", { name: /pets during focus/i }))
-    .toHaveAttribute("aria-pressed", before === "true" ? "false" : "true");
+  await page.getByTestId("focus-overlay").getByRole("button", { name: "Customize Session" }).click();
+  await expect(page.getByTestId("customize-session").getByRole("switch", { name: "Show pets during focus" }))
+    .toHaveAttribute("aria-checked", after);
 });
 
 test("app preferences live in the Settings modal opened from the profile menu", async ({ page }) => {

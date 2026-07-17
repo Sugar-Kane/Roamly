@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon, PawPrint, PartyPopper, Settings2, MoreHorizontal, CircleCheck } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, Pencil, Trash2, Sprout, Moon, Settings2, MoreHorizontal, CircleCheck } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
@@ -703,6 +703,9 @@ export default function App() {
   // link (never automatically).
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [showHelpLegal, setShowHelpLegal] = useState(false);
+  // Customize Session drawer, lifted to App level so the same button/drawer is
+  // shared by the normal timer and the immersive focus-mode overlay.
+  const [showCustomize, setShowCustomize] = useState(false);
   const changeTheme = (id: string) => {
     setThemeId(id);
     savePref("roamly-theme", id); // guests keep it on this device; no expiry
@@ -1014,20 +1017,17 @@ export default function App() {
               tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask}
               custom={custom} setCustom={setCustom}
               isPremium={isPremium} gateThen={gateThen}
-              exams={examSchedules} addExam={addExam} editExam={editExam} removeExam={removeExam} alerts={alerts}
+              exams={examSchedules} addExam={addExam} editExam={editExam} removeExam={removeExam}
               embed={embed} shownEmbed={shownEmbed} playEmbed={playEmbed}
               onPickService={pickDockService} runSolo={runSolo}
-              autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow} onOpenTasks={() => setView("tasks")}
+              onOpenTasks={() => setView("tasks")}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)}
               countUp={countUp} onCompleteCountUp={completeCountUp}
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
-              pipSupported={pipSupported} pipActive={!!pipWindow}
-              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
-              companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
-              confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
               dockClosed={dockClosed} onReopenDock={reopenDock}
+              onOpenCustomize={() => setShowCustomize(true)}
               motivation={motivation} onOpenHowItWorks={() => setShowHowItWorks(true)} />
           )}
           {view === "tasks" && (
@@ -1117,36 +1117,20 @@ export default function App() {
             <button onClick={timer.skip} className="grid h-12 w-12 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Skip">
               <SkipForward size={18} />
             </button>
-            {pipSupported && (
-              <button onClick={() => (pipWindow ? closePip() : openPip().then((pip) => { if (pip) track("pip_open", "focus_mode"); }))}
-                className={`grid h-12 w-12 place-items-center rounded-2xl border transition ${pipWindow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
-                aria-pressed={!!pipWindow}
-                aria-label={pipWindow ? "Close pop-out timer" : "Pop out timer"}>
-                <PictureInPicture2 size={18} />
-              </button>
-            )}
-            <button onClick={toggleAutoFlow} aria-pressed={autoFlow}
-              className={`flex h-12 items-center rounded-2xl border px-4 text-xs font-medium transition ${autoFlow ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-              Auto-flow {autoFlow ? "on" : "off"}
-            </button>
-            {/* Always visible (even when pets are hidden) so there is always a
-                way to bring them back. Reuses the single companions pref. */}
-            <button onClick={toggleCompanions} aria-pressed={companionsOn}
-              aria-label={companionsOn ? "Hide pets during focus" : "Show pets during focus"}
-              className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${companionsOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-              <PawPrint size={14} /> Pets {companionsOn ? "on" : "off"}
-            </button>
-            <button onClick={toggleConfetti} aria-pressed={confettiOn}
-              aria-label={confettiOn ? "Turn completion confetti off" : "Turn completion confetti on"}
-              className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${confettiOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-              <PartyPopper size={14} /> Confetti {confettiOn ? "on" : "off"}
-            </button>
+            {/* Pets-sleep chip, always visible so pets can be brought back; the
+                rest of the settings (auto-flow, pets, confetti, pop-out,
+                sound, notifications) live in the shared Customize Session
+                drawer — same button and UI as the non-immersive timer. */}
             {showCompanions && (
               <button onClick={toggleSleep} aria-pressed={petSleep.asleep}
                 className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${petSleep.asleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
                 <Moon size={14} /> {petSleep.asleep ? "Wake pets" : "Too distracting"}
               </button>
             )}
+            <button onClick={() => setShowCustomize(true)}
+              className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+              <Settings2 size={14} /> Customize Session
+            </button>
           </>
         }
         companions={petStageNode}
@@ -1168,6 +1152,19 @@ export default function App() {
             <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed} />
           </div>
         } />
+      {/* Shared Customize Session drawer — opened from the normal timer's button
+          AND the immersive focus-mode controls, so both surfaces use the exact
+          same button and UI. Renders above the focus overlay (drawer z-130 >
+          overlay z-120). */}
+      {showCustomize && (
+        <CustomizeSession onClose={() => setShowCustomize(false)}
+          companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
+          confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
+          autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow}
+          pipSupported={pipSupported} pipActive={!!pipWindow}
+          onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
+          alerts={alerts} />
+      )}
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
           App (not FocusView) so it survives tab switches and shares the one live
           `timer` object. Yields to the room's own pop-out while a room is open. */}
@@ -1669,14 +1666,13 @@ function PomodoroExplainerPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, alerts, session, onSignIn, sounds, enterFocus, pipSupported, pipActive, onPopOut, onClosePip, embed, shownEmbed, playEmbed, onPickService, runSolo, autoFlow, onToggleAutoFlow, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, companionsOn, onToggleCompanions, confettiOn, onToggleConfetti, dockClosed, onReopenDock, motivation, onOpenHowItWorks }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, dockClosed, onReopenDock, onOpenCustomize, motivation, onOpenHowItWorks }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
   const timerRef = useRef<HTMLElement>(null);
   const scrollToTimer = () => timerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const [showMethods, setShowMethods] = useState(false);
-  const [showCustomize, setShowCustomize] = useState(false);
   // One timer card, two modes: the classic countdown methods or the count-up
   // stopwatch, both picked from the same "Select timer" list.
   const [timerMode, setTimerModeState] = useState<"pomodoro" | "countup">(() => (loadPref("roamly-timer-mode") === "countup" ? "countup" : "pomodoro"));
@@ -1778,7 +1774,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                   <Moon size={13} /> {petsAsleep ? "Wake pets" : "Too distracting"}
                 </button>
               )}
-              <button onClick={() => setShowCustomize(true)}
+              <button onClick={onOpenCustomize}
                 className="flex items-center gap-1.5 self-start rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
                 <Settings2 size={13} /> Customize Session
               </button>
@@ -1951,15 +1947,6 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
       </div>
 
       {session && <ExamSchedulePanel exams={exams} onCreate={addExam} onUpdate={editExam} onDelete={removeExam} />}
-
-      {showCustomize && (
-        <CustomizeSession onClose={() => setShowCustomize(false)}
-          companionsOn={companionsOn} onToggleCompanions={onToggleCompanions}
-          confettiOn={confettiOn} onToggleConfetti={onToggleConfetti}
-          autoFlow={autoFlow} onToggleAutoFlow={onToggleAutoFlow}
-          pipSupported={pipSupported} pipActive={pipActive} onPopOut={onPopOut} onClosePip={onClosePip}
-          alerts={alerts} />
-      )}
 
       <MusicPanel embed={embed} service={shownEmbed.service} onServiceChange={onPickService} onPlay={playEmbed}
         dockClosed={dockClosed} onReopenDock={onReopenDock} sounds={sounds} />
@@ -3537,23 +3524,21 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimate
   return (
     <div className="rounded-2xl border border-border bg-card/70 p-3">
       <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{breakPicks.length > 0 ? "On a break" : "Studying"}</span>
-      {breakPicks.length > 0 && (
+      {/* Checking an optional break task removes it from the list. */}
+      {breakPicks.some((a: Activity) => !breakDone.includes(a.id)) && (
         <div className="mt-2 space-y-1.5">
-          {breakPicks.map((a: Activity) => {
-            const done = breakDone.includes(a.id);
-            return (
-              <div key={a.id}
-                className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 transition ${done ? "border-roamly-green bg-roamly-green/10" : "border-roamly-green/40 bg-roamly-green/5"}`}>
-                <button onClick={() => setBreakDone((v) => (done ? v.filter((id) => id !== a.id) : [...v, a.id]))}
-                  aria-pressed={done} aria-label={`Mark optional break task ${a.title} done`}
-                  className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border transition ${done ? "border-roamly-green bg-roamly-green" : "border-roamly-green/50 hover:border-roamly-green"}`}>
-                  {done && <Check size={14} className="text-white" />}
-                </button>
-                <span className={`min-w-0 flex-1 truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`} title={a.instruction}>{a.title}</span>
-                <span className="shrink-0 rounded-full bg-roamly-green/10 px-2 py-0.5 text-[10px] font-semibold text-roamly-green">Optional</span>
-              </div>
-            );
-          })}
+          {breakPicks.filter((a: Activity) => !breakDone.includes(a.id)).map((a: Activity) => (
+            <div key={a.id}
+              className="flex w-full items-center gap-2 rounded-xl border border-roamly-green/40 bg-roamly-green/5 px-3 py-2 transition">
+              <button onClick={() => setBreakDone((v) => [...v, a.id])}
+                aria-label={`Mark optional break task ${a.title} done`}
+                className="group/chk grid h-6 w-6 shrink-0 place-items-center rounded-md border border-roamly-green/50 transition hover:border-roamly-green hover:bg-roamly-green/10">
+                <Check size={14} className="text-roamly-green opacity-0 transition-opacity group-hover/chk:opacity-60" />
+              </button>
+              <span className="min-w-0 flex-1 truncate text-sm" title={a.instruction}>{a.title}</span>
+              <span className="shrink-0 rounded-full bg-roamly-green/10 px-2 py-0.5 text-[10px] font-semibold text-roamly-green">Optional</span>
+            </div>
+          ))}
         </div>
       )}
       {tasks.length === 0 ? null : open.length === 0 ? (
