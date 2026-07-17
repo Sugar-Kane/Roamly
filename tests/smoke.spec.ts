@@ -362,8 +362,9 @@ test("Release 3 break activities are optional and interactive", async ({ page })
   await expect(activities).toBeVisible();
   const options = activities.getByRole("button");
   await expect(options).toHaveCount(2);
+  // Checking one off clears it from the list; the other remains.
   await options.first().click();
-  await expect(options.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(activities.getByRole("button")).toHaveCount(1);
 });
 
 test("optional break tasks join the focus-mode checklist on breaks", async ({ page }) => {
