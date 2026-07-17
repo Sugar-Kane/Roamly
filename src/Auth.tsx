@@ -190,7 +190,7 @@ export function AuthPanel({ onClose }: { onClose: () => void }) {
           Click it to activate your account.
         </p>
         <p className="mt-2 rounded-xl border border-dashed border-border p-2.5 text-center text-xs text-muted-foreground">
-          Nothing there after a minute? <span className="font-medium text-foreground">Check your spam folder</span>. The sender is Roamly.
+          Nothing there after a minute? <span className="font-medium text-foreground">Check your spam folder</span>. The sender is Roamly Flow.
         </p>
         <button onClick={onClose} className="mt-4 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
           Got it

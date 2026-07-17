@@ -215,7 +215,7 @@ function AdminUsers() {
   const grant = async (u: AdminUserListRow, months: 1 | 12) => {
     setBusyId(`${u.id}:${months}`);
     setError(null);
-    const result = await adminGrantPremium(u.id, months, "Granted from Roamly admin portal");
+    const result = await adminGrantPremium(u.id, months, "Granted from Roamly Flow admin portal");
     setBusyId(null);
     if (result.error) { setError(result.error); return; }
     patchRow(u.id, { is_premium: true, premium_expires_at: result.expiresAt ?? u.premium_expires_at });
