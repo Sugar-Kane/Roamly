@@ -43,19 +43,25 @@ export function HealthyBreakActivities({ active, breakKey, compact = false }: { 
 
   useEffect(() => { setCompleted([]); }, [breakKey]);
   if (!active || picks.length !== 2) return null;
+  // Checking an activity removes it from the list; the card hides once both
+  // are done (or dismissed).
+  const remaining = picks.filter((a) => !completed.includes(a.id));
+  if (remaining.length === 0) return null;
 
   return <section className={`rounded-2xl border border-roamly-green/30 bg-roamly-green/5 ${compact ? "p-3" : "p-4"}`} aria-label="Healthy break activities">
     <h2 className="flex items-center gap-1.5 text-sm font-semibold"><Heart size={14} className="text-roamly-green" /> Optional break reset</h2>
-    <p className="mt-0.5 text-[11px] text-muted-foreground">Choose either, both, or neither. Your timer keeps going.</p>
+    <p className="mt-0.5 text-[11px] text-muted-foreground">Check one off to clear it, or ignore them. Your timer keeps going.</p>
     <div className="mt-2 grid gap-2 sm:grid-cols-2">
-      {picks.map((activity) => {
-        const done = completed.includes(activity.id);
-        return <button key={activity.id} onClick={() => setCompleted((v) => done ? v.filter((id) => id !== activity.id) : [...v, activity.id])}
-          aria-pressed={done} className={`rounded-xl border p-3 text-left transition ${done ? "border-roamly-green bg-roamly-green/10" : "border-border bg-card/70 hover:border-roamly-green/50"}`}>
-          <span className="flex items-center gap-1.5 text-xs font-semibold">{done && <Check size={13} className="text-roamly-green" />}{activity.title}</span>
+      {remaining.map((activity) => (
+        <button key={activity.id} onClick={() => setCompleted((v) => [...v, activity.id])}
+          aria-label={`Mark ${activity.title} done`}
+          className="group/act rounded-xl border border-border bg-card/70 p-3 text-left transition hover:border-roamly-green/50">
+          <span className="flex items-center gap-1.5 text-xs font-semibold">
+            <Check size={13} className="text-roamly-green opacity-0 transition-opacity group-hover/act:opacity-60" />{activity.title}
+          </span>
           <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">{activity.instruction}</span>
-        </button>;
-      })}
+        </button>
+      ))}
     </div>
   </section>;
 }

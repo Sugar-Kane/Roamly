@@ -7,7 +7,7 @@
 // stays a small, one-glance menu.
 
 import { useEffect, useRef, useState } from "react";
-import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, MessageSquare, UserCog, SlidersHorizontal } from "lucide-react";
+import { Crown, LogIn, LogOut, ChevronRight, Users, Shield, MessageSquare, SlidersHorizontal } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { loadPref } from "./storage";
 import type { Profile } from "./db";
@@ -100,7 +100,10 @@ export function ProfileMenu({ session, profile, isPremium, onSignIn, onSignOut, 
               className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-secondary/60">
               <ProfileAvatar url={profile?.avatar_url} initials={initials} className="h-10 w-10 text-sm" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold">{name ?? "Set up your profile"}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="min-w-0 truncate text-sm font-semibold">{name ?? "Set up your profile"}</span>
+                  {isPremium && <Crown size={13} className="shrink-0 text-primary" aria-label="Premium member" />}
+                </span>
                 <span className="block truncate text-xs text-muted-foreground">{email}</span>
               </span>
               <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
@@ -113,21 +116,6 @@ export function ProfileMenu({ session, profile, isPremium, onSignIn, onSignOut, 
                 <span className="block truncate text-xs text-muted-foreground">Sign in to sync your data</span>
               </span>
             </div>
-          )}
-
-          {/* Account settings entry */}
-          {session && (
-            <button onClick={() => { setOpen(false); onOpenAccount(); }}
-              className="mt-1 flex w-full items-center justify-between gap-2 rounded-xl border border-border bg-card/70 px-3 py-2.5 text-left transition hover:border-primary/40">
-              <span className="flex min-w-0 items-center gap-2">
-                <UserCog size={15} className="shrink-0 text-primary" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">Account settings</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">Profile, privacy, data, and deletion</span>
-                </span>
-              </span>
-              <ChevronRight size={15} className="shrink-0 text-muted-foreground" />
-            </button>
           )}
 
           {/* Plan */}
