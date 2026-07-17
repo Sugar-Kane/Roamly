@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Heart } from "lucide-react";
+import { Heart } from "lucide-react";
 import { loadPref, savePref } from "./storage";
 
 export type Activity = { id: string; title: string; instruction: string; category: string; movement: boolean };
@@ -54,11 +54,9 @@ export function HealthyBreakActivities({ active, breakKey, compact = false }: { 
     <div className="mt-2 grid gap-2 sm:grid-cols-2">
       {remaining.map((activity) => (
         <button key={activity.id} onClick={() => setCompleted((v) => [...v, activity.id])}
-          aria-label={`Mark ${activity.title} done`}
-          className="group/act rounded-xl border border-border bg-card/70 p-3 text-left transition hover:border-roamly-green/50">
-          <span className="flex items-center gap-1.5 text-xs font-semibold">
-            <Check size={13} className="text-roamly-green opacity-0 transition-opacity group-hover/act:opacity-60" />{activity.title}
-          </span>
+          aria-label={`Clear ${activity.title}`}
+          className="rounded-xl border border-border bg-card/70 p-3 text-left transition hover:border-roamly-green/50">
+          <span className="block text-xs font-semibold">{activity.title}</span>
           <span className="mt-1 block text-[11px] leading-snug text-muted-foreground">{activity.instruction}</span>
         </button>
       ))}
