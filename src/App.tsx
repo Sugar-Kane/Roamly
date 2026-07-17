@@ -2565,10 +2565,12 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
   const justDragged = useRef(false);
   // Dragging a row over a *different* subject section reassigns its category on
   // drop (instead of the within-group reorder). Highlight that target section
-  // while the finger is over it.
+  // while the finger is over it. The ref is the source of truth (updated
+  // synchronously in the move handler) so the release always reads the latest
+  // hit-test result; the state only drives the highlight.
   const [dropTag, setDropTag] = useState<string | null>(null);
   const dropTagRef = useRef<string | null>(null);
-  useEffect(() => { dropTagRef.current = dropTag; }, [dropTag]);
+  const setDropTarget = (next: string | null) => { dropTagRef.current = next; setDropTag(next); };
 
   const onRowPointerDown = (e: React.PointerEvent<HTMLDivElement>, id: string, group: string, groupIds: string[], index: number) => {
     if ((e.target as HTMLElement).closest("[data-nodrag]")) return;
@@ -2619,7 +2621,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
       const r = el.getBoundingClientRect();
       if (e.clientY >= r.top && e.clientY <= r.bottom) { target = name; break; }
     }
-    setDropTag(target && target !== d.group ? target : null);
+    setDropTarget(target && target !== d.group ? target : null);
   };
 
   const onRowPointerUp = () => {
@@ -2635,7 +2637,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
       justDragged.current = true;
       window.setTimeout(() => { justDragged.current = false; }, 80);
       setDrag(null);
-      setDropTag(null);
+      setDropTarget(null);
     }
   };
 
@@ -2643,7 +2645,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
     const p = press.current;
     if (p) clearTimeout(p.timer);
     press.current = null;
-    if (dragRef.current) { setDrag(null); setDropTag(null); }
+    if (dragRef.current) { setDrag(null); setDropTarget(null); }
   };
 
   // While a drag is live, stop the page from scrolling under the finger.
