@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, Bell, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, PictureInPicture2, Pencil, Trash2, Sprout, Moon, PawPrint, PartyPopper, Settings2, MoreHorizontal, CircleCheck } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
@@ -28,6 +28,7 @@ import { useCountUpTimer } from "./useCountUpTimer";
 import { Tutorial } from "./Tutorial";
 import { AdminView } from "./Admin";
 import { Modal } from "./Modal";
+import LockedFeaturePreview from "./LockedFeaturePreview";
 import { NotificationsBell } from "./Notifications";
 import { FriendsModal } from "./Friends";
 import { UploadTasksPanel, currentUploadPeriod, FREE_MONTHLY_UPLOAD_QUOTA, PREMIUM_MONTHLY_UPLOAD_QUOTA } from "./UploadTasks";
@@ -1035,7 +1036,7 @@ export default function App() {
           )}
           {view === "analytics" && (
             <div data-tour="analytics">
-              <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)}
+              <AnalyticsView isPremium={isPremium} onUpsell={() => setShowUpsell(true)} onStartFocus={() => setView("focus")}
                 streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal}
                 session={session} onSignIn={onSignIn} sessions={sessions} tasks={tasks}
                 studyEvents={studyEvents} plannedSessions={plannedSessions} />
@@ -3090,7 +3091,7 @@ function DailyGoalCard({ streak, todayMinutes, dailyGoal, setDailyGoal }: any) {
   );
 }
 
-function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks, studyEvents, plannedSessions }: any) {
+function AnalyticsView({ isPremium, onUpsell, onStartFocus, streak, todayMinutes, dailyGoal, setDailyGoal, session, onSignIn, sessions, tasks, studyEvents, plannedSessions }: any) {
   // All numbers below come from the user's real focus_sessions rows
   // days, one row per day) and their real tasks — nothing is mocked.
   const byDate = new Map<string, number>((sessions as FocusSession[]).map((s) => [s.date, s.minutes]));
@@ -3127,7 +3128,7 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         {session ? (
           <DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} />
         ) : (
-          <><DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} /><div className="mt-3"><SignInPrompt onSignIn={onSignIn} message="As a guest, analytics track only what you do in this browser, on this device. Nothing is saved to an account. Create a free account to keep your history, streaks, and stats everywhere you sign in." /></div></>
+          <><DailyGoalCard streak={streak} todayMinutes={todayMinutes} dailyGoal={dailyGoal} setDailyGoal={setDailyGoal} /><div className="mt-3"><SignInPrompt onSignIn={onSignIn} message="Guest analytics stay in this browser only. Create a free account to keep your history and streaks everywhere." /></div></>
         )}
       </div>
 
@@ -3142,19 +3143,39 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
         <p className="mb-4 text-xs text-muted-foreground">
           {weekMin > 0 ? "Your last 7 days." : "Finish a focus session and it shows up here."}
         </p>
-        <div className="h-52">
-          <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-border/40" />}>
-            <WeekChart week={week} />
-          </Suspense>
-        </div>
+        {weekMin > 0 ? (
+          <div className="h-52">
+            <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-border/40" />}>
+              <WeekChart week={week} />
+            </Suspense>
+          </div>
+        ) : (
+          <div className="grid h-52 place-items-center rounded-xl border border-dashed border-border">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Complete your first focus session and your week appears here.</p>
+              <button onClick={onStartFocus}
+                className="mt-3 min-h-[44px] rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow transition active:scale-95">
+                Start focusing
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {isPremium ? (
         <StudyInsights events={studyEvents} daily={sessions} plans={plannedSessions} />
       ) : (
-        <div className="mt-6 space-y-6">
-          <PremiumAnalyticsGate title="Study breakdown" description="Unlock task, category, and study-trend analysis across every time range." onUpgrade={onUpsell} />
-          <PremiumAnalyticsGate title="Study post-mortem" description="Unlock follow-through patterns, missed-session reasons, and practical planning guidance." onUpgrade={onUpsell} />
+        // One pitch instead of a stack of locked cards: every Premium analytics
+        // feature lives behind this single CTA.
+        <div className="mt-6">
+          <LockedFeaturePreview title="Deeper insights" onUpgrade={onUpsell}
+            description="Premium turns the basics above into a full picture of how you actually study."
+            bullets={[
+              "Study breakdown by task, category, and time range",
+              "Subject split of your completed focus sessions",
+              "Post-mortems: follow-through patterns and missed-session reasons",
+              "Full focus history, active days, and personal records",
+            ]} />
         </div>
       )}
 
@@ -3179,42 +3200,19 @@ function AnalyticsView({ isPremium, onUpsell, streak, todayMinutes, dailyGoal, s
             </div>
           </div>
         </div>
-      ) : <PremiumAnalyticsGate title="Subject breakdown" description="Unlock a visual breakdown of completed focus sessions by subject." onUpgrade={onUpsell} />}
+      ) : null}
 
-      <div className="relative mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+      {isPremium && (
+        <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
           <h2 className="text-sm font-semibold">Study history</h2>
-          {!isPremium && <span className="flex items-center gap-1 text-xs text-primary"><Crown size={12} /> Premium</span>}
+          <div className="mt-2 grid grid-cols-3 gap-3">
+            <Stat label="Total focus" value={`${hrs}h ${totalMin60 % 60}m`} />
+            <Stat label="Active days" value={String(activeDays)} />
+            <Stat label="Best day ever" value={`${bestDayEver}m`} />
+          </div>
         </div>
-        {/* Free users get placeholder digits, not real values behind a blur —
-            a CSS-only gate leaves the numbers readable in the DOM. */}
-        <div className={`mt-2 grid grid-cols-3 gap-3 ${!isPremium ? "blur-sm" : ""}`}>
-          <Stat label="Total focus" value={isPremium ? `${hrs}h ${totalMin60 % 60}m` : "‒‒h ‒‒m"} />
-          <Stat label="Active days" value={isPremium ? String(activeDays) : "‒‒"} />
-          <Stat label="Best day ever" value={isPremium ? `${bestDayEver}m` : "‒‒m"} />
-        </div>
-        {!isPremium && (
-          <button onClick={onUpsell} className="absolute inset-0 grid place-items-center">
-            <span className="rounded-full gradient-primary px-5 py-2 text-sm font-semibold text-white shadow-glow">Unlock full history</span>
-          </button>
-        )}
-      </div>
+      )}
     </div>
-  );
-}
-
-function PremiumAnalyticsGate({ title, description, onUpgrade }: { title: string; description: string; onUpgrade: () => void }) {
-  return (
-    <section className="mt-6 rounded-2xl border border-primary/30 bg-card/80 p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="flex items-center gap-1 text-xs font-medium text-primary"><Crown size={12} /> Premium</span>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">{description}</p>
-      <button onClick={onUpgrade} aria-label={`Unlock ${title} with Premium`} className="mt-3 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow transition active:scale-95">
-        Unlock with Premium
-      </button>
-    </section>
   );
 }
 
@@ -3235,20 +3233,39 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
   const hasStripeSubscription = !!profile?.stripe_subscription_id;
   const perks = ["Planned study scheduling", "10 AI note uploads each month", "Breakdowns, achievements & post-mortem", "Full analytics history", "Host up to 3 live study rooms", "Voice chat during room breaks", "PANCE & Marathon methods"];
   const credits = (profile?.ai_credits as number | undefined) ?? 0;
-  // [feature, no account, free account, Premium account]. Every theme is free
-  // for everyone, so themes intentionally do not appear as a tier difference.
-  const compare: [string, string | boolean, string | boolean, string | boolean][] = [
-    ["Price", "$0", "$0", "$3 monthly or $30 yearly"],
-    ["Tasks", "5 on this device", "Unlimited + synced", "Unlimited + synced"],
-    ["Exam schedules", false, "Multiple + synced", "Multiple + synced"],
-    ["AI note uploads", false, "3 a month", "10 a month"],
-    ["Planned study", false, false, true],
-    ["Extra upload credits", false, "Buy anytime", "Buy anytime"],
-    ["Timer methods", "Core methods", "Core methods", "+ PANCE Drill & Marathon"],
-    ["Study rooms", "Browse only", "Join any room", "Join + host up to 3"],
-    ["Room break chat", false, true, true],
-    ["Voice chat during breaks", false, false, true],
-    ["Analytics", "7-day local basics", "7-day synced basics", "Breakdowns, achievements & full history"],
+  // [feature, no account, free account, Premium account], grouped by the part
+  // of the app each row belongs to so the table scans as four short lists
+  // instead of one long one. Every theme is free for everyone, so themes
+  // intentionally do not appear as a tier difference.
+  type CompareRow = [string, string | boolean, string | boolean, string | boolean];
+  const compareGroups: { group: string; rows: CompareRow[] }[] = [
+    {
+      group: "Plan", rows: [
+        ["Price", "$0", "$0", "$3 monthly or $30 yearly"],
+        ["Tasks", "5 on this device", "Unlimited + synced", "Unlimited + synced"],
+        ["Exam schedules", false, "Multiple + synced", "Multiple + synced"],
+        ["AI note uploads", false, "3 a month", "10 a month"],
+        ["Extra upload credits", false, "Buy anytime", "Buy anytime"],
+        ["Planned study", false, false, true],
+      ],
+    },
+    {
+      group: "Focus", rows: [
+        ["Timer methods", "Core methods", "Core methods", "+ PANCE Drill & Marathon"],
+      ],
+    },
+    {
+      group: "Community", rows: [
+        ["Study rooms", "Browse only", "Join any room", "Join + host up to 3"],
+        ["Room break chat", false, true, true],
+        ["Voice chat during breaks", false, false, true],
+      ],
+    },
+    {
+      group: "Progress", rows: [
+        ["Analytics", "7-day local basics", "7-day synced basics", "Breakdowns, achievements & full history"],
+      ],
+    },
   ];
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
@@ -3327,15 +3344,22 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
               <tr><th scope="col" className="w-[31.25%] px-4 py-2.5">What you get</th><th scope="col" className="px-3 py-2.5">No account</th><th scope="col" className="px-3 py-2.5">Free account</th><th scope="col" className="px-3 py-2.5 text-primary">Premium account</th></tr>
             </thead>
             <tbody>
-            {compare.map(([feature, guest, free, prem]) => (
-              <tr key={feature} className="border-b border-border/50 text-sm last:border-b-0">
-                <th scope="row" className="min-w-0 px-4 py-2 font-normal text-muted-foreground">{feature}</th>
-                {[guest, free, prem].map((value, index) => (
-                  <td key={index} className={`min-w-0 px-3 py-2 text-xs ${index === 2 ? "font-medium" : ""}`}>
-                    {value === true ? <Check size={15} className="text-roamly-green" /> : value === false ? <span className="text-muted-foreground/50">-</span> : value}
-                  </td>
+            {compareGroups.map(({ group, rows }) => (
+              <Fragment key={group}>
+                <tr className="border-b border-border/50 bg-secondary/40">
+                  <th scope="colgroup" colSpan={4} className="px-4 py-1.5 text-left font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">{group}</th>
+                </tr>
+                {rows.map(([feature, guest, free, prem]) => (
+                  <tr key={feature} className="border-b border-border/50 text-sm last:border-b-0">
+                    <th scope="row" className="min-w-0 px-4 py-2 font-normal text-muted-foreground">{feature}</th>
+                    {[guest, free, prem].map((value, index) => (
+                      <td key={index} className={`min-w-0 px-3 py-2 text-xs ${index === 2 ? "font-medium" : ""}`}>
+                        {value === true ? <Check size={15} className="text-roamly-green" /> : value === false ? <span className="text-muted-foreground/50">-</span> : value}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
+              </Fragment>
             ))}
             </tbody>
           </table>
@@ -3399,7 +3423,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
               </div>
               <div className="rounded-2xl border border-primary/40 bg-primary/5 p-4">
                 <div className="flex items-baseline gap-2"><span className="font-display text-3xl font-bold">$30</span><span className="text-muted-foreground">/ year</span></div>
-                <p className="mt-0.5 text-xs text-primary">Save $6 annually</p>
+                <p className="mt-0.5 text-xs text-primary">$2.50 a month equivalent · save $6 a year</p>
                 <button onClick={() => onSubscribe("annual")} disabled={checkoutLoading} className="mt-3 w-full rounded-full gradient-primary py-2.5 font-semibold text-white shadow-glow transition active:scale-95 disabled:opacity-60">Choose annual</button>
               </div>
             </div>
@@ -3445,6 +3469,26 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
           ))}
         </div>
         <p className="mt-3 text-center text-[11px] text-muted-foreground">One-time purchase · credits never expire · secure checkout via Stripe.</p>
+      </div>
+
+      <div className="mt-6 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
+        <h2 className="text-sm font-semibold">Common questions</h2>
+        <div className="mt-2 divide-y divide-border/50">
+          {[
+            ["Can I cancel anytime?", "Yes. Cancel here or in the Stripe billing portal. Premium stays active until the end of the period you've paid for, then your account returns to the free tier automatically — no partial-month charges."],
+            ["What happens to my data if I downgrade?", "Nothing is deleted. Your tasks, focus history, streaks, and stats stay on your account; the Premium-only views simply lock again until you resubscribe."],
+            ["Do upload credits expire?", "Purchased credits never expire. They're used automatically after your monthly allowance (3 free, 10 with Premium) runs out, and the allowance itself resets each month without rolling over."],
+            ["How is payment handled?", "All billing runs through Stripe. Roamly Flow never sees or stores your card details."],
+          ].map(([q, a]) => (
+            <details key={q} className="group py-1">
+              <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-3 py-2 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                {q}
+                <ChevronDown size={15} className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+              </summary>
+              <p className="pb-3 text-xs leading-relaxed text-muted-foreground">{a}</p>
+            </details>
+          ))}
+        </div>
       </div>
     </div>
   );
