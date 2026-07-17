@@ -412,6 +412,57 @@ export async function adminConversionFunnel(startISO: string, endISO: string): P
   };
 }
 
+// ---- Admin BI dashboard (Phase 2: Features + Engagement) ----
+export type AdminFeatureStat = {
+  name: string; total: number; unique_users: number; free_uses: number; premium_uses: number;
+  phone: number; tablet: number; pc: number; last_at: string | null; prev_total: number;
+};
+export type AdminFeatureTrendPoint = { day: string; uses: number };
+export type AdminHeatCell = { dow: number; hour: number; events: number };
+export type AdminCohortRow = { cohort_week: string; cohort_size: number; week_offset: number; retained: number };
+
+export async function adminFeatureStats(
+  startISO: string, endISO: string, prevStartISO: string, prevEndISO: string,
+  plan: AdminPlanScope = "all", device: AdminDeviceScope = "all",
+): Promise<AdminFeatureStat[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_feature_stats_v2", {
+    p_start: startISO, p_end: endISO, p_prev_start: prevStartISO, p_prev_end: prevEndISO, p_plan: plan, p_device: device,
+  });
+  if (error) { console.warn("[Roamly] adminFeatureStats failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    name: String(r.name), total: num(r.total), unique_users: num(r.unique_users),
+    free_uses: num(r.free_uses), premium_uses: num(r.premium_uses),
+    phone: num(r.phone), tablet: num(r.tablet), pc: num(r.pc),
+    last_at: r.last_at ? String(r.last_at) : null, prev_total: num(r.prev_total),
+  }));
+}
+
+export async function adminFeatureTrend(name: string, startISO: string, endISO: string): Promise<AdminFeatureTrendPoint[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_feature_trend", { p_name: name, p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] adminFeatureTrend failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({ day: String(r.day), uses: num(r.uses) }));
+}
+
+export async function adminActivityHeatmap(
+  startISO: string, endISO: string, plan: AdminPlanScope = "all", device: AdminDeviceScope = "all",
+): Promise<AdminHeatCell[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_activity_heatmap", { p_start: startISO, p_end: endISO, p_plan: plan, p_device: device });
+  if (error) { console.warn("[Roamly] adminActivityHeatmap failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({ dow: num(r.dow), hour: num(r.hour), events: num(r.events) }));
+}
+
+export async function adminRetentionCohorts(weeks = 8): Promise<AdminCohortRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_retention_cohorts", { p_weeks: weeks });
+  if (error) { console.warn("[Roamly] adminRetentionCohorts failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    cohort_week: String(r.cohort_week), cohort_size: num(r.cohort_size), week_offset: num(r.week_offset), retained: num(r.retained),
+  }));
+}
+
 // Permanent account deletion (admin only). Server cancels Stripe billing first
 // and audits the action; the auth delete cascades through every app table.
 export async function adminDeleteUser(userId: string): Promise<{ ok?: boolean; billingCanceled?: boolean; stripeWarning?: string; error?: string }> {

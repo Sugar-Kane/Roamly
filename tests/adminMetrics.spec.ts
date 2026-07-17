@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { resolveRange, pctChange, fmtMinutes, buildInsights, type AdminFilters } from "../src/adminMetrics";
+import { featureLabel, featureCategory, EVENT_LABELS } from "../src/adminLabels";
 import type { AdminKpiSummary, AdminFunnel } from "../src/db";
 
 // Pure metric-calculation unit tests (no browser needed). These lock the math
@@ -48,6 +49,28 @@ test.describe("pctChange", () => {
 test("fmtMinutes formats hours and minutes", () => {
   expect(fmtMinutes(45)).toBe("45m");
   expect(fmtMinutes(125)).toBe("2h 5m");
+});
+
+test.describe("feature labels (no raw event names leak)", () => {
+  test("known events map to human-readable names", () => {
+    expect(featureLabel("count_up_complete")).toBe("Count-up saved");
+    expect(featureLabel("task_ai_upload")).toBe("AI note uploads");
+    // Never returns the raw snake_case name for a known event.
+    for (const raw of Object.keys(EVENT_LABELS)) {
+      expect(featureLabel(raw)).not.toBe(raw);
+      expect(featureLabel(raw)).not.toContain("_");
+    }
+  });
+  test("unknown events fall back to a title-cased label, not raw snake_case", () => {
+    expect(featureLabel("some_new_event")).toBe("Some New Event");
+    expect(featureLabel("some_new_event")).not.toContain("_");
+  });
+  test("events are categorized", () => {
+    expect(featureCategory("timer_start")).toBe("Focus");
+    expect(featureCategory("room_join")).toBe("Rooms");
+    expect(featureCategory("buy_credits")).toBe("Monetization");
+    expect(featureCategory("totally_unknown")).toBe("Other");
+  });
 });
 
 test.describe("buildInsights", () => {
