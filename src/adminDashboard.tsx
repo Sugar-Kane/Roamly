@@ -185,7 +185,7 @@ export function KpiCard({ label, value, prev, format = fmt, spark, tip, onClick,
   );
 }
 
-function Sparkline({ values }: { values: number[] }) {
+export function Sparkline({ values }: { values: number[] }) {
   const w = 52, h = 16, max = Math.max(...values, 1), min = Math.min(...values, 0);
   const range = max - min || 1;
   const pts = values.map((v, i) => `${(i / (values.length - 1)) * w},${h - ((v - min) / range) * h}`).join(" ");
