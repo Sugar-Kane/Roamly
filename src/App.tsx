@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, Pencil, Trash2, Sprout, Moon, Settings2, MoreHorizontal, CircleCheck } from "lucide-react";
+import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, Pencil, Trash2, Sprout, Moon, Settings2, PictureInPicture2, CircleCheck } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
@@ -45,7 +45,6 @@ import { HealthyBreakActivities, useBreakActivityPicks, type Activity } from "./
 import { useFocusMotivation, buildMotivationContext, MotivationLine } from "./useFocusMotivation";
 import { ConfettiBurst } from "./Confetti";
 import { CustomizeSession } from "./CustomizeSession";
-import { Drawer } from "./Drawer";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
 
@@ -1028,6 +1027,8 @@ export default function App() {
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
               dockClosed={dockClosed} onReopenDock={reopenDock}
               onOpenCustomize={() => setShowCustomize(true)}
+              pipSupported={pipSupported} pipActive={!!pipWindow}
+              onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
               motivation={motivation} onOpenHowItWorks={() => setShowHowItWorks(true)} />
           )}
           {view === "tasks" && (
@@ -1087,9 +1088,7 @@ export default function App() {
           </button>
         </footer>
       </div>
-      <BottomNav nav={nav} view={view} setView={setView} session={session}
-        onOpenTour={openTutorial} onOpenHowItWorks={() => setShowHowItWorks(true)}
-        onOpenAccount={() => setShowAccount(true)} themeId={themeId} setThemeId={changeTheme} />
+      <BottomNav nav={nav} view={view} setView={setView} />
       {/* Above the focus-mode overlay (z-120) and modals; pointer-events none. */}
       <ConfettiBurst burst={confettiBurst} reduceMotion={a11y.reduceMotion} enabled={confettiOn} />
       {/* Not mounted at all until music is intentional — mounting would load a
@@ -1127,6 +1126,12 @@ export default function App() {
                 <Moon size={14} /> {petSleep.asleep ? "Wake pets" : "Too distracting"}
               </button>
             )}
+            {pipSupported && (
+              <button onClick={() => { setImmersive(false); openPip().then((pip) => { if (pip) track("pip_open", "from_focus"); }); }}
+                className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                <PictureInPicture2 size={14} /> Pop out timer
+              </button>
+            )}
             <button onClick={() => setShowCustomize(true)}
               className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
               <Settings2 size={14} /> Customize Session
@@ -1162,8 +1167,6 @@ export default function App() {
           companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
           confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
           autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow}
-          pipSupported={pipSupported} pipActive={!!pipWindow}
-          onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
           alerts={alerts} />
       )}
       {/* Picture-in-Picture floating timer for the PERSONAL timer. Portaled from
@@ -1663,7 +1666,7 @@ function PomodoroExplainerPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, dockClosed, onReopenDock, onOpenCustomize, motivation, onOpenHowItWorks }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1757,16 +1760,22 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <SkipForward size={19} />
               </button>
             </div>
-            {/* Quick controls only — Focus mode and Customize Session.
+            {/* Quick controls only — Focus mode, pop-out, and Customize Session.
                 Everything else (auto-flow, completion sound, pets, confetti,
-                pop-out, notifications) lives in the Customize Session drawer
-                so the timer stays the dominant element. */}
+                notifications) lives in the Customize Session drawer so the
+                timer stays the dominant element. */}
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => enterFocus?.()}
                 className="flex items-center gap-1.5 self-start rounded-full border border-primary bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary transition hover:bg-primary/15">
                 <Timer size={13} /> Focus mode
               </button>
               <InfoTip text="Focus mode fills your whole screen with the timer, your music, and your task list. Start opens it automatically, and this button gets you back in." />
+              {pipSupported && (
+                <button onClick={() => (pipActive ? onClosePip?.() : onPopOut?.())} aria-pressed={pipActive}
+                  className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${pipActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                  <PictureInPicture2 size={13} /> {pipActive ? "Close pop-out" : "Pop out timer"}
+                </button>
+              )}
               {showCompanions && (
                 <button onClick={onToggleSleep} aria-pressed={petsAsleep}
                   className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${petsAsleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
@@ -2508,6 +2517,9 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
   const [estDraft, setEstDraft] = useState(1); // focus sessions for the task being created
   const [showDone, setShowDone] = useState(false);
   const [showTaskPrefs, setShowTaskPrefs] = useState(false);
+  // Planned study sits under Task preferences and starts minimized so task
+  // creation stays the page's primary action.
+  const [showPlanned, setShowPlanned] = useState(false);
   const [estTarget, setEstTarget] = useState<Task | null>(null);   // themed sessions picker
   const [tagPickTarget, setTagPickTarget] = useState<Task | null>(null); // themed subject picker
 
@@ -2808,6 +2820,24 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
           </div>
         )}
       </div>
+      {/* Planned study gets the same disclosure treatment as Task preferences
+          (identical header classes, so the collapsed sizes match) and starts
+          minimized. Expanded, the panel renders `bare` inside the disclosure. */}
+      <div className="mt-3 rounded-xl border border-border bg-card/70">
+        <button onClick={() => setShowPlanned((s: boolean) => !s)} aria-expanded={showPlanned}
+          className="flex min-h-[2.75rem] w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition hover:text-foreground">
+          <span className="flex items-center gap-1.5"><CalendarClock size={14} /> Planned study</span>
+          <ChevronDown size={15} className={`transition-transform ${showPlanned ? "rotate-180" : ""}`} />
+        </button>
+        {showPlanned && (
+          <div className="border-t border-border p-4">
+            <PlannedStudyPanel bare tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
+              isPremium={session ? (profile ? !!profile.is_premium : null) : false}
+              onSignIn={onSignIn} onUpgrade={onSubscribe}
+              onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
+          </div>
+        )}
+      </div>
       {tasks.length > 0 && (
         <div className="mt-4">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -3023,12 +3053,6 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
           )}
         </section>
       )}
-
-      {/* Planned study lives below the task list. */}
-      <PlannedStudyPanel tasks={tasks} plans={plannedSessions} userId={session?.user.id ?? null}
-        isPremium={session ? (profile ? !!profile.is_premium : null) : false}
-        onSignIn={onSignIn} onUpgrade={onSubscribe}
-        onCreatePlan={onCreatePlan} onUpdatePlan={onUpdatePlan} onDeletePlan={onDeletePlan} />
 
       {tagPickTarget && <TaskCategoryModal task={tagPickTarget} tags={tags} onPick={(next: string) => setTaskTag(tagPickTarget.id, next)} onClose={() => setTagPickTarget(null)} />}
       {estTarget && <TaskEstModal task={estTarget} onPick={(n: number) => setTaskEst(estTarget.id, n)} onClose={() => setEstTarget(null)} />}
@@ -3575,19 +3599,19 @@ function Upsell({ onClose, onUpgrade, onBuyCredits }: { onClose: () => void; onU
   );
 }
 
-// Phones show four primary tabs + More (Analytics, Premium, Help, Theme, and
-// Account settings live in the More sheet); from sm up all six tabs render as
-// before. Active state is never color-only: heavier icon stroke plus an
-// underline bar, and aria-current for assistive tech.
-const MOBILE_PRIMARY = new Set(["focus", "tasks", "rooms", "garden"]);
+// Phones show five primary tabs (Focus, Tasks, Rooms, Garden, Analytics);
+// from sm up all six tabs render. Premium stays reachable from the header's
+// crown button, and account/help/theme/tour from the profile menu, so no
+// mobile "More" sheet is needed. Active state is never color-only: heavier
+// icon stroke plus an underline bar, and aria-current for assistive tech.
+const MOBILE_PRIMARY = new Set(["focus", "tasks", "rooms", "garden", "analytics"]);
 
-function BottomNav({ nav, view, setView, session, onOpenTour, onOpenHowItWorks, onOpenAccount, themeId, setThemeId }: any) {
+function BottomNav({ nav, view, setView }: any) {
   // iOS Safari drags position:fixed elements up with the on-screen keyboard
   // (and can leave them stranded mid-page). Hide the nav while the keyboard
   // is open — the visualViewport shrinking well below the layout viewport is
   // the reliable signal. No-ops on desktop.
   const [keyboardOpen, setKeyboardOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
@@ -3596,96 +3620,28 @@ function BottomNav({ nav, view, setView, session, onOpenTour, onOpenHowItWorks, 
     return () => vv.removeEventListener("resize", onResize);
   }, []);
   if (keyboardOpen) return null;
-  const moreActive = nav.some((n: any) => !MOBILE_PRIMARY.has(n.id) && n.id === view);
   const tab = (active: boolean) =>
     `flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 transition ${active ? "text-primary" : "text-muted-foreground hover:text-foreground"}`;
   return (
-    <>
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg">
-        <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
-          {nav.map((n: any) => {
-            const Icon = n.icon;
-            const active = view === n.id;
-            return (
-              <button key={n.id} onClick={() => setView(n.id)} aria-current={active ? "page" : undefined}
-                className={`${MOBILE_PRIMARY.has(n.id) ? "flex" : "hidden sm:flex"} ${tab(active).replace(/^flex /, "")}`}>
-                <span className="relative">
-                  <Icon size={20} strokeWidth={active ? 2.4 : 2} />
-                  {n.locked && <Lock size={10} className="absolute -right-1.5 -top-1 rounded-full bg-card text-muted-foreground" />}
-                </span>
-                <span className="text-[10px] font-medium">{n.label}</span>
-                <span aria-hidden className={`h-0.5 w-5 rounded-full ${active ? "bg-primary" : "bg-transparent"}`} />
-              </button>
-            );
-          })}
-          <button onClick={() => setMoreOpen(true)} aria-expanded={moreOpen} aria-current={moreActive ? "page" : undefined}
-            className={`sm:hidden ${tab(moreActive)}`}>
-            <MoreHorizontal size={20} strokeWidth={moreActive ? 2.4 : 2} />
-            <span className="text-[10px] font-medium">More</span>
-            <span aria-hidden className={`h-0.5 w-5 rounded-full ${moreActive ? "bg-primary" : "bg-transparent"}`} />
-          </button>
-        </div>
-      </nav>
-      {moreOpen && (
-        <MoreSheet onClose={() => setMoreOpen(false)} view={view}
-          go={(v: View) => { setMoreOpen(false); setView(v); }}
-          session={session}
-          onOpenTour={() => { setMoreOpen(false); onOpenTour(); }}
-          onOpenHowItWorks={() => { setMoreOpen(false); onOpenHowItWorks(); }}
-          onOpenAccount={() => { setMoreOpen(false); onOpenAccount(); }}
-          themeId={themeId} setThemeId={setThemeId} />
-      )}
-    </>
-  );
-}
-
-// The mobile More sheet: the two secondary destinations, account settings,
-// help entries, and a compact theme picker — everything the four-tab bar
-// can't hold on a phone.
-function MoreSheet({ onClose, go, view, session, onOpenTour, onOpenHowItWorks, onOpenAccount, themeId, setThemeId }: any) {
-  const row = "flex min-h-[2.75rem] w-full items-center gap-3 rounded-xl px-2 py-2 text-left text-sm transition hover:bg-primary/5";
-  return (
-    <Drawer label="More" onClose={onClose} testId="more-sheet">
-      <div className="space-y-0.5">
-        <button onClick={() => go("analytics")} aria-current={view === "analytics" ? "page" : undefined} className={row}>
-          <BarChart3 size={17} className="shrink-0 text-primary" /> Analytics
-          {view === "analytics" && <Check size={15} className="ml-auto shrink-0 text-primary" />}
-        </button>
-        <button onClick={() => go("premium")} aria-current={view === "premium" ? "page" : undefined} className={row}>
-          <Crown size={17} className="shrink-0 text-primary" /> Premium
-          {view === "premium" && <Check size={15} className="ml-auto shrink-0 text-primary" />}
-        </button>
-        {session && (
-          <button onClick={onOpenAccount} className={row}>
-            <Users size={17} className="shrink-0 text-primary" /> Account settings
-          </button>
-        )}
-      </div>
-      <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Help</p>
-      <div className="mt-1 space-y-0.5">
-        <button onClick={onOpenHowItWorks} className={row}>
-          <HelpCircle size={17} className="shrink-0 text-primary" /> How Roamly Flow works
-        </button>
-        <button onClick={onOpenTour} className={row}>
-          <Play size={17} className="shrink-0 text-primary" /> Replay the app tour
-        </button>
-      </div>
-      <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Theme</p>
-      <div className="mt-1.5 grid grid-cols-3 gap-2">
-        {THEMES.map((t) => {
-          const active = themeId === t.id;
+    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg">
+      <div className="mx-auto flex max-w-md items-center justify-around px-2 py-2">
+        {nav.map((n: any) => {
+          const Icon = n.icon;
+          const active = view === n.id;
           return (
-            <button key={t.id} onClick={() => setThemeId(t.id)} aria-pressed={active}
-              className={`flex min-h-[2.75rem] items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition ${active ? "border-primary bg-primary/5" : "border-border bg-card/70 hover:border-primary/40"}`}>
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-border"
-                style={{ background: `linear-gradient(135deg, ${t.grad[0]}, ${t.grad[1]})` }}>
-                {active && <Check size={11} className="text-foreground" />}
+            <button key={n.id} onClick={() => setView(n.id)} aria-current={active ? "page" : undefined}
+              className={`${MOBILE_PRIMARY.has(n.id) ? "flex" : "hidden sm:flex"} ${tab(active).replace(/^flex /, "")}`}>
+              <span className="relative">
+                <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+                {n.locked && <Lock size={10} className="absolute -right-1.5 -top-1 rounded-full bg-card text-muted-foreground" />}
               </span>
-              <span className="min-w-0 truncate text-[11px] font-medium">{t.name}</span>
+              <span className="text-[10px] font-medium">{n.label}</span>
+              <span aria-hidden className={`h-0.5 w-5 rounded-full ${active ? "bg-primary" : "bg-transparent"}`} />
             </button>
           );
         })}
       </div>
-    </Drawer>
+    </nav>
   );
 }
+
