@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { resolveRange, pctChange, fmtMinutes, fmtCents, buildInsights, type AdminFilters } from "../src/adminMetrics";
+import { resolveRange, pctChange, fmtMinutes, fmtCents, ratePct, buildInsights, type AdminFilters } from "../src/adminMetrics";
 import { featureLabel, featureCategory, EVENT_LABELS } from "../src/adminLabels";
 import type { AdminKpiSummary, AdminFunnel } from "../src/db";
 
@@ -61,6 +61,17 @@ test.describe("fmtCents (estimated revenue formatting)", () => {
   test("thousands are grouped", () => {
     expect(fmtCents(125000)).toBe("$1,250");
     expect(fmtCents(125050)).toBe("$1,250.50");
+  });
+});
+
+test.describe("ratePct (invite acceptance & other ratios)", () => {
+  test("computes a share as a percent", () => {
+    expect(ratePct(6, 10)).toBe(60);
+    expect(ratePct(1, 3)).toBeCloseTo(33.33, 1);
+  });
+  test("an empty denominator is 0%, never NaN/Infinity", () => {
+    expect(ratePct(0, 0)).toBe(0);
+    expect(ratePct(5, 0)).toBe(0);
   });
 });
 

@@ -67,6 +67,13 @@ export function fmtCents(cents: number): string {
   })}`;
 }
 
+// Share of `part` within `whole`, as a percent. Guards divide-by-zero (an
+// empty denominator is 0%, not NaN). Used for invite acceptance rate and other
+// ratio tiles.
+export function ratePct(part: number, whole: number): number {
+  return whole > 0 ? (part / whole) * 100 : 0;
+}
+
 // Deterministic, calculation-backed insights — never AI-generated claims. Each
 // line states the metric, direction, magnitude, and the raw before→after.
 export function buildInsights(cur: AdminKpiSummary, prev: AdminKpiSummary, funnel: AdminFunnel | null): string[] {
