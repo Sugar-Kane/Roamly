@@ -6,5 +6,12 @@
   "functions": {
     "api/generate-tasks.ts": { "maxDuration": 120 }
   },
-  "rewrites": [{ "source": "/((?!api/|assets/).*)", "destination": "/" }]
+  "rewrites": [
+    { "source": "/focus", "destination": "/" },
+    { "source": "/tasks", "destination": "/" },
+    { "source": "/analytics", "destination": "/" },
+    { "source": "/rooms", "destination": "/" },
+    { "source": "/garden", "destination": "/" },
+    { "source": "/admin", "destination": "/" }
+  ]
 }
