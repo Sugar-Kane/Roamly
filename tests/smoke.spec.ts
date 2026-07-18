@@ -45,6 +45,11 @@ test("homepage loads with the timer", async ({ page }) => {
   // Home is public and indexable, canonical on the www production host.
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://www.roamlyflow.com/");
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /^index/);
+  // Structured data is present, parseable, and declares the expected types.
+  const ld = await page.locator('script[type="application/ld+json"]').first().textContent();
+  const graph = JSON.parse(ld ?? "{}")["@graph"].map((n: { "@type": string }) => n["@type"]);
+  expect(graph).toContain("WebApplication");
+  expect(graph).toContain("Organization");
 });
 
 test("expanded built-in music library is available", async ({ page }) => {

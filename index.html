@@ -22,6 +22,43 @@
     <meta name="twitter:title" content="Roamly Flow: focus timer and study planner for PA school" />
     <meta name="twitter:description" content="A free Pomodoro style focus timer and study planner built for PA school. Plan your sessions, stay focused, and track progress toward exams. No account needed." />
     <meta name="twitter:image" content="https://www.roamlyflow.com/icon-512.png" />
+    <!-- Structured data (JSON-LD). Static and hand-authored so every value
+         matches visible content: no ratings, reviews, user counts, or awards.
+         The core focus timer is genuinely free, so the WebApplication carries a
+         single $0 Offer. Cloned onto prerendered pages by scripts/prerender.mjs. -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://www.roamlyflow.com/#organization",
+          "name": "Roamly Flow",
+          "url": "https://www.roamlyflow.com/",
+          "logo": "https://www.roamlyflow.com/icon-512.png"
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://www.roamlyflow.com/#website",
+          "name": "Roamly Flow",
+          "url": "https://www.roamlyflow.com/",
+          "publisher": { "@id": "https://www.roamlyflow.com/#organization" }
+        },
+        {
+          "@type": "WebApplication",
+          "@id": "https://www.roamlyflow.com/#webapp",
+          "name": "Roamly Flow",
+          "url": "https://www.roamlyflow.com/",
+          "description": "A free Pomodoro style focus timer and study planner built for PA school. Plan your sessions, stay focused, and track progress toward exams.",
+          "applicationCategory": "EducationalApplication",
+          "operatingSystem": "Any",
+          "browserRequirements": "Requires JavaScript.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          "publisher": { "@id": "https://www.roamlyflow.com/#organization" }
+        }
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
