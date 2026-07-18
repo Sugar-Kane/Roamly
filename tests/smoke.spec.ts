@@ -52,6 +52,15 @@ test("public Pomodoro landing page works without the app and its timer runs", as
   await expect(page.getByRole("link", { name: "Open the full Roamly Flow timer" })).toHaveAttribute("href", "/");
 });
 
+test("public trust pages load standalone with correct canonicals", async ({ page }) => {
+  await page.goto("/privacy.html");
+  await expect(page.getByRole("heading", { level: 1, name: "Privacy, in plain language" })).toBeVisible();
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://www.roamlyflow.com/privacy");
+  await page.goto("/terms.html");
+  await expect(page.getByRole("heading", { level: 1, name: "Terms, in plain language" })).toBeVisible();
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://www.roamlyflow.com/terms");
+});
+
 test("homepage loads with the timer", async ({ page }) => {
   await goHome(page);
   await expect(page).toHaveTitle(/Roamly/);
