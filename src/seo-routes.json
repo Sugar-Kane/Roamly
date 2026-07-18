@@ -1,0 +1,51 @@
+[
+  {
+    "view": "focus",
+    "path": "/",
+    "index": true,
+    "title": "Roamly Flow: focus timer and study planner for PA school",
+    "description": "A free Pomodoro style focus timer and study planner built for PA school. Plan your sessions, stay focused, and track progress toward exams. No account needed."
+  },
+  {
+    "view": "premium",
+    "path": "/premium",
+    "index": true,
+    "title": "Roamly Flow Premium: pricing and features",
+    "description": "Roamly Flow Premium adds planned study scheduling, AI note uploads, full analytics history, and live study rooms. See what is included and how billing works."
+  },
+  {
+    "view": "tasks",
+    "path": "/tasks",
+    "index": false,
+    "title": "Tasks | Roamly Flow",
+    "description": "Your study tasks in Roamly Flow."
+  },
+  {
+    "view": "analytics",
+    "path": "/analytics",
+    "index": false,
+    "title": "Analytics | Roamly Flow",
+    "description": "Your focus and study analytics in Roamly Flow."
+  },
+  {
+    "view": "rooms",
+    "path": "/rooms",
+    "index": false,
+    "title": "Study rooms | Roamly Flow",
+    "description": "Live study rooms in Roamly Flow."
+  },
+  {
+    "view": "garden",
+    "path": "/garden",
+    "index": false,
+    "title": "Garden | Roamly Flow",
+    "description": "Your Roamly Flow garden and companions."
+  },
+  {
+    "view": "admin",
+    "path": "/admin",
+    "index": false,
+    "title": "Admin | Roamly Flow",
+    "description": "Roamly Flow admin."
+  }
+]
