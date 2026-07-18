@@ -27,7 +27,9 @@ import { useDocumentPip, applyThemeToPip } from "./useDocumentPip";
 import { useVideoPip, type PipFrame } from "./useVideoPip";
 import { useCountUpTimer } from "./useCountUpTimer";
 import { Tutorial } from "./Tutorial";
-import { AdminView } from "./Admin";
+// Admin-only, and large (the whole BI dashboard). Lazy so it never ships in
+// the initial bundle for the public/focus route — only admins fetch it.
+const AdminView = lazy(() => import("./Admin").then((m) => ({ default: m.AdminView })));
 import { Modal } from "./Modal";
 import LockedFeaturePreview from "./LockedFeaturePreview";
 import { HelpLegal } from "./HelpLegal";
@@ -1105,7 +1107,11 @@ export default function App() {
             <PremiumView isPremium={isPremium} session={session} profile={profile} onSubscribe={startCheckout}
               checkoutLoading={checkoutLoading} checkoutError={checkoutError} />
           )}
-          {view === "admin" && <AdminView isAdmin={isAdmin} />}
+          {view === "admin" && (
+            <Suspense fallback={<div className="mx-auto max-w-6xl py-10 text-sm text-muted-foreground">Loading admin…</div>}>
+              <AdminView isAdmin={isAdmin} />
+            </Suspense>
+          )}
         </main>
         <footer className="mt-12 text-center text-xs text-muted-foreground">
           © 2026 Roamly Flow ·{" "}
