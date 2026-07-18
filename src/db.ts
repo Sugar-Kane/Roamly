@@ -477,9 +477,12 @@ export type AdminInviteSummary = {
   sent_in_window: number; accepted_in_window: number;
 };
 export type AdminInviteDay = { day: string; sent: number; accepted: number };
+export type ErrorStatus = "open" | "investigating" | "resolved" | "ignored";
+export type ErrorSeverity = "low" | "medium" | "high" | "critical";
 export type AdminErrorGroup = {
   message: string; page: string; occurrences: number; affected_users: number;
   first_seen: string; last_seen: string;
+  status: ErrorStatus; severity: ErrorSeverity | null; note: string | null;
 };
 export type AdminErrorDay = { day: string; errors: number; affected_users: number };
 
@@ -510,7 +513,30 @@ export async function adminErrorGroups(startISO: string, endISO: string, limit =
     message: String(r.message), page: r.page ? String(r.page) : "",
     occurrences: num(r.occurrences), affected_users: num(r.affected_users),
     first_seen: String(r.first_seen), last_seen: String(r.last_seen),
+    status: (r.status ? String(r.status) : "open") as ErrorStatus,
+    severity: (r.severity ? String(r.severity) : null) as ErrorSeverity | null,
+    note: r.note ? String(r.note) : null,
   }));
+}
+
+// Set triage state (status / severity / note) for one error signature
+// (message + page). Admin-only; passing null for status/severity leaves that
+// facet unchanged on an existing row.
+export async function adminSetErrorTriage(
+  message: string, page: string,
+  fields: { status?: ErrorStatus; severity?: ErrorSeverity; note?: string },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { error } = await supabase.rpc("admin_set_error_triage", {
+    p_message: message, p_page: page || "",
+    p_status: fields.status ?? null, p_severity: fields.severity ?? null, p_note: fields.note ?? null,
+  });
+  if (error) {
+    if (error.message.includes("not_admin")) return { error: "You don't have admin access." };
+    console.warn("[Roamly] adminSetErrorTriage failed", error.message);
+    return { error: "Couldn't update triage." };
+  }
+  return {};
 }
 
 export async function adminErrorSeries(startISO: string, endISO: string): Promise<AdminErrorDay[]> {
