@@ -38,6 +38,20 @@ test("admin dashboard is gated: signed-out visitors get no access and no data", 
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
 });
 
+test("public Pomodoro landing page works without the app and its timer runs", async ({ page }) => {
+  // Served as a standalone static file (dev serves it at the .html path).
+  await page.goto("/pomodoro-timer.html");
+  await expect(page.getByRole("heading", { level: 1, name: "Free Pomodoro timer for studying" })).toBeVisible();
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://www.roamlyflow.com/pomodoro-timer");
+  // The built-in timer is immediately usable, no account or wall.
+  const clock = page.locator("#clock");
+  await expect(clock).toHaveText("25:00");
+  await page.getByRole("button", { name: "Start" }).click();
+  await expect(clock).not.toHaveText("25:00", { timeout: 3000 });
+  // A clear, crawlable path into the full app.
+  await expect(page.getByRole("link", { name: "Open the full Roamly Flow timer" })).toHaveAttribute("href", "/");
+});
+
 test("homepage loads with the timer", async ({ page }) => {
   await goHome(page);
   await expect(page).toHaveTitle(/Roamly/);

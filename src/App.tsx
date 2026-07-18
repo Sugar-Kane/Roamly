@@ -1109,6 +1109,13 @@ export default function App() {
         </main>
         <footer className="mt-12 text-center text-xs text-muted-foreground">
           © 2026 Roamly Flow ·{" "}
+          {/* Real anchor so crawlers can reach the public landing page; it is a
+              standalone static route, so a full navigation (not client routing)
+              is intended here. */}
+          <a href="/pomodoro-timer" className="underline-offset-2 transition hover:text-foreground hover:underline">
+            Pomodoro timer
+          </a>{" "}
+          ·{" "}
           <button onClick={() => setShowHelpLegal(true)} className="underline-offset-2 transition hover:text-foreground hover:underline">
             Help &amp; Legal
           </button>
