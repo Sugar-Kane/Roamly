@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Free Pomodoro Timer for Studying | Roamly Flow</title>
+    <meta name="description" content="A free Pomodoro timer for studying. Run 25 minute focus blocks with short breaks, learn how the Pomodoro technique works, and start focusing right away. No account needed." />
+    <link rel="canonical" href="https://www.roamlyflow.com/pomodoro-timer" />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#16181D" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Roamly Flow" />
+    <meta property="og:title" content="Free Pomodoro Timer for Studying" />
+    <meta property="og:description" content="Run 25 minute focus blocks with short breaks, learn how the Pomodoro technique works, and start focusing right away. No account needed." />
+    <meta property="og:url" content="https://www.roamlyflow.com/pomodoro-timer" />
+    <meta property="og:image" content="https://www.roamlyflow.com/icon-512.png" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Free Pomodoro Timer for Studying" />
+    <meta name="twitter:description" content="Run 25 minute focus blocks with short breaks, learn how the Pomodoro technique works, and start focusing right away. No account needed." />
+    <meta name="twitter:image" content="https://www.roamlyflow.com/icon-512.png" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebApplication",
+          "@id": "https://www.roamlyflow.com/pomodoro-timer#app",
+          "name": "Roamly Flow Pomodoro Timer",
+          "url": "https://www.roamlyflow.com/pomodoro-timer",
+          "description": "A free Pomodoro timer for studying, with 25 minute focus blocks and short breaks.",
+          "applicationCategory": "EducationalApplication",
+          "operatingSystem": "Any",
+          "browserRequirements": "Requires JavaScript.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+        },
+        {
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://www.roamlyflow.com/" },
+            { "@type": "ListItem", "position": 2, "name": "Pomodoro Timer", "item": "https://www.roamlyflow.com/pomodoro-timer" }
+          ]
+        }
+      ]
+    }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #16181D;
+        --surface: #1e2128;
+        --border: #2c303a;
+        --text: #e7e7ea;
+        --muted: #a6a6ad;
+        --accent: #7c6cff;
+        --accent-ink: #ffffff;
+        --green: #5bbf8a;
+      }
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        line-height: 1.6;
+      }
+      a { color: #b7acff; }
+      .wrap { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+      header nav { font-size: 0.85rem; margin-bottom: 2rem; }
+      header nav a { color: var(--muted); text-decoration: none; }
+      header nav a:hover { color: var(--text); }
+      h1 { font-size: clamp(1.7rem, 5vw, 2.4rem); line-height: 1.2; margin: 0 0 0.75rem; }
+      .lede { color: var(--muted); font-size: 1.05rem; margin: 0 0 2rem; }
+      h2 { font-size: 1.35rem; margin: 2.5rem 0 0.75rem; }
+      h3 { font-size: 1.1rem; margin: 1.75rem 0 0.5rem; }
+      p { margin: 0 0 1rem; }
+      ul, ol { margin: 0 0 1rem; padding-left: 1.25rem; }
+      li { margin: 0.35rem 0; }
+      /* Timer */
+      .timer {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 1.25rem;
+        padding: 1.75rem 1.5rem;
+        text-align: center;
+        margin: 0 0 2.5rem;
+      }
+      .timer .mode {
+        display: inline-block;
+        font-size: 0.8rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-bottom: 0.5rem;
+      }
+      .timer .clock {
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        font-size: clamp(3rem, 15vw, 4.5rem);
+        line-height: 1;
+        margin: 0.25rem 0 1.25rem;
+      }
+      .controls { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border-radius: 9999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        padding: 0.7rem 1.4rem;
+        min-height: 2.75rem;
+        font-weight: 600;
+      }
+      button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+      button:hover { filter: brightness(1.08); }
+      button:focus-visible, a:focus-visible { outline: 3px solid #b7acff; outline-offset: 2px; }
+      .count { color: var(--muted); font-size: 0.85rem; margin-top: 1rem; }
+      .cta {
+        display: block;
+        background: linear-gradient(135deg, #7c6cff, #9d6cff);
+        color: #fff;
+        text-align: center;
+        text-decoration: none;
+        font-weight: 700;
+        padding: 0.9rem 1.5rem;
+        border-radius: 9999px;
+        margin: 1.25rem 0 0.5rem;
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 1.25rem;
+        padding: 1.5rem;
+        margin-top: 2.5rem;
+      }
+      footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--muted); font-size: 0.85rem; }
+      footer a { color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <nav aria-label="Breadcrumb">
+          <a href="/">Roamly Flow</a> / Pomodoro Timer
+        </nav>
+      </header>
+
+      <main>
+        <h1>Free Pomodoro timer for studying</h1>
+        <p class="lede">Start a focused study session in seconds. Run 25 minute focus blocks with short breaks, so you can work on one thing at a time and give your brain regular rest. No account needed.</p>
+
+        <section class="timer" aria-label="Pomodoro timer">
+          <span class="mode" id="mode">Focus</span>
+          <div class="clock" id="clock" role="timer" aria-live="polite" aria-atomic="true">25:00</div>
+          <div class="controls">
+            <button class="primary" id="toggle" type="button">Start</button>
+            <button id="reset" type="button">Reset</button>
+            <button id="skip" type="button">Skip</button>
+          </div>
+          <p class="count" id="count">Focus blocks completed: 0</p>
+        </section>
+
+        <h2>What is the Pomodoro Technique?</h2>
+        <p>The Pomodoro Technique is a time management method that breaks studying into short, timed intervals. You focus for 25 minutes, then take a 5 minute break. After four focus blocks you take a longer break. The short cycles make large tasks feel manageable and help you notice when your attention starts to drift.</p>
+
+        <h2>How to study with the Pomodoro method</h2>
+        <ol>
+          <li>Pick one task to work on.</li>
+          <li>Start a 25 minute focus block and work only on that task.</li>
+          <li>When the timer ends, take a 5 minute break. Stand up, stretch, or rest your eyes.</li>
+          <li>Repeat. After four focus blocks, take a longer break of 15 to 30 minutes.</li>
+        </ol>
+
+        <h3>Tips for students</h3>
+        <ul>
+          <li>Put your phone out of reach during a focus block.</li>
+          <li>Write distractions down instead of acting on them, then return to your task.</li>
+          <li>Match the number of blocks to your energy for the day rather than a fixed quota.</li>
+        </ul>
+
+        <section class="panel">
+          <h2 style="margin-top:0">Roamly Flow is a focus timer built for students</h2>
+          <p>Roamly Flow started as a study timer for PA school and grew into a full study companion. Alongside the Pomodoro timer you get a task list, a study planner with exam dates, session analytics, and live study rooms. The core timer is always free.</p>
+          <a class="cta" href="/">Open the full Roamly Flow timer</a>
+          <p style="margin:0.75rem 0 0; text-align:center;"><a href="/premium">See what Roamly Flow Premium adds</a></p>
+        </section>
+      </main>
+
+      <footer>
+        <p>&copy; 2026 Roamly Flow &middot; <a href="/">Home</a> &middot; <a href="/premium">Premium</a></p>
+      </footer>
+    </div>
+
+    <script>
+      // Minimal, self contained Pomodoro timer. Intentionally independent of the
+      // main app bundle so this marketing page stays light and loads fast. The
+      // full featured timer (tasks, planner, analytics, rooms, themes) lives in
+      // the app and is one click away via the call to action above.
+      (function () {
+        var FOCUS = 25 * 60, BREAK = 5 * 60;
+        var remaining = FOCUS, mode = "focus", running = false, ticker = null, done = 0;
+        var clock = document.getElementById("clock");
+        var modeEl = document.getElementById("mode");
+        var toggle = document.getElementById("toggle");
+        var reset = document.getElementById("reset");
+        var skip = document.getElementById("skip");
+        var count = document.getElementById("count");
+
+        function fmt(s) {
+          var m = Math.floor(s / 60), sec = s % 60;
+          return (m < 10 ? "0" : "") + m + ":" + (sec < 10 ? "0" : "") + sec;
+        }
+        function render() {
+          clock.textContent = fmt(remaining);
+          modeEl.textContent = mode === "focus" ? "Focus" : "Break";
+          toggle.textContent = running ? "Pause" : "Start";
+          count.textContent = "Focus blocks completed: " + done;
+          document.title = fmt(remaining) + " " + (mode === "focus" ? "Focus" : "Break") + " | Roamly Flow";
+        }
+        function switchMode() {
+          if (mode === "focus") { done += 1; mode = "break"; remaining = BREAK; }
+          else { mode = "focus"; remaining = FOCUS; }
+        }
+        function tick() {
+          if (remaining > 0) { remaining -= 1; render(); return; }
+          switchMode();
+          render();
+        }
+        function start() { if (running) return; running = true; ticker = setInterval(tick, 1000); render(); }
+        function pause() { running = false; if (ticker) clearInterval(ticker); ticker = null; render(); }
+        toggle.addEventListener("click", function () { running ? pause() : start(); });
+        reset.addEventListener("click", function () { pause(); mode = "focus"; remaining = FOCUS; render(); });
+        skip.addEventListener("click", function () { switchMode(); render(); });
+        render();
+      })();
+    </script>
+  </body>
+</html>
