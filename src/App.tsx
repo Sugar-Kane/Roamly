@@ -1116,6 +1116,14 @@ export default function App() {
             Pomodoro timer
           </a>{" "}
           ·{" "}
+          <a href="/privacy" className="underline-offset-2 transition hover:text-foreground hover:underline">
+            Privacy
+          </a>{" "}
+          ·{" "}
+          <a href="/terms" className="underline-offset-2 transition hover:text-foreground hover:underline">
+            Terms
+          </a>{" "}
+          ·{" "}
           <button onClick={() => setShowHelpLegal(true)} className="underline-offset-2 transition hover:text-foreground hover:underline">
             Help &amp; Legal
           </button>
