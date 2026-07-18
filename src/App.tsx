@@ -48,6 +48,7 @@ import { ConfettiBurst } from "./Confetti";
 import { CustomizeSession } from "./CustomizeSession";
 import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
+import { applySeo } from "./seo";
 
 export type View = "focus" | "tasks" | "analytics" | "rooms" | "garden" | "premium" | "admin";
 
@@ -959,7 +960,8 @@ export default function App() {
       const method = viewFromPath(window.location.pathname) === view ? "replaceState" : "pushState";
       history[method](null, "", target + window.location.search + window.location.hash);
     }
-    document.title = view === "focus" ? "Focus | Roamly Flow" : `${VIEW_LABELS[view]} | Roamly Flow`;
+    // Per-view title, description, canonical, OG/Twitter, and robots directive.
+    applySeo(view);
   }, [view]);
 
   // Browser back/forward drives the view.
