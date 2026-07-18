@@ -6,11 +6,28 @@
 
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  adminInviteSummary, adminInviteSeries, adminErrorGroups, adminErrorSeries, adminListErrors,
+  adminInviteSummary, adminInviteSeries, adminErrorGroups, adminErrorSeries, adminListErrors, adminSetErrorTriage,
   type AdminInviteSummary, type AdminInviteDay, type AdminErrorGroup, type AdminErrorDay, type ErrorRow,
+  type ErrorStatus, type ErrorSeverity,
 } from "./db";
 import { FilterBar, KpiCard, csvDownload, type AdminFilterState } from "./adminDashboard";
 import { ratePct } from "./adminMetrics";
+import { ThemedSelect } from "./ThemedSelect";
+
+const ERROR_STATUSES: ErrorStatus[] = ["open", "investigating", "resolved", "ignored"];
+const ERROR_SEVERITIES: ErrorSeverity[] = ["low", "medium", "high", "critical"];
+const STATUS_STYLE: Record<ErrorStatus, string> = {
+  open: "bg-destructive/10 text-destructive",
+  investigating: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  resolved: "bg-roamly-green/10 text-roamly-green",
+  ignored: "bg-secondary text-muted-foreground",
+};
+const SEVERITY_STYLE: Record<ErrorSeverity, string> = {
+  low: "bg-secondary text-muted-foreground",
+  medium: "bg-primary/10 text-primary",
+  high: "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+  critical: "bg-destructive/15 text-destructive",
+};
 
 const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
 
@@ -131,6 +148,14 @@ export function ErrorsPage({ state }: { state: AdminFilterState }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [openStack, setOpenStack] = useState<string | null>(null);
+  const [triageFilter, setTriageFilter] = useState<"active" | ErrorStatus>("active");
+
+  // Optimistically patch one group's triage, then persist. On failure the next
+  // refresh reconciles from the server (nothing destructive happens locally).
+  const setTriage = (g: AdminErrorGroup, fields: { status?: ErrorStatus; severity?: ErrorSeverity }) => {
+    setGroups((prev) => prev.map((x) => (x.message === g.message && x.page === g.page ? { ...x, ...fields } : x)));
+    void adminSetErrorTriage(g.message, g.page, fields);
+  };
 
   useEffect(() => {
     let alive = true; setStatus("loading");
@@ -154,8 +179,8 @@ export function ErrorsPage({ state }: { state: AdminFilterState }) {
   const totalInWindow = series.reduce((a, d) => a + d.errors, 0);
 
   const exportCsv = () => {
-    const rows: (string | number)[][] = [["message", "page", "occurrences", "affected_users", "first_seen", "last_seen"]];
-    groups.forEach((g) => rows.push([g.message, g.page, g.occurrences, g.affected_users, g.first_seen, g.last_seen]));
+    const rows: (string | number)[][] = [["message", "page", "occurrences", "affected_users", "first_seen", "last_seen", "status", "severity"]];
+    groups.forEach((g) => rows.push([g.message, g.page, g.occurrences, g.affected_users, g.first_seen, g.last_seen, g.status, g.severity ?? ""]));
     csvDownload(`roamly-errors-${resolved.startISO.slice(0, 10)}_${resolved.endISO.slice(0, 10)}.csv`, rows);
   };
 
@@ -174,25 +199,47 @@ export function ErrorsPage({ state }: { state: AdminFilterState }) {
             </ChartCard>
           )}
 
-          {groups.length > 0 && (
-            <section className="mt-5" aria-label="Top recurring errors">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Top recurring errors</h2>
-              <div className="space-y-2">
-                {groups.map((g, i) => (
-                  <div key={i} className="rounded-xl border border-border bg-card/70 p-3">
-                    <div className="flex items-start gap-2">
-                      <span className="break-words text-sm font-medium text-destructive">{g.message}</span>
-                      <span className="ml-auto shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">×{g.occurrences}</span>
+          {groups.length > 0 && (() => {
+            const shown = groups.filter((g) => triageFilter === "active" ? (g.status !== "resolved" && g.status !== "ignored") : g.status === triageFilter);
+            return (
+              <section className="mt-5" aria-label="Top recurring errors">
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  <h2 className="mr-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Top recurring errors</h2>
+                  {(["active", ...ERROR_STATUSES] as const).map((f) => (
+                    <button key={f} onClick={() => setTriageFilter(f)} aria-pressed={triageFilter === f}
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize transition ${triageFilter === f ? "border-primary bg-primary/10 text-primary" : "border-border bg-card/70 text-muted-foreground hover:border-primary/40"}`}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  {shown.length === 0 && <p className="rounded-xl border border-dashed border-border bg-card/50 p-3 text-xs text-muted-foreground">No {triageFilter === "active" ? "active" : triageFilter} errors in this window.</p>}
+                  {shown.map((g, i) => (
+                    <div key={i} className="rounded-xl border border-border bg-card/70 p-3">
+                      <div className="flex items-start gap-2">
+                        <span className="break-words text-sm font-medium text-destructive">{g.message}</span>
+                        <span className="ml-auto shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">×{g.occurrences}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {g.affected_users} user{g.affected_users === 1 ? "" : "s"}
+                        {g.page ? ` · on ${g.page}` : ""} · first {relTime(g.first_seen)} · last {relTime(g.last_seen)}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${STATUS_STYLE[g.status]}`}>{g.status}</span>
+                        {g.severity && <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize ${SEVERITY_STYLE[g.severity]}`}>{g.severity}</span>}
+                        <span className="ml-auto flex items-center gap-1.5">
+                          <ThemedSelect value={g.status} onChange={(v) => setTriage(g, { status: v as ErrorStatus })} ariaLabel={`Status for ${g.message}`} className="w-32"
+                            options={ERROR_STATUSES.map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }))} />
+                          <ThemedSelect value={g.severity ?? ""} onChange={(v) => setTriage(g, { severity: v as ErrorSeverity })} ariaLabel={`Severity for ${g.message}`} className="w-28"
+                            options={[{ value: "", label: "Severity" }, ...ERROR_SEVERITIES.map((s) => ({ value: s, label: s[0].toUpperCase() + s.slice(1) }))]} />
+                        </span>
+                      </div>
                     </div>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      {g.affected_users} user{g.affected_users === 1 ? "" : "s"}
-                      {g.page ? ` · on ${g.page}` : ""} · first {relTime(g.first_seen)} · last {relTime(g.last_seen)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+                  ))}
+                </div>
+              </section>
+            );
+          })()}
 
           {recent.length > 0 && (
             <section className="mt-5" aria-label="Recent error log">
