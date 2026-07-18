@@ -34,12 +34,17 @@ test("admin dashboard is gated: signed-out visitors get no access and no data", 
   await expect(page.getByText("Admin dashboard")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Overview" })).toHaveCount(0);
   await expect(page.getByText("Key metrics")).toHaveCount(0);
+  // The admin route is never indexable, signed in or out.
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
 });
 
 test("homepage loads with the timer", async ({ page }) => {
   await goHome(page);
   await expect(page).toHaveTitle(/Roamly/);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
+  // Home is public and indexable, canonical on the www production host.
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", "https://www.roamlyflow.com/");
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /^index/);
 });
 
 test("expanded built-in music library is available", async ({ page }) => {
