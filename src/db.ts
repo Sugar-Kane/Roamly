@@ -449,6 +449,24 @@ export async function adminRevenueSeries(startISO: string, endISO: string): Prom
   }));
 }
 
+// ---- Admin BI dashboard (Phase 6: Data Explorer) ----
+// One flexible read-only aggregation: a whitelisted additive metric bucketed
+// by day/week/month, optionally scoped by plan/device. is_admin()-gated.
+export type AdminExplorePoint = { bucket: string; value: number };
+
+export async function adminExploreMetric(
+  metric: string, startISO: string, endISO: string,
+  grain: "day" | "week" | "month" = "day",
+  plan: AdminPlanScope = "all", device: AdminDeviceScope = "all",
+): Promise<AdminExplorePoint[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_explore_metric", {
+    p_metric: metric, p_start: startISO, p_end: endISO, p_grain: grain, p_plan: plan, p_device: device,
+  });
+  if (error) { console.warn("[Roamly] adminExploreMetric failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({ bucket: String(r.bucket), value: num(r.value) }));
+}
+
 // ---- Admin BI dashboard (Phase 5: Invites + Errors operational views) ----
 // Read-only, is_admin()-gated. Invite "accepted" counts are cohort-based
 // (invite created in the window that has since been accepted) — invitations

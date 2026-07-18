@@ -74,6 +74,33 @@ export function ratePct(part: number, whole: number): number {
   return whole > 0 ? (part / whole) * 100 : 0;
 }
 
+// Data Explorer metric catalog. Must stay in sync with the admin_explore_metric
+// RPC whitelist — every key here is an ADDITIVE measure that rolls up correctly
+// across day/week/month. `money` marks cents-valued metrics; `deviceAware`
+// marks the ones the device filter actually affects (app_events-derived).
+export type ExploreGrain = "day" | "week" | "month";
+export type ExploreMetric = {
+  key: string; label: string; hint: string; deviceAware: boolean;
+};
+export const EXPLORE_METRICS: ExploreMetric[] = [
+  { key: "new_users", label: "New users", hint: "Accounts created in each bucket.", deviceAware: false },
+  { key: "active_events", label: "Tracked events", hint: "All analytics events fired.", deviceAware: true },
+  { key: "focus_minutes", label: "Focus minutes", hint: "Sum of logged focus minutes.", deviceAware: false },
+  { key: "focus_blocks", label: "Focus blocks completed", hint: "focus_block_done events (throttled).", deviceAware: true },
+  { key: "tasks_created", label: "Tasks created", hint: "Tasks created in each bucket.", deviceAware: false },
+  { key: "tasks_completed", label: "Tasks completed", hint: "Tasks marked done in each bucket.", deviceAware: false },
+  { key: "room_joins", label: "Room joins", hint: "room_join events (throttled).", deviceAware: true },
+  { key: "note_uploads", label: "Note uploads", hint: "task_ai_upload events.", deviceAware: true },
+  { key: "errors", label: "Client errors", hint: "Errors logged in each bucket.", deviceAware: false },
+  { key: "new_subscriptions", label: "New subscriptions", hint: "Subscription entitlements created.", deviceAware: false },
+  { key: "new_trials", label: "New trials", hint: "Trial entitlements created.", deviceAware: false },
+  { key: "credit_purchases", label: "Credit purchases", hint: "Credit-pack purchases.", deviceAware: false },
+  { key: "feedback", label: "Feedback submissions", hint: "Feedback tickets created.", deviceAware: false },
+];
+export function exploreMetric(key: string): ExploreMetric | undefined {
+  return EXPLORE_METRICS.find((m) => m.key === key);
+}
+
 // Deterministic, calculation-backed insights — never AI-generated claims. Each
 // line states the metric, direction, magnitude, and the raw before→after.
 export function buildInsights(cur: AdminKpiSummary, prev: AdminKpiSummary, funnel: AdminFunnel | null): string[] {
