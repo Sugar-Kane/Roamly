@@ -8,6 +8,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // window shows the time/phase/progress; the Pause/Skip controls stay on the
 // main tab. Chromium keeps the richer, interactive Document PiP path instead
 // (see useDocumentPip), so this is gated off there.
+//
+// Safari is strict: requestPictureInPicture() must run inside the user gesture
+// AND the <video> must already be playing with a real frame (non-zero intrinsic
+// size). So we PRIME the canvas → captureStream → muted <video> up front (muted
+// autoplay needs no gesture) and keep it warm; the click then only has to call
+// requestPictureInPicture() with no intervening awaits.
 
 export type PipFrame = {
   timeText: string;
@@ -23,11 +29,14 @@ type WebkitVideo = HTMLVideoElement & {
   webkitSetPresentationMode?: (mode: "picture-in-picture" | "inline") => void;
   webkitSupportsPresentationMode?: (mode: string) => boolean;
 };
+type CaptureCanvas = HTMLCanvasElement & { captureStream?: (fps?: number) => MediaStream };
 
 function detectSupport(): boolean {
   if (typeof document === "undefined" || typeof window === "undefined") return false;
   // Chromium exposes the richer Document PiP — let that path own the feature.
   if ("documentPictureInPicture" in window) return false;
+  const canvas = document.createElement("canvas") as CaptureCanvas;
+  if (typeof canvas.captureStream !== "function") return false; // no way to feed the <video>
   const video = document.createElement("video") as WebkitVideo;
   return (
     (document as unknown as { pictureInPictureEnabled?: boolean }).pictureInPictureEnabled === true ||
@@ -38,7 +47,7 @@ function detectSupport(): boolean {
 export const VIDEO_PIP_SUPPORTED = detectSupport();
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-  const radius = Math.min(r, w / 2, h / 2);
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.arcTo(x + w, y, x + w, y + h, radius);
@@ -52,14 +61,14 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 // render (the live timer values) without re-subscribing anything.
 export function useVideoPip(getFrame: () => PipFrame) {
   const [active, setActive] = useState(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<CaptureCanvas | null>(null);
   const videoRef = useRef<WebkitVideo | null>(null);
-  const timerRef = useRef<number | null>(null);
+  const loopRef = useRef<number | null>(null);
   const getFrameRef = useRef(getFrame);
   getFrameRef.current = getFrame;
 
   const stopLoop = useCallback(() => {
-    if (timerRef.current != null) { clearInterval(timerRef.current); timerRef.current = null; }
+    if (loopRef.current != null) { clearInterval(loopRef.current); loopRef.current = null; }
   }, []);
 
   const draw = useCallback(() => {
@@ -89,74 +98,76 @@ export function useVideoPip(getFrame: () => PipFrame) {
     roundRect(ctx, pad, barY, barW * Math.max(0, Math.min(1, progress)), barH, barH / 2); ctx.fill();
   }, []);
 
+  // Prime the hidden canvas → stream → <video> once, up front, and keep it warm
+  // so the pop-out click has a ready, playing video to hand to PiP.
+  useEffect(() => {
+    if (!VIDEO_PIP_SUPPORTED) return;
+    const canvas = document.createElement("canvas") as CaptureCanvas;
+    canvas.width = 320; canvas.height = 180;
+    canvasRef.current = canvas;
+    draw();
+
+    const video = document.createElement("video") as WebkitVideo;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.autoplay = true;
+    video.setAttribute("playsinline", "");
+    video.setAttribute("muted", "");
+    // Kept in the DOM (Safari won't PiP a detached element) but visually gone.
+    video.style.cssText = "position:fixed;width:1px;height:1px;left:-9999px;top:0;opacity:0;pointer-events:none";
+    try { video.srcObject = canvas.captureStream!(1); } catch { /* gated by detectSupport, but be safe */ }
+    document.body.appendChild(video);
+    video.addEventListener("enterpictureinpicture", () => { setActive(true); stopLoop(); loopRef.current = window.setInterval(draw, 500); });
+    video.addEventListener("leavepictureinpicture", () => { setActive(false); stopLoop(); });
+    // Muted autoplay needs no gesture; keeps a live frame flowing for PiP.
+    video.play().catch(() => { /* a later gesture'd open() retries play */ });
+    videoRef.current = video;
+
+    return () => {
+      stopLoop();
+      try { video.pause(); } catch { /* noop */ }
+      try { video.remove(); } catch { /* noop */ }
+      videoRef.current = null;
+      canvasRef.current = null;
+    };
+  }, [draw, stopLoop]);
+
   const close = useCallback(() => {
     stopLoop();
+    const doc = document as unknown as { pictureInPictureElement?: Element; exitPictureInPicture?: () => Promise<void> };
     try {
-      if ((document as unknown as { pictureInPictureElement?: Element }).pictureInPictureElement) {
-        void (document as unknown as { exitPictureInPicture?: () => Promise<void> }).exitPictureInPicture?.();
-      } else {
-        videoRef.current?.webkitSetPresentationMode?.("inline");
-      }
+      if (doc.pictureInPictureElement) void doc.exitPictureInPicture?.();
+      else videoRef.current?.webkitSetPresentationMode?.("inline");
     } catch { /* leavepictureinpicture will still clear state */ }
     setActive(false);
   }, [stopLoop]);
 
+  // Must stay a gesture-friendly call: draw a fresh frame, make sure the primed
+  // video is playing, then request PiP with no awaits before it on Safari.
   const open = useCallback(async (): Promise<boolean> => {
-    if (!VIDEO_PIP_SUPPORTED) return false;
-
-    let canvas = canvasRef.current;
-    if (!canvas) {
-      canvas = document.createElement("canvas");
-      canvas.width = 320; canvas.height = 180;
-      canvasRef.current = canvas;
-    }
-    let video = videoRef.current;
-    if (!video) {
-      video = document.createElement("video") as WebkitVideo;
-      video.muted = true;
-      video.playsInline = true;
-      video.setAttribute("playsinline", "");
-      // Kept in the DOM but visually gone; Safari won't PiP a detached element.
-      video.style.cssText = "position:fixed;width:1px;height:1px;left:-9999px;top:0;opacity:0;pointer-events:none";
-      document.body.appendChild(video);
-      video.addEventListener("enterpictureinpicture", () => setActive(true));
-      video.addEventListener("leavepictureinpicture", () => { setActive(false); stopLoop(); });
-      videoRef.current = video;
-    }
-
+    const video = videoRef.current;
+    if (!VIDEO_PIP_SUPPORTED || !video) return false;
     draw();
-    if (!video.srcObject) {
-      try { video.srcObject = canvas.captureStream(2); }
-      catch { return false; } // captureStream unsupported → bail cleanly
-    }
-    // Redraw on an interval (background tabs throttle this to ~1/s, which is
-    // exactly the granularity a seconds clock needs) so the streamed frames
-    // stay current while the window floats over other apps.
-    stopLoop();
-    timerRef.current = window.setInterval(draw, 500);
-
+    // If muted autoplay was blocked at prime time, this gesture'd play unblocks
+    // it. We do NOT await before requestPictureInPicture (Safari spends the
+    // gesture on the first await) — play() for a muted stream resolves inline.
+    void video.play().catch(() => { /* noop */ });
     try {
-      await video.play();
       if (typeof video.requestPictureInPicture === "function") {
         await video.requestPictureInPicture();
       } else if (typeof video.webkitSetPresentationMode === "function") {
         video.webkitSetPresentationMode("picture-in-picture");
         setActive(true);
       } else {
-        stopLoop();
         return false;
       }
       return true;
-    } catch {
-      stopLoop();
+    } catch (err) {
+      console.warn("[Roamly] video pop-out failed", err);
       return false;
     }
-  }, [draw, stopLoop]);
-
-  useEffect(() => () => {
-    stopLoop();
-    try { videoRef.current?.remove(); } catch { /* already gone */ }
-  }, [stopLoop]);
+  }, [draw]);
 
   return { supported: VIDEO_PIP_SUPPORTED, active, open, close };
 }
