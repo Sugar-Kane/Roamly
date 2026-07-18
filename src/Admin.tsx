@@ -15,12 +15,13 @@ import {
 import { Modal } from "./Modal";
 import { ThemedSelect } from "./ThemedSelect";
 import {
-  AdminShell, AdminOverviewPage, SectionPlaceholder, useAdminFilters, type AdminSectionId,
+  AdminShell, AdminOverviewPage, useAdminFilters, type AdminSectionId,
 } from "./adminDashboard";
 import { FeaturesPage, EngagementPage } from "./adminAnalytics";
 import { UserDetail } from "./adminUserDetail";
 import { RevenuePage } from "./adminRevenue";
 import { InvitesPage, ErrorsPage } from "./adminOps";
+import { ExplorerPage } from "./adminExplorer";
 
 
 // "3m ago" / "2h ago" / "Apr 5" — compact relative time for activity/ticket rows.
@@ -63,7 +64,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     ads: <AdminAds />,
     revenue: <RevenuePage state={filters} />,
     invites: <InvitesPage state={filters} />,
-    explorer: <SectionPlaceholder title="Data Explorer" phase="Phase 6" contains="Pick a metric, group by day/week/month, break down by plan or device, and export." />,
+    explorer: <ExplorerPage state={filters} />,
   };
 
   return (

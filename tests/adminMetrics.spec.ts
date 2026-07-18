@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { resolveRange, pctChange, fmtMinutes, fmtCents, ratePct, buildInsights, type AdminFilters } from "../src/adminMetrics";
+import { resolveRange, pctChange, fmtMinutes, fmtCents, ratePct, buildInsights, EXPLORE_METRICS, exploreMetric, type AdminFilters } from "../src/adminMetrics";
 import { featureLabel, featureCategory, EVENT_LABELS } from "../src/adminLabels";
 import type { AdminKpiSummary, AdminFunnel } from "../src/db";
 
@@ -72,6 +72,23 @@ test.describe("ratePct (invite acceptance & other ratios)", () => {
   test("an empty denominator is 0%, never NaN/Infinity", () => {
     expect(ratePct(0, 0)).toBe(0);
     expect(ratePct(5, 0)).toBe(0);
+  });
+});
+
+test.describe("Data Explorer metric catalog", () => {
+  test("every metric has a human label and no raw snake_case leaks into it", () => {
+    for (const m of EXPLORE_METRICS) {
+      expect(m.label.length).toBeGreaterThan(0);
+      expect(m.label).not.toContain("_");
+    }
+  });
+  test("catalog keys are unique (no duplicate metric registered)", () => {
+    const keys = EXPLORE_METRICS.map((m) => m.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+  test("exploreMetric resolves known keys and returns undefined for unknown", () => {
+    expect(exploreMetric("focus_minutes")?.label).toBe("Focus minutes");
+    expect(exploreMetric("bogus_metric")).toBeUndefined();
   });
 });
 
