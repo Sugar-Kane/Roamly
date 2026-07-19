@@ -15,8 +15,8 @@ export type FocusSoundId =
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
   { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
-  { id: "lofi", name: "Café music", hint: "25 real tracks · shuffled, no repeats until you've heard them all" },
-  { id: "calm", name: "Calm music", hint: "18 real tracks · shuffled, no repeats until you've heard them all" },
+  { id: "lofi", name: "Café music", hint: "25 real tracks, shuffled" },
+  { id: "calm", name: "Calm music", hint: "18 real tracks, shuffled" },
   { id: "beats", name: "Lo-fi beats", hint: "Live chillhop groove" },
   { id: "piano", name: "Piano", hint: "Gentle drifting piano" },
   { id: "ambient", name: "Ambient drift", hint: "Endless evolving soundscape" },

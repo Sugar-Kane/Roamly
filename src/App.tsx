@@ -2217,17 +2217,17 @@ function FocusSoundsPanel({ sounds, bare = false }: any) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {FOCUS_SOUNDS.map((s) => {
           const active = sounds.sound === s.id;
           return (
             <button key={s.id} onClick={() => sounds.choose(s.id)} aria-pressed={active}
-              className={`relative rounded-xl border px-3 py-2.5 text-left transition ${active ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">{s.name}</span>
-                {active && sounds.playing && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+              className={`relative flex min-h-[3.75rem] flex-col justify-center rounded-xl border px-3 py-2 text-left transition ${active ? "border-primary bg-primary/10 text-primary shadow-sm" : "border-border bg-card/60 hover:border-primary/40"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-sm font-medium">{s.name}</span>
+                {active && sounds.playing && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary" />}
               </div>
-              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{s.hint}</p>
+              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">{s.hint}</p>
             </button>
           );
         })}
