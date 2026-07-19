@@ -7,8 +7,8 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Info } from "lucide-react";
 import {
-  adminRevenueSummary, adminRevenueSeries, adminConversionFunnel,
-  type AdminRevenueSummary, type AdminRevenueDay, type AdminFunnel,
+  adminRevenueSummary, adminRevenueSeries, adminConversionFunnel, adminStripeRevenue,
+  type AdminRevenueSummary, type AdminRevenueDay, type AdminFunnel, type AdminStripeRevenue,
 } from "./db";
 import { FilterBar, KpiCard, csvDownload, type AdminFilterState } from "./adminDashboard";
 import { fmtCents } from "./adminMetrics";
@@ -54,6 +54,7 @@ export function RevenuePage({ state }: { state: AdminFilterState }) {
   const [prev, setPrev] = useState<AdminRevenueSummary | null>(null);
   const [series, setSeries] = useState<AdminRevenueDay[]>([]);
   const [funnel, setFunnel] = useState<AdminFunnel | null>(null);
+  const [stripe, setStripe] = useState<AdminStripeRevenue | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
 
@@ -71,6 +72,11 @@ export function RevenuePage({ state }: { state: AdminFilterState }) {
       setCur(c); setPrev(p); setSeries(s); setFunnel(f);
       setUpdatedAt(Date.now()); setStatus("ready");
     }).catch(() => { if (alive) setStatus("error"); });
+    // Authoritative Stripe figures load independently: if Stripe isn't
+    // configured (or the call fails), the page keeps its estimates.
+    adminStripeRevenue(resolved.startISO, resolved.endISO).then((r) => {
+      if (alive) setStripe(r.configured && r.data ? r.data : null);
+    });
     return () => { alive = false; };
   }, [resolved, filters.compare, refreshKey]);
 
@@ -97,14 +103,36 @@ export function RevenuePage({ state }: { state: AdminFilterState }) {
     <div>
       <FilterBar state={state} updatedAt={updatedAt} onExport={exportCsv} />
 
-      {/* Estimate disclosure — this whole section is modeled, not billed. */}
+      {/* Authoritative Stripe figures, when the integration is configured. */}
+      {stripe && (
+        <section className="mb-4" aria-label="Authoritative revenue from Stripe">
+          <h2 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Info size={13} className="text-roamly-green" /> Authoritative (from Stripe)
+          </h2>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <KpiCard primary label="MRR" value={stripe.mrr_cents} format={fmtCents} tip="Monthly recurring revenue from active Stripe subscriptions, with annual plans normalized to a monthly amount. Read live from Stripe." />
+            <KpiCard primary label="ARR" value={stripe.arr_cents} format={fmtCents} tip="Annual run-rate = MRR × 12, from Stripe." />
+            <KpiCard primary label="Active subscriptions" value={stripe.active_subscriptions} tip="Count of subscriptions in Stripe with status active." />
+            <KpiCard primary label="Trialing" value={stripe.trialing} tip="Subscriptions currently in a Stripe trial." />
+            <KpiCard primary label="Net revenue" value={stripe.net_cents} format={fmtCents} tip="Net of Stripe fees and refunds, from balance transactions settled in this window. Authoritative." />
+            <KpiCard primary label="Fees" value={stripe.fees_cents} format={fmtCents} tip="Stripe processing fees in this window." />
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">
+            Gross {fmtCents(stripe.gross_cents)} · refunds {fmtCents(stripe.refunds_cents)} · net {fmtCents(stripe.net_cents)} in this window ({stripe.currency.toUpperCase()}). Live from Stripe.
+          </p>
+        </section>
+      )}
+
+      {/* Estimate disclosure — modeled figures below, distinct from Stripe. */}
       <div className="mb-4 flex items-start gap-2 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-3 text-[12px] leading-snug text-muted-foreground">
         <Info size={14} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
         <p>
-          <span className="font-semibold text-foreground">Estimated figures.</span> Revenue is modeled from subscription and
+          <span className="font-semibold text-foreground">Estimated figures.</span> The section below is modeled from subscription and
           credit records at list price (subscriptions $3/mo or $30/yr; credit packs $1 for 2, $2 for 5). It excludes discounts,
-          proration, refunds, failed charges, taxes, and fees. <span className="font-medium">Stripe is the source of truth</span> for
-          net revenue — a direct Stripe integration can replace these estimates once approved.
+          proration, refunds, failed charges, taxes, and fees.{" "}
+          {stripe
+            ? <span className="font-medium">For billed revenue, use the authoritative Stripe figures above.</span>
+            : <span><span className="font-medium">Stripe is the source of truth</span> for net revenue. Configure the Stripe integration to show authoritative figures here.</span>}
         </p>
       </div>
 
