@@ -3,6 +3,7 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "cleanUrls": true,
   "functions": {
     "api/generate-tasks.ts": { "maxDuration": 120 }
   },
