@@ -449,6 +449,39 @@ export async function adminRevenueSeries(startISO: string, endISO: string): Prom
   }));
 }
 
+// Authoritative revenue read straight from Stripe via the admin-gated API
+// route. Returns { configured:false } when Stripe isn't set up (or the call
+// fails) so the Revenue page keeps its list-price estimates. All amounts are
+// integer cents in `currency`.
+export type AdminStripeRevenue = {
+  currency: string; mrr_cents: number; arr_cents: number;
+  active_subscriptions: number; trialing: number;
+  gross_cents: number; refunds_cents: number; fees_cents: number; net_cents: number;
+  generated_at: string;
+};
+export async function adminStripeRevenue(
+  startISO: string, endISO: string,
+): Promise<{ data?: AdminStripeRevenue; configured: boolean }> {
+  if (!supabase) return { configured: false };
+  const { data: auth } = await supabase.auth.getSession();
+  const token = auth.session?.access_token;
+  if (!token) return { configured: false };
+  try {
+    const res = await fetch("/api/admin-revenue", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ start: startISO, end: endISO }),
+    });
+    if (res.status === 503) return { configured: false }; // Stripe not set up
+    if (!res.ok) return { configured: false };
+    const body = await res.json() as AdminStripeRevenue & { ok?: boolean };
+    if (!body.ok) return { configured: false };
+    return { configured: true, data: body };
+  } catch {
+    return { configured: false };
+  }
+}
+
 // ---- Admin BI dashboard (Phase 6: Data Explorer) ----
 // One flexible read-only aggregation: a whitelisted additive metric bucketed
 // by day/week/month, optionally scoped by plan/device. is_admin()-gated.
