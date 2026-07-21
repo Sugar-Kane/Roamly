@@ -138,7 +138,7 @@ export function FeaturesPage({ state }: { state: AdminFilterState }) {
       {status === "ready" && filtered.length === 0 && <div className="rounded-2xl border border-dashed border-border bg-card/60 p-6 text-center text-sm text-muted-foreground">No feature activity matches these filters.</div>}
 
       {status === "ready" && filtered.length > 0 && (
-        <div className="overflow-x-auto rounded-2xl border border-border bg-card/70">
+        <div role="region" aria-label="Feature analytics" tabIndex={0} className="overflow-x-auto rounded-2xl border border-border bg-card/70">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="sticky top-0 bg-card">
               <tr className="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">

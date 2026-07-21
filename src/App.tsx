@@ -3362,7 +3362,7 @@ function PremiumView({ isPremium, session, profile, onSubscribe, checkoutLoading
       <p className="mt-1 text-sm text-muted-foreground">Built for the long road to the PANCE.</p>
 
       {!isPremium && (
-        <div className="mt-6 overflow-x-auto rounded-2xl border border-border bg-card/70">
+        <div role="region" aria-label="Plan comparison" tabIndex={0} className="mt-6 overflow-x-auto rounded-2xl border border-border bg-card/70">
           <table className="min-w-[720px] w-full table-fixed text-left">
             <thead className="border-b border-border text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <tr><th scope="col" className="w-[31.25%] px-4 py-2.5">What you get</th><th scope="col" className="px-3 py-2.5">No account</th><th scope="col" className="px-3 py-2.5">Free account</th><th scope="col" className="px-3 py-2.5 text-primary">Premium account</th></tr>
