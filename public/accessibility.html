@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Accessibility | Roamly Flow</title>
+    <meta name="description" content="Roamly Flow's accessibility commitment, our WCAG 2.2 AA target, known limitations, and how to report an accessibility barrier." />
+    <link rel="canonical" href="https://www.roamlyflow.com/accessibility" />
+    <meta name="robots" content="index, follow" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="theme-color" content="#16181D" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Roamly Flow" />
+    <meta property="og:title" content="Accessibility | Roamly Flow" />
+    <meta property="og:description" content="Roamly Flow's accessibility commitment and how to report a barrier." />
+    <meta property="og:url" content="https://www.roamlyflow.com/accessibility" />
+    <meta property="og:image" content="https://www.roamlyflow.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Accessibility | Roamly Flow" />
+    <meta name="twitter:description" content="Roamly Flow's accessibility commitment and how to report a barrier." />
+    <meta name="twitter:image" content="https://www.roamlyflow.com/og-image.png" />
+    <style>
+      :root { color-scheme: dark; --bg:#16181D; --surface:#1e2128; --border:#2c303a; --text:#e7e7ea; --muted:#a6a6ad; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--bg); color:var(--text); line-height:1.6;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      a { color:#c4bcff; }
+      /* Inline links inside body copy stay underlined so they're distinguishable
+         without relying on color alone (WCAG 1.4.1). */
+      main section a, .note a { text-decoration: underline; }
+      .wrap { max-width:44rem; margin:0 auto; padding:2rem 1.25rem 4rem; }
+      nav.crumb { font-size:0.85rem; margin-bottom:2rem; }
+      nav.crumb a { color:var(--muted); text-decoration:underline; }
+      nav.crumb a:hover { color:var(--text); }
+      h1 { font-size:clamp(1.7rem,5vw,2.3rem); margin:0 0 0.5rem; }
+      .note { color:var(--muted); font-size:0.9rem; margin:0 0 2rem; }
+      section { background:var(--surface); border:1px solid var(--border); border-radius:1rem; padding:1.25rem 1.35rem; margin:0 0 1rem; }
+      h2 { font-size:1.1rem; margin:0 0 0.4rem; }
+      p { margin:0 0 0.6rem; color:var(--muted); }
+      p:last-child { margin-bottom:0; }
+      ul { margin:0.4rem 0 0; padding-left:1.2rem; color:var(--muted); }
+      li { margin:0.25rem 0; }
+      a:focus-visible { outline:3px solid #b7acff; outline-offset:2px; }
+      footer { margin-top:2.5rem; padding-top:1.5rem; border-top:1px solid var(--border); color:var(--muted); font-size:0.85rem; }
+      footer a { color:var(--muted); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="crumb" aria-label="Breadcrumb"><a href="/">Roamly Flow</a> / Accessibility</nav>
+      <main>
+        <h1>Accessibility at Roamly Flow</h1>
+        <p class="note">Last updated: 21 July 2026. Accessibility work at Roamly Flow is ongoing — this statement describes where we are today and how to reach us.</p>
+
+        <section>
+          <h2>Our commitment</h2>
+          <p>We want Roamly Flow to be usable by everyone, including people who rely on assistive technologies such as screen readers, screen magnifiers, keyboard-only navigation, and voice control. Accessibility is part of how we build and review the product, not an afterthought.</p>
+        </section>
+
+        <section>
+          <h2>The standard we aim for</h2>
+          <p>We are working toward conformance with the <a href="https://www.w3.org/TR/WCAG22/">Web Content Accessibility Guidelines (WCAG) 2.2, Level AA</a>. We test with a combination of automated tooling (axe-core in our test suite) and manual review, including keyboard-only and screen-reader checks.</p>
+          <p>We do not yet claim full WCAG 2.2 AA conformance. Some areas are still undergoing manual assistive-technology testing, and some depend on third-party services we integrate but do not control (see below).</p>
+        </section>
+
+        <section>
+          <h2>What we've done</h2>
+          <ul>
+            <li>Keyboard-accessible navigation, timer, tasks, and dialogs, with a "Skip to content" link and visible keyboard focus indicators across all themes.</li>
+            <li>Dialogs that trap focus, restore it on close, and close with the Escape key.</li>
+            <li>A reduce-motion setting and support for your system's "reduce motion" preference.</li>
+            <li>A color-blind-friendly mode that switches timer and status colors to a blue/orange palette.</li>
+            <li>Labeled form fields and error messages, and accessible names on icon-only controls.</li>
+            <li>Automated accessibility checks that run on every code change to catch regressions.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Known limitations</h2>
+          <p>We're being honest about what still needs work:</p>
+          <ul>
+            <li>Full screen-reader passes (VoiceOver and NVDA) across every workflow are still in progress.</li>
+            <li>Analytics charts are being supplemented with text/table alternatives.</li>
+            <li>Embedded Spotify and Apple Music players, Stripe's hosted checkout, and Supabase-hosted auth screens are provided by third parties; their internal accessibility is outside our direct control, though we choose accessible entry points and offer alternatives where we can.</li>
+            <li>Content inside documents you upload (for example, scanned image-only PDFs) may not have an accessible text alternative if the original document doesn't.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Report an accessibility barrier</h2>
+          <p>If something is hard or impossible to use, please tell us — your reports directly shape what we fix next.</p>
+          <p>You can reach us using the "Contact support / send feedback" option in the in-app <strong>Help &amp; Legal</strong> menu, or by email at <a href="mailto:support@roamlyflow.com">support@roamlyflow.com</a>.</p>
+          <p>To help us reproduce and fix the issue quickly, please include, where you can:</p>
+          <ul>
+            <li>The page or feature (a link or description)</li>
+            <li>Your device and operating system</li>
+            <li>Your browser and version</li>
+            <li>Any assistive technology you were using (e.g. VoiceOver, NVDA, JAWS, Dragon)</li>
+            <li>What you expected to happen, and what happened instead</li>
+          </ul>
+          <p>We aim to acknowledge accessibility reports within <strong>5 business days</strong> and will keep you updated on our plan to address them. Reports that block an essential task are prioritized.</p>
+        </section>
+      </main>
+      <footer>
+        <p>&copy; 2026 Roamly Flow &middot; <a href="/">Home</a> &middot; <a href="/privacy">Privacy</a> &middot; <a href="/terms">Terms</a> &middot; <a href="/pomodoro-timer">Pomodoro timer</a></p>
+      </footer>
+    </div>
+  </body>
+</html>

@@ -1106,6 +1106,10 @@ export default function App() {
             Terms
           </a>{" "}
           ·{" "}
+          <a href="/accessibility" className="underline-offset-2 transition hover:text-foreground hover:underline">
+            Accessibility
+          </a>{" "}
+          ·{" "}
           <button onClick={() => setShowHelpLegal(true)} className="underline-offset-2 transition hover:text-foreground hover:underline">
             Help &amp; Legal
           </button>
