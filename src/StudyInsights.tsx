@@ -78,7 +78,7 @@ export function StudyInsights({ events, daily, plans }: { events: StudyEvent[]; 
     <section className="rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h2 className="text-sm font-semibold">Study breakdown</h2><p className="mt-0.5 text-xs text-muted-foreground">Task and category detail is recorded from Release 3 onward; older time stays Uncategorized.</p></div>
-        <div className="flex rounded-full border border-border bg-card p-1">{(Object.keys(RANGE_LABEL) as Range[]).map((r) => <button key={r} onClick={() => setRange(r)} aria-pressed={range === r} className={`rounded-full px-3 py-1 text-xs ${range === r ? "bg-primary text-white" : "text-muted-foreground"}`}>{RANGE_LABEL[r]}</button>)}</div>
+        <div className="flex rounded-full border border-border bg-card p-1">{(Object.keys(RANGE_LABEL) as Range[]).map((r) => <button key={r} onClick={() => setRange(r)} aria-pressed={range === r} className={`rounded-full px-3 py-1 text-xs ${range === r ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}>{RANGE_LABEL[r]}</button>)}</div>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-3"><Metric label="Focus time" value={duration(total)} /><Metric label="Sessions" value={String(sessionCount)} /><Metric label="Average" value={average ? duration(average) : "-"} /></div>
       <div className="mt-5 grid gap-5 md:grid-cols-2"><Breakdown title="Study time by category" rows={categories} categorySummary /><Breakdown title="Study time by task" rows={taskRows} /></div>

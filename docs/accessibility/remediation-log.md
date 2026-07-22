@@ -16,8 +16,17 @@ each was verified. Append new entries; do not rewrite history.
 | Inline links on the accessibility page underlined so they're distinguishable without color. | `public/accessibility.html` | 1.4.1 | axe `link-in-text-block` (link vs text contrast 1.96:1). | Static-page axe scan passes. |
 | Documentation set: audit, theme-contrast results, third-party risk register, response process, manual QA plan, this log. | `docs/accessibility/*` | Program requirements (Phases 18–21) | Establishes evidence trail and backlog. | N/A (docs). |
 
-### Tracked, NOT yet fixed (require design/human approval)
+## 2026-07-21 — Theme color-contrast remediation (follow-up)
 
-- **Color contrast across themes** (WCAG 1.4.3) — see `theme-contrast.md`. Reported by the axe suite on every run and written to `test-results/a11y-contrast-report.jsonl`, but not hard-gated because fixes are palette changes needing design sign-off. **Top gap to full AA.**
-- **Full VoiceOver + NVDA manual passes** — see `manual-qa-plan.md`. Not yet executed.
+| Change | Files | WCAG SC | Rationale | Verification |
+|--------|-------|---------|-----------|--------------|
+| Darkened `--muted-foreground` in all light themes; darkened `--primary`/`--ring` (+ ring hex) for Coffee/Sage/Sunset/Ocean; left `--roamly-*` gradient tokens and the Library dark-theme ring untouched to preserve identity. | `src/data.ts`, `src/index.css` | 1.4.3, 1.4.11 | Bulk of contrast failures were muted body text and white-on-primary; fixing tokens (not the hero gradient) preserves hue/vibrancy. | axe `color-contrast` = 0 across all 6 themes, both projects. |
+| Hardcoded `text-white` on solid `bg-primary` → `text-primary-foreground`; ring-backed hero buttons use new `readableTextOn(ring)`. | `src/App.tsx`, `src/StudyInsights.tsx`, `src/data.ts` | 1.4.3 | Per-theme accessible label color (dark on Library's bright ring, white on darkened light-theme rings, correct on the color-blind override). | axe pass; smoke suite green. |
+| Static Pomodoro page purple button/CTA darkened (`#7c6cff` → `#6a54f0`). | `public/pomodoro-timer.html` | 1.4.3 | White label on the toggle was 3.85:1. | Static-page axe pass. |
+| Enabled the contrast gate. | `tests/a11y.spec.ts` | — | Contrast now hard-fails CI alongside other serious/critical issues; regressions can't ship. | `CONTRAST_GATE = true`; 46/46 pass. |
+
+### Tracked, NOT yet fixed (require human specialist)
+
+- **Full VoiceOver + NVDA manual passes** — see `manual-qa-plan.md`. Not yet executed. **Now the top remaining gap to a defensible AA claim.**
 - **Chart text/table alternatives** (Analytics) — recommended, not yet built.
+- Aesthetic/perceptual review of the deepened Sage/Sunset/Ocean palettes (automated 4.5:1 met; human sign-off advisable).

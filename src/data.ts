@@ -75,13 +75,28 @@ export type Theme = {
   vars: Record<string, string>;
 };
 
+// Accessible label color for text/icons placed on a solid theme color (e.g. the
+// timer ring behind Start/Pause, which is applied inline as a background). Picks
+// white or near-black — whichever has the higher contrast against that exact
+// color — so the label stays legible on every theme and on the color-blind
+// override, meeting WCAG 1.4.3. Accepts 3- or 6-digit hex.
+export function readableTextOn(hex: string): string {
+  let h = hex.replace("#", "");
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  const toLin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  const [r, g, b] = [0, 2, 4].map((i) => toLin(parseInt(h.slice(i, i + 2), 16) / 255));
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  // Contrast vs white = 1.05/(lum+0.05); vs black = (lum+0.05)/0.05.
+  return 1.05 / (lum + 0.05) >= (lum + 0.05) / 0.05 ? "#ffffff" : "#15130f";
+}
+
 export const THEMES: Theme[] = [
   {
     id: "coffee",
     name: "Coffee Shop",
     hint: "Warm and cozy",
     premium: false,
-    ring: "#A87C5A",
+    ring: "#886044",
     rest: "#7A9B8E",
     grad: ["#EBDFD0", "#D8C4AE"],
     vars: {
@@ -91,17 +106,17 @@ export const THEMES: Theme[] = [
       "--card-foreground": "25 30% 22%",
       "--popover": "36 44% 97%",
       "--popover-foreground": "25 30% 22%",
-      "--primary": "24 30% 51%",
+      "--primary": "24 33% 40%",
       "--primary-foreground": "0 0% 100%",
       "--secondary": "33 30% 88%",
       "--secondary-foreground": "25 20% 38%",
       "--muted": "33 30% 88%",
-      "--muted-foreground": "27 18% 48%",
+      "--muted-foreground": "27 20% 40%",
       "--accent": "157 16% 55%",
       "--accent-foreground": "0 0% 100%",
       "--border": "32 24% 82%",
       "--input": "32 24% 82%",
-      "--ring": "24 30% 51%",
+      "--ring": "24 33% 40%",
       "--roamly-purple": "24 30% 51%",
       "--roamly-coral": "18 45% 55%",
       "--roamly-blue": "157 16% 55%",
@@ -128,7 +143,7 @@ export const THEMES: Theme[] = [
       "--secondary": "210 33% 96%",
       "--secondary-foreground": "215 25% 35%",
       "--muted": "210 33% 96%",
-      "--muted-foreground": "215 16% 47%",
+      "--muted-foreground": "215 16% 44%",
       "--accent": "199 89% 48%",
       "--accent-foreground": "0 0% 100%",
       "--border": "214 25% 90%",
@@ -178,7 +193,7 @@ export const THEMES: Theme[] = [
     name: "Sage Calm",
     hint: "Fresh and relaxed",
     premium: false,
-    ring: "#4F9D78",
+    ring: "#367859",
     rest: "#E0A458",
     grad: ["#EAF1ED", "#D8E6DE"],
     vars: {
@@ -188,17 +203,17 @@ export const THEMES: Theme[] = [
       "--card-foreground": "152 30% 18%",
       "--popover": "150 24% 98%",
       "--popover-foreground": "152 30% 18%",
-      "--primary": "152 33% 46%",
+      "--primary": "152 38% 34%",
       "--primary-foreground": "0 0% 100%",
       "--secondary": "150 18% 89%",
       "--secondary-foreground": "152 22% 32%",
       "--muted": "150 18% 89%",
-      "--muted-foreground": "150 14% 42%",
+      "--muted-foreground": "150 15% 38%",
       "--accent": "33 70% 61%",
       "--accent-foreground": "0 0% 100%",
       "--border": "150 16% 83%",
       "--input": "150 16% 83%",
-      "--ring": "152 33% 46%",
+      "--ring": "152 38% 34%",
       "--roamly-purple": "152 33% 46%",
       "--roamly-coral": "33 70% 61%",
       "--roamly-blue": "152 33% 46%",
@@ -210,7 +225,7 @@ export const THEMES: Theme[] = [
     name: "Sunset Study",
     hint: "Peach, amber, and plum",
     premium: false,
-    ring: "#D96C4E",
+    ring: "#AE4529",
     rest: "#8B5E83",
     grad: ["#F9E1D0", "#EBC4B8"],
     vars: {
@@ -220,17 +235,17 @@ export const THEMES: Theme[] = [
       "--card-foreground": "333 24% 22%",
       "--popover": "25 70% 98%",
       "--popover-foreground": "333 24% 22%",
-      "--primary": "13 64% 58%",
+      "--primary": "13 62% 42%",
       "--primary-foreground": "0 0% 100%",
       "--secondary": "18 42% 87%",
       "--secondary-foreground": "333 18% 34%",
       "--muted": "18 42% 87%",
-      "--muted-foreground": "333 13% 45%",
+      "--muted-foreground": "333 14% 42%",
       "--accent": "311 19% 46%",
       "--accent-foreground": "0 0% 100%",
       "--border": "18 30% 80%",
       "--input": "18 30% 80%",
-      "--ring": "13 64% 58%",
+      "--ring": "13 62% 42%",
       "--roamly-purple": "311 19% 46%",
       "--roamly-coral": "13 64% 58%",
       "--roamly-blue": "311 19% 46%",
@@ -242,7 +257,7 @@ export const THEMES: Theme[] = [
     name: "Ocean Desk",
     hint: "Cool blue and sea glass",
     premium: false,
-    ring: "#247BA0",
+    ring: "#217291",
     rest: "#3AAFA9",
     grad: ["#E3F2F4", "#C9E5E8"],
     vars: {
@@ -252,17 +267,17 @@ export const THEMES: Theme[] = [
       "--card-foreground": "202 42% 19%",
       "--popover": "190 45% 98%",
       "--popover-foreground": "202 42% 19%",
-      "--primary": "197 63% 38%",
+      "--primary": "197 63% 35%",
       "--primary-foreground": "0 0% 100%",
       "--secondary": "187 28% 86%",
       "--secondary-foreground": "202 30% 30%",
       "--muted": "187 28% 86%",
-      "--muted-foreground": "202 17% 43%",
+      "--muted-foreground": "202 18% 40%",
       "--accent": "177 49% 46%",
       "--accent-foreground": "0 0% 100%",
       "--border": "187 25% 78%",
       "--input": "187 25% 78%",
-      "--ring": "197 63% 38%",
+      "--ring": "197 63% 35%",
       "--roamly-purple": "197 63% 38%",
       "--roamly-coral": "177 49% 46%",
       "--roamly-blue": "197 63% 38%",
