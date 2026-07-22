@@ -236,6 +236,26 @@ test("guest count-up completion is saved to analytics", async ({ page }) => {
   await expect(page.getByText("2 / 120 min")).toBeVisible();
 });
 
+test("the weekly focus chart exposes an accessible data table", async ({ page }) => {
+  // Charts must not be the only way to read the data (WCAG 1.1.1 / 1.3.1): the
+  // "Focus minutes by day" bar chart carries a screen-reader data table whose
+  // caption names it and whose rows give each day's minutes.
+  await page.clock.install();
+  await goHome(page);
+  await page.getByRole("button", { name: "Select timer" }).click();
+  await page.getByRole("button", { name: /Count-up timer/ }).click();
+  await page.getByRole("button", { name: "Start count-up timer" }).click();
+  await page.clock.fastForward("01:30");
+  await page.getByRole("button", { name: "Stop & save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await goTab(page, "Analytics");
+  const table = page.getByRole("table", { name: /Focus minutes by day/i });
+  await expect(table).toBeAttached();
+  await expect(table.getByRole("columnheader", { name: "Minutes" })).toBeAttached();
+  // At least one day row reports its minutes in text (not only as a bar).
+  await expect(table.getByRole("cell", { name: /minutes/ }).first()).toBeAttached();
+});
+
 test("a trivially short count-up is not offered for saving", async ({ page }) => {
   await page.clock.install();
   await goHome(page);

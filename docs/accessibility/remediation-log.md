@@ -25,8 +25,16 @@ each was verified. Append new entries; do not rewrite history.
 | Static Pomodoro page purple button/CTA darkened (`#7c6cff` → `#6a54f0`). | `public/pomodoro-timer.html` | 1.4.3 | White label on the toggle was 3.85:1. | Static-page axe pass. |
 | Enabled the contrast gate. | `tests/a11y.spec.ts` | — | Contrast now hard-fails CI alongside other serious/critical issues; regressions can't ship. | `CONTRAST_GATE = true`; 46/46 pass. |
 
+## 2026-07-22 — Analytics chart accessible alternatives
+
+| Change | Files | WCAG SC | Rationale | Verification |
+|--------|-------|---------|-----------|--------------|
+| `WeekChart` ("Focus minutes by day") now renders a visually-hidden data table (captioned, day → minutes) beside the SVG, and hides the SVG from AT. | `src/Charts.tsx` | 1.1.1, 1.3.1 | The bar chart + pointer-only tooltip was the only way to read per-day minutes. | New smoke test asserts the captioned table + Minutes column + a minutes cell; analytics axe scan green. |
+| `SubjectDonut` SVG hidden from AT; its existing visible name + percentage legend is the text alternative. | `src/Charts.tsx` | 1.1.1 | Donut conveyed no text; the adjacent list already carries the values. | axe green. |
+| Admin trend/stacked/activity charts wrapped in `role="img"` with descriptive labels. | `src/Charts.tsx` | 1.1.1 | They were unlabeled SVGs; full data tables are a future enhancement for the admin BI views. | Build/lint green. |
+
 ### Tracked, NOT yet fixed (require human specialist)
 
-- **Full VoiceOver + NVDA manual passes** — see `manual-qa-plan.md`. Not yet executed. **Now the top remaining gap to a defensible AA claim.**
-- **Chart text/table alternatives** (Analytics) — recommended, not yet built.
+- **Full VoiceOver + NVDA manual passes** — see `manual-qa-plan.md`. Not yet executed. **The top remaining gap to a defensible AA claim.**
+- Full data tables for the admin BI charts (currently `role="img"` labels only) — lower priority (admin-gated).
 - Aesthetic/perceptual review of the deepened Sage/Sunset/Ocean palettes (automated 4.5:1 met; human sign-off advisable).
