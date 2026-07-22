@@ -31,10 +31,15 @@ each was verified. Append new entries; do not rewrite history.
 |--------|-------|---------|-----------|--------------|
 | `WeekChart` ("Focus minutes by day") now renders a visually-hidden data table (captioned, day → minutes) beside the SVG, and hides the SVG from AT. | `src/Charts.tsx` | 1.1.1, 1.3.1 | The bar chart + pointer-only tooltip was the only way to read per-day minutes. | New smoke test asserts the captioned table + Minutes column + a minutes cell; analytics axe scan green. |
 | `SubjectDonut` SVG hidden from AT; its existing visible name + percentage legend is the text alternative. | `src/Charts.tsx` | 1.1.1 | Donut conveyed no text; the adjacent list already carries the values. | axe green. |
-| Admin trend/stacked/activity charts wrapped in `role="img"` with descriptive labels. | `src/Charts.tsx` | 1.1.1 | They were unlabeled SVGs; full data tables are a future enhancement for the admin BI views. | Build/lint green. |
+| Admin trend/stacked/activity charts wrapped in `role="img"` with descriptive labels. | `src/Charts.tsx` | 1.1.1 | They were unlabeled SVGs. Superseded the same day by full data tables (below). | Build/lint green. |
+
+## 2026-07-22 — Full data tables for admin BI charts
+
+| Change | Files | WCAG SC | Rationale | Verification |
+|--------|-------|---------|-----------|--------------|
+| Upgraded the three admin charts (`AdminTrendChart`, `AdminStackedBars`, `AdminActivityChart`) from `role="img"` labels to the `<figure>` + aria-hidden SVG + visually-hidden **data table** pattern (shared `ChartTable` helper). The table is derived from each chart's own `data`/`series`, so every admin call site — dashboard, revenue, ops, analytics, explorer, user detail — is covered automatically. | `src/Charts.tsx` | 1.1.1, 1.3.1 | `role="img"` announced the chart but didn't expose the values; admins now get the actual numbers via screen reader. | Build + lint green; analytics/admin-gate axe + chart-table smoke tests pass. Admin dashboards need admin auth, so the rendered admin tables aren't reachable by the automated suite; the shared table pattern is exercised by the `WeekChart` smoke test. |
 
 ### Tracked, NOT yet fixed (require human specialist)
 
 - **Full VoiceOver + NVDA manual passes** — see `manual-qa-plan.md`. Not yet executed. **The top remaining gap to a defensible AA claim.**
-- Full data tables for the admin BI charts (currently `role="img"` labels only) — lower priority (admin-gated).
 - Aesthetic/perceptual review of the deepened Sage/Sunset/Ocean palettes (automated 4.5:1 met; human sign-off advisable).
