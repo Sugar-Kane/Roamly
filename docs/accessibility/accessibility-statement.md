@@ -32,7 +32,6 @@ testing, and some depend on third-party services we integrate but don't control.
 ### Known limitations
 - Full screen-reader passes (VoiceOver, NVDA) across every workflow are in progress.
 - Analytics charts are being supplemented with text/table alternatives.
-- Color contrast in some themes does not yet meet AA and is being remediated with design.
 - Embedded Spotify/Apple Music, Stripe checkout, and Supabase auth screens are third-party; their internals are outside our direct control.
 - Content inside uploaded documents (e.g. scanned image-only PDFs) may lack an accessible text alternative if the original does.
 

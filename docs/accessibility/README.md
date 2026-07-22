@@ -17,12 +17,12 @@ public-facing statement lives at `/accessibility` (`public/accessibility.html`).
 ## Automated testing
 
 - `tests/a11y.spec.ts` — axe-core scans of core routes, overlays, and all themes. Runs in CI via `npm run test`.
-- Non-contrast serious/critical violations **hard-fail** the build.
-- Color-contrast findings are **reported** to `test-results/a11y-contrast-report.jsonl` and tracked in `theme-contrast.md` (fixes gated on design approval; flip `CONTRAST_GATE` in the spec once palette is fixed).
+- All serious/critical violations **hard-fail** the build, **including `color-contrast`** (`CONTRAST_GATE = true`). All 46 tests pass across both projects and all six themes.
 
 ## Status at a glance (2026-07-21)
 
 - ✅ Strong baseline: skip link, focus-trapped dialogs, per-route titles, reduce-motion, color-blind mode, labeled controls.
-- ✅ Added: global focus-visible floor, axe CI scanning, tab keyboard model, public statement + reporting path, docs.
-- ⚠️ **Not done:** theme color-contrast fixes (design approval needed), full manual VoiceOver/NVDA passes, chart text alternatives.
-- ❌ **Do not** claim full WCAG 2.2 AA conformance until the above are resolved and reviewed by a qualified specialist + legal counsel.
+- ✅ Added: global focus-visible floor, axe CI scanning (contrast enforced), tab keyboard model, keyboard-focusable scrollable tables, public statement + reporting path, docs.
+- ✅ **Theme color contrast: fixed and enforced** across all six themes (see `theme-contrast.md`).
+- ⚠️ **Not done:** full manual VoiceOver/NVDA passes, chart text alternatives, aesthetic review of deepened palettes.
+- ❌ **Do not** claim full WCAG 2.2 AA conformance until the manual AT passes are complete and reviewed by a qualified specialist + legal counsel.

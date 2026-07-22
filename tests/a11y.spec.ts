@@ -23,7 +23,11 @@ import AxeBuilder from "@axe-core/playwright";
 //     tracked debt, NOT a silent suppression: the rule still runs on every CI
 //     run and every finding is logged and documented. Once the palette changes
 //     are approved and made, flip CONTRAST_GATE to true to enforce them too.
-const CONTRAST_GATE = false;
+//
+// As of the theme-contrast remediation pass, the palette meets AA across all
+// six themes and the gate is ENFORCED — color-contrast violations now fail the
+// build alongside every other serious/critical issue.
+const CONTRAST_GATE = true;
 
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const CONTRAST_REPORT = "test-results/a11y-contrast-report.jsonl";

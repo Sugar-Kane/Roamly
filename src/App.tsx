@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, Pencil, Trash2, Sprout, Moon, Settings2, PictureInPicture2, CircleCheck } from "lucide-react";
-import { METHODS, THEMES, sortTasks, tagColor, type Task } from "./data";
+import { METHODS, THEMES, sortTasks, tagColor, readableTextOn, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, embedSrcToUri, type SpotifyEmbedType } from "./spotify";
@@ -1776,8 +1776,8 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                   if (timer.running) { timer.pause(); return; }
                   runSolo?.(() => { countUp.reset(); unlockAudio(); enterFocus?.(); timer.start(); }); // Start also drops into focus mode
                 }}
-                className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]"
-                style={{ background: ring }} aria-label={timer.running ? "Pause" : "Start"}>
+                className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold shadow-glow transition active:scale-[0.98]"
+                style={{ background: ring, color: readableTextOn(ring) }} aria-label={timer.running ? "Pause" : "Start"}>
                 {timer.running ? <><Pause size={22} fill="currentColor" /> Pause</> : <><Play size={22} fill="currentColor" /> Start</>}
               </button>
               <button onClick={timer.reset} className="grid h-14 w-14 place-items-center rounded-2xl border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground" aria-label="Reset">
@@ -1834,7 +1834,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               <button onClick={() => {
                 if (countUp.running) { countUp.pause(); return; }
                 runSolo?.(() => { timer.reset(); unlockAudio(); countUp.start(); });
-              }} className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold text-white shadow-glow transition active:scale-[0.98]" style={{ background: theme.ring }} aria-label={countUp.running ? "Pause count-up timer" : countUp.elapsedSeconds > 0 ? "Resume count-up timer" : "Start count-up timer"}>
+              }} className="flex h-14 flex-1 items-center justify-center gap-2 rounded-2xl font-semibold shadow-glow transition active:scale-[0.98]" style={{ background: theme.ring, color: readableTextOn(theme.ring) }} aria-label={countUp.running ? "Pause count-up timer" : countUp.elapsedSeconds > 0 ? "Resume count-up timer" : "Start count-up timer"}>
                 {countUp.running ? <><Pause size={22} fill="currentColor" /> Pause</> : <><Play size={22} fill="currentColor" /> {countUp.elapsedSeconds > 0 ? "Resume" : "Start"}</>}
               </button>
               <button onClick={onCompleteCountUp} disabled={countUp.elapsedSeconds <= 0}
@@ -2330,11 +2330,11 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
         )}
         <div className="mb-3 flex gap-1.5 rounded-xl border border-border bg-card/60 p-1">
           <button onClick={() => onServiceChange("spotify")}
-            className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "spotify" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
             Spotify
           </button>
           <button onClick={() => onServiceChange("apple")}
-            className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "apple" ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+            className={`flex-1 rounded-lg py-1.5 text-xs font-medium transition ${service === "apple" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
             Apple Music
           </button>
         </div>
@@ -2450,7 +2450,7 @@ function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidd
         <div className="mx-2 mb-1.5 flex gap-1 rounded-lg border border-border bg-card/60 p-0.5">
           {(["spotify", "apple"] as const).map((s) => (
             <button key={s} onClick={() => onPickService?.(s)} aria-pressed={shown.service === s}
-              className={`flex-1 rounded-md py-1 text-[11px] font-medium transition ${shown.service === s ? "bg-primary text-white shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              className={`flex-1 rounded-md py-1 text-[11px] font-medium transition ${shown.service === s ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
               {s === "spotify" ? "Spotify" : "Apple Music"}
             </button>
           ))}
@@ -3594,7 +3594,7 @@ function FocusTasksCard({ tasks, activeTask, setActiveTask, toggleTask, estimate
               {t.id === estimateReachedTask && (
                 <div className="w-full rounded-lg bg-card/80 p-2 text-xs">
                   <p className="font-medium">Hey, this task was set to be completed after {t.est} session{t.est === 1 ? "" : "s"}. Do you want to complete it?</p>
-                  <div className="mt-2 flex gap-2"><button onClick={() => onResolveEstimate(true)} className="rounded-full bg-primary px-3 py-1 font-semibold text-white">Complete</button><button onClick={() => onResolveEstimate(false)} className="rounded-full border border-border px-3 py-1 text-muted-foreground">Keep open</button></div>
+                  <div className="mt-2 flex gap-2"><button onClick={() => onResolveEstimate(true)} className="rounded-full bg-primary px-3 py-1 font-semibold text-primary-foreground">Complete</button><button onClick={() => onResolveEstimate(false)} className="rounded-full border border-border px-3 py-1 text-muted-foreground">Keep open</button></div>
                 </div>
               )}
             </div>
