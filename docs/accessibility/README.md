@@ -24,6 +24,6 @@ public-facing statement lives at `/accessibility` (`public/accessibility.html`).
 - ✅ Strong baseline: skip link, focus-trapped dialogs, per-route titles, reduce-motion, color-blind mode, labeled controls.
 - ✅ Added: global focus-visible floor, axe CI scanning (contrast enforced), tab keyboard model, keyboard-focusable scrollable tables, public statement + reporting path, docs.
 - ✅ **Theme color contrast: fixed and enforced** across all six themes (see `theme-contrast.md`).
-- ✅ **Analytics charts: accessible alternatives** — screen-reader data table for the weekly chart, text legend for the donut, labeled admin charts.
-- ⚠️ **Not done:** full manual VoiceOver/NVDA passes, aesthetic review of deepened palettes, full data tables for admin BI charts.
+- ✅ **Analytics charts: accessible alternatives** — screen-reader data tables for the weekly chart and all admin BI charts, text legend for the donut.
+- ⚠️ **Not done:** full manual VoiceOver/NVDA passes, aesthetic review of deepened palettes.
 - ❌ **Do not** claim full WCAG 2.2 AA conformance until the manual AT passes are complete and reviewed by a qualified specialist + legal counsel.
