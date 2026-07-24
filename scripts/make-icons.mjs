@@ -24,6 +24,10 @@ const targets = [
   ["favicon.png", 64],
   ["apple-touch-icon.png", 180],
   ["icon-512.png", 512],
+  // Logo for HTML emails (Supabase auth templates). Email clients can't render
+  // SVG, so they reference this hosted PNG by absolute URL. 256px gives a crisp
+  // mark when displayed at ~64-128px on retina screens.
+  ["logo-email.png", 256],
 ];
 
 const browser = await chromium.launch({
