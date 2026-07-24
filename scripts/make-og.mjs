@@ -7,9 +7,14 @@
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "public", "og-image.png");
+
+// Use the canonical mark (public/favicon.svg) so the share image shows the same
+// dot + 3/4-circle logo as the app icon and header, not a one-off drawing.
+const markSvg = readFileSync(join(root, "public", "favicon.svg"), "utf8").trim();
 
 const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   * { margin: 0; box-sizing: border-box; }
@@ -22,13 +27,8 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
     font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   }
   .brand { display: flex; align-items: center; gap: 22px; margin-bottom: 40px; }
-  .mark { position: relative; width: 68px; height: 68px; }
-  .mark .arc {
-    position: absolute; inset: 0; border-radius: 50%;
-    border: 9px solid #7c6cff; border-right-color: transparent; border-bottom-color: transparent;
-    transform: rotate(45deg);
-  }
-  .mark .dot { position: absolute; right: 6px; bottom: 6px; width: 18px; height: 18px; border-radius: 50%; background: #7c6cff; }
+  .mark { width: 68px; height: 68px; }
+  .mark svg { display: block; width: 68px; height: 68px; }
   .name { font-size: 40px; font-weight: 700; letter-spacing: -0.01em; }
   h1 { font-size: 74px; line-height: 1.05; font-weight: 800; letter-spacing: -0.02em; max-width: 20ch; }
   h1 .accent { color: #b7acff; }
@@ -36,7 +36,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   .url { margin-top: 52px; font-size: 26px; color: #8f8f99; font-weight: 600; letter-spacing: 0.02em; }
 </style></head><body>
   <div class="brand">
-    <div class="mark"><div class="arc"></div><div class="dot"></div></div>
+    <div class="mark">${markSvg}</div>
     <div class="name">Roamly Flow</div>
   </div>
   <h1>Focus timer and <span class="accent">study planner</span></h1>
