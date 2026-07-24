@@ -28,6 +28,22 @@ leave them as-is when pasting. Two templates use extra variables:
 uses `{{ .Token }}` (a one-time code the user types back into the app — this
 template has no button/link by design).
 
+## Security notifications (Authentication → Emails → Security)
+
+Informational alerts sent after a sensitive account change. These do **not**
+expose `{{ .ConfirmationURL }}` and have limited variable support, so they use
+static copy (no `{{ }}` tokens) plus a "wasn't you?" safety note.
+
+| File | Supabase notification | Suggested subject |
+| --- | --- | --- |
+| `password-changed.html` | Password changed | Your Roamly Flow password was changed 🔒 |
+| `email-address-changed.html` | Email address changed | Your Roamly Flow email address was changed 📧 |
+| `sign-in-method-linked.html` | Sign-in method linked | A new sign-in method was added to Roamly Flow 🔗 |
+
+Only the notifications you've toggled on in the dashboard actually send; the
+other Security notifications (phone changed, sign-in method removed, MFA
+added/removed) can reuse the same layout if you enable them later.
+
 ## Sender name
 
 Templates control the body only. The "Supabase Auth <noreply@mail.app.supabase.io>"
