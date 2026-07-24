@@ -1,6 +1,8 @@
-<!-- Roamly Flow invite email — paste into Supabase Dashboard →
-     Authentication → Emails → "Invite user" (Body).
-     Suggested subject: You're invited to Roamly Flow 📚
+<!-- Roamly Flow reauthentication code — paste into Supabase Dashboard →
+     Authentication → Emails → "Reauthentication" (Body).
+     Suggested subject: Your Roamly Flow verification code 🔐
+     NOTE: this template uses {{ .Token }} (a one-time code the user types back
+     into the app), NOT a confirmation link — so there is no button here.
      Email-safe: table layout, inline styles, single hosted logo (no webfonts).
      The logo loads from https://roamlyflow.com/logo-email.png — keep this
      hosted URL (Gmail/Outlook block base64 data-URI images). -->
@@ -18,31 +20,27 @@
         </tr>
         <tr>
           <td bgcolor="#fffaf4" style="background-color:#fffaf4;padding:42px 38px 38px 38px;">
-            <h1 style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:31px;line-height:39px;font-weight:700;color:#33251f;text-align:center;">You're invited to Roamly Flow</h1>
-            <p style="margin:0 0 12px 0;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:27px;color:#5d4a40;text-align:center;">A friend wants to study with you on Roamly Flow — focus timers you share, live study rooms, and chat that opens when the break starts.</p>
-            <p style="margin:0 0 28px 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#6e5a4f;text-align:center;">Accept the invite and you'll be studying together in under a minute.</p>
+            <h1 style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:31px;line-height:39px;font-weight:700;color:#33251f;text-align:center;">Confirm it's you</h1>
+            <p style="margin:0 0 12px 0;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:27px;color:#5d4a40;text-align:center;">Enter this code in Roamly Flow to verify your identity and continue.</p>
+            <p style="margin:0 0 28px 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#6e5a4f;text-align:center;">The code expires shortly, so use it right away.</p>
             <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="width:100%;border-collapse:collapse;">
               <tr>
                 <td align="center">
                   <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:separate;">
                     <tr>
-                      <td align="center" bgcolor="#b97d52" style="background-color:#b97d52;border-radius:999px;">
-                        <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 34px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:22px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">Accept invitation</a>
+                      <td align="center" bgcolor="#f4e7d7" style="background-color:#f4e7d7;border:1px solid #e2cdb2;border-radius:14px;padding:18px 32px;">
+                        <span style="font-family:'Courier New',Courier,monospace;font-size:34px;line-height:40px;font-weight:700;letter-spacing:8px;color:#33251f;">{{ .Token }}</span>
                       </td>
                     </tr>
                   </table>
                 </td>
               </tr>
             </table>
-            <p style="margin:28px 0 8px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#8b776c;text-align:center;">If the button does not work, copy and paste this link into your browser:</p>
-            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:#9b6748;text-align:center;word-break:break-all;">
-              <a href="{{ .ConfirmationURL }}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:#9b6748;text-decoration:underline;word-break:break-all;">{{ .ConfirmationURL }}</a>
-            </p>
           </td>
         </tr>
         <tr>
           <td bgcolor="#f8efe5" style="background-color:#f8efe5;padding:20px 32px;">
-            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#7a675d;text-align:center;">This invite was meant for {{ .Email }}. If you weren't expecting it, you can safely ignore this email.</p>
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#7a675d;text-align:center;">This code was requested for {{ .Email }}. If it wasn't you, you can safely ignore this email — no changes will be made.</p>
           </td>
         </tr>
         <tr>

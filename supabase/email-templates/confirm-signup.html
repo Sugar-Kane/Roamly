@@ -1,56 +1,60 @@
 <!-- Roamly Flow signup-confirmation email — paste into Supabase Dashboard →
      Authentication → Emails → "Confirm signup" (Body).
-     Suggested subject: Confirm your Roamly Flow account ✔️ -->
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#EBDFD0" style="background-color:#EBDFD0;margin:0;padding:0;">
+     Suggested subject: Confirm your Roamly Flow account ✔️
+     Email-safe: table layout, inline styles, single hosted logo (no webfonts).
+     The logo loads from https://roamlyflow.com/logo-email.png — keep this
+     hosted URL (Gmail/Outlook block base64 data-URI images). -->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f3e7d7" style="width:100%;background-color:#f3e7d7;border-collapse:collapse;margin:0;padding:0;">
   <tr>
-    <td align="center" style="padding:40px 16px;">
-      <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;">
+    <td align="center" style="padding:32px 16px;">
+      <!--[if mso]><table width="600" cellpadding="0" cellspacing="0" border="0" role="presentation"><tr><td><![endif]-->
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background-color:#fffaf4;border-collapse:separate;border-radius:24px;overflow:hidden;">
         <tr>
-          <td align="center" style="padding:0 0 20px 0;">
-            <span style="font-family:Georgia,'Times New Roman',serif;font-size:28px;font-weight:bold;color:#A87C5A;">Roamly Flow</span>
+          <td align="center" bgcolor="#e9a064" style="background-color:#e9a064;padding:30px 24px 26px 24px;border-radius:24px 24px 0 0;">
+            <img src="https://roamlyflow.com/logo-email.png" width="72" height="72" border="0" alt="Roamly Flow" style="display:block;width:72px;height:72px;border:0;outline:none;text-decoration:none;border-radius:18px;">
+            <p style="margin:14px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:35px;font-weight:700;color:#2d2420;text-align:center;">Roamly Flow</p>
+            <p style="margin:5px 0 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;letter-spacing:1.8px;text-transform:uppercase;color:#684936;text-align:center;">Find your focus</p>
           </td>
         </tr>
         <tr>
-          <td bgcolor="#FBF7F1" style="background-color:#FBF7F1;border-radius:24px;padding:36px 32px;border:1px solid #DCCDB9;">
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <td bgcolor="#fffaf4" style="background-color:#fffaf4;padding:42px 38px 38px 38px;">
+            <h1 style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:31px;line-height:39px;font-weight:700;color:#33251f;text-align:center;">Confirm your email</h1>
+            <p style="margin:0 0 12px 0;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:27px;color:#5d4a40;text-align:center;">Welcome to Roamly Flow — focus timers, live study rooms, and streaks that keep you honest.</p>
+            <p style="margin:0 0 28px 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#6e5a4f;text-align:center;">One tap to confirm your email and your account is ready.</p>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="width:100%;border-collapse:collapse;">
               <tr>
-                <td style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:bold;color:#4A3729;padding-bottom:12px;">
-                  Confirm your email
-                </td>
-              </tr>
-              <tr>
-                <td style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:23px;color:#4A3729;padding-bottom:8px;">
-                  Welcome to Roamly Flow — focus timers, live study rooms, and streaks that keep you honest.
-                </td>
-              </tr>
-              <tr>
-                <td style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:23px;color:#4A3729;padding-bottom:26px;">
-                  One tap to confirm your email and your account is ready.
-                </td>
-              </tr>
-              <tr>
-                <td align="center" style="padding-bottom:26px;">
-                  <a href="{{ .ConfirmationURL }}"
-                     style="display:inline-block;background-color:#A87C5A;color:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;padding:13px 34px;border-radius:999px;">
-                    Confirm my email
-                  </a>
-                </td>
-              </tr>
-              <tr>
-                <td style="border-top:1px solid #E5D9C9;padding-top:18px;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#8A7A69;">
-                  If the button doesn't work, copy and paste this link into your browser:<br>
-                  <a href="{{ .ConfirmationURL }}" style="color:#A87C5A;word-break:break-all;">{{ .ConfirmationURL }}</a>
+                <td align="center">
+                  <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:separate;">
+                    <tr>
+                      <td align="center" bgcolor="#b97d52" style="background-color:#b97d52;border-radius:999px;">
+                        <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 34px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:22px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">Confirm my email</a>
+                      </td>
+                    </tr>
+                  </table>
                 </td>
               </tr>
             </table>
+            <p style="margin:28px 0 8px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#8b776c;text-align:center;">If the button does not work, copy and paste this link into your browser:</p>
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:#9b6748;text-align:center;word-break:break-all;">
+              <a href="{{ .ConfirmationURL }}" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:19px;color:#9b6748;text-decoration:underline;word-break:break-all;">{{ .ConfirmationURL }}</a>
+            </p>
           </td>
         </tr>
         <tr>
-          <td align="center" style="padding:20px 24px 0 24px;font-family:Arial,Helvetica,sans-serif;font-size:11px;line-height:17px;color:#8A7A69;">
-            This email was sent to {{ .Email }} because someone signed up for Roamly Flow with it. If it wasn't you, you can safely ignore it.
+          <td bgcolor="#f8efe5" style="background-color:#f8efe5;padding:20px 32px;">
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#7a675d;text-align:center;">This email was sent to {{ .Email }} because someone signed up for Roamly Flow with it. If it wasn't you, you can safely ignore it.</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" bgcolor="#fffaf4" style="background-color:#fffaf4;padding:24px 28px 28px 28px;border-radius:0 0 24px 24px;">
+            <p style="margin:0 0 5px 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#9a877c;text-align:center;">A calmer place to study, plan, and focus.</p>
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#9a877c;text-align:center;">
+              <a href="https://roamlyflow.com" style="font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#9b6748;text-decoration:underline;">roamlyflow.com</a>
+            </p>
           </td>
         </tr>
       </table>
+      <!--[if mso]></td></tr></table><![endif]-->
     </td>
   </tr>
 </table>

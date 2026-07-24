@@ -1,6 +1,6 @@
-<!-- Roamly Flow invite email — paste into Supabase Dashboard →
-     Authentication → Emails → "Invite user" (Body).
-     Suggested subject: You're invited to Roamly Flow 📚
+<!-- Roamly Flow email-change confirmation — paste into Supabase Dashboard →
+     Authentication → Emails → "Change email address" (Body).
+     Suggested subject: Confirm your new Roamly Flow email 📧
      Email-safe: table layout, inline styles, single hosted logo (no webfonts).
      The logo loads from https://roamlyflow.com/logo-email.png — keep this
      hosted URL (Gmail/Outlook block base64 data-URI images). -->
@@ -18,16 +18,16 @@
         </tr>
         <tr>
           <td bgcolor="#fffaf4" style="background-color:#fffaf4;padding:42px 38px 38px 38px;">
-            <h1 style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:31px;line-height:39px;font-weight:700;color:#33251f;text-align:center;">You're invited to Roamly Flow</h1>
-            <p style="margin:0 0 12px 0;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:27px;color:#5d4a40;text-align:center;">A friend wants to study with you on Roamly Flow — focus timers you share, live study rooms, and chat that opens when the break starts.</p>
-            <p style="margin:0 0 28px 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#6e5a4f;text-align:center;">Accept the invite and you'll be studying together in under a minute.</p>
+            <h1 style="margin:0 0 16px 0;font-family:Georgia,'Times New Roman',serif;font-size:31px;line-height:39px;font-weight:700;color:#33251f;text-align:center;">Confirm your new email</h1>
+            <p style="margin:0 0 12px 0;font-family:Arial,Helvetica,sans-serif;font-size:17px;line-height:27px;color:#5d4a40;text-align:center;">You asked to change the email on your Roamly Flow account from {{ .Email }} to {{ .NewEmail }}.</p>
+            <p style="margin:0 0 28px 0;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:26px;color:#6e5a4f;text-align:center;">Confirm the change below and we'll start using your new address.</p>
             <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="width:100%;border-collapse:collapse;">
               <tr>
                 <td align="center">
                   <table cellpadding="0" cellspacing="0" border="0" role="presentation" style="border-collapse:separate;">
                     <tr>
                       <td align="center" bgcolor="#b97d52" style="background-color:#b97d52;border-radius:999px;">
-                        <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 34px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:22px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">Accept invitation</a>
+                        <a href="{{ .ConfirmationURL }}" style="display:inline-block;padding:15px 34px;font-family:Arial,Helvetica,sans-serif;font-size:16px;line-height:22px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:999px;">Confirm new email</a>
                       </td>
                     </tr>
                   </table>
@@ -42,7 +42,7 @@
         </tr>
         <tr>
           <td bgcolor="#f8efe5" style="background-color:#f8efe5;padding:20px 32px;">
-            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#7a675d;text-align:center;">This invite was meant for {{ .Email }}. If you weren't expecting it, you can safely ignore this email.</p>
+            <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:21px;color:#7a675d;text-align:center;">If you didn't request this change, you can safely ignore this email and your address stays as {{ .Email }}.</p>
           </td>
         </tr>
         <tr>
