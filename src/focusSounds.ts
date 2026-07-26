@@ -2,13 +2,16 @@
 // audio (unlike the Spotify/Apple embeds), the timer can control it
 // perfectly: start on focus, fade out at the break.
 //
-// Every option is actual music:
-//  - "melody", "beats", "piano", "ambient", and "rain" are generative WebAudio — they synthesize a
-//    fresh, non-looping performance each session, so they never repeat.
-//  - "lofi" (Café) and "calm" are real free-license recordings (Kevin MacLeod)
-//    bundled under /audio/lofi. A local 7-day listening history removes every
-//    recently heard track from the shuffle; once the whole catalog has been
-//    heard, the station reshuffles the full pool and replays it.
+// Every option is actual music, and every channel works the same way:
+//  - If the channel has recordings in the catalog (public.music_tracks, managed
+//    from the admin dashboard's Music section) it plays them. A local 7-day
+//    listening history removes every recently heard track from the shuffle;
+//    once the whole channel has been heard, it reshuffles and replays.
+//  - If it has none, it runs its generator (see SYNTH): generative WebAudio
+//    that synthesizes a fresh, non-looping performance, so it never repeats.
+//
+// Out of the box only "lofi" (Café) and "calm" ship with recordings, so the
+// other five behave exactly as they always have until someone uploads to them.
 
 import { supabase } from "./supabaseClient";
 
@@ -17,8 +20,10 @@ export type FocusSoundId =
 
 export const FOCUS_SOUNDS: { id: FocusSoundId; name: string; hint: string }[] = [
   { id: "melody", name: "Melody", hint: "Slow tune over soft chords" },
-  { id: "lofi", name: "Café music", hint: "25 real tracks, shuffled" },
-  { id: "calm", name: "Calm music", hint: "18 real tracks, shuffled" },
+  // Hints describe the sound, not the track count — the catalog is admin-managed
+  // now, so any number baked in here would drift the first time it changed.
+  { id: "lofi", name: "Café music", hint: "Chill jazz and lounge, shuffled" },
+  { id: "calm", name: "Calm music", hint: "Ambient and meditation, shuffled" },
   { id: "beats", name: "Lo-fi beats", hint: "Live chillhop groove" },
   { id: "piano", name: "Piano", hint: "Gentle drifting piano" },
   { id: "ambient", name: "Ambient drift", hint: "Endless evolving soundscape" },
@@ -46,15 +51,14 @@ export function setOnPlaybackStart(cb: (() => void) | null) {
   onPlaybackStart = cb;
 }
 
-// ---- real recorded tracks (Café music) ----
-// Free-license instrumentals (Kevin MacLeod, CC0/CC-BY — see the manifest for
-// per-track licensing) bundled under /audio/lofi by the fetch-music workflow.
-// They play through one persistent <audio> element routed into the WebAudio
-// graph, so volume, fades, and the iOS handling all work like the synth sounds.
-// category: "lofi" = chill jazz/lounge (Café music), "calm" = ambient/meditation.
-export type MusicCategory = "lofi" | "calm";
-export type MusicTrack = { file: string; title: string; artist: string; license: string; category?: MusicCategory };
-let playlist: MusicTrack[] | null = null; // null = manifest not loaded yet
+// ---- real recorded tracks ----
+// Every channel can carry real recordings, managed from the admin dashboard's
+// Music section. They play through one persistent <audio> element routed into
+// the WebAudio graph, so volume, fades, and the iOS handling all work like the
+// synth sounds. A channel with no tracks falls back to its generator (see
+// SYNTH below), which is how all seven behaved before the catalog existed.
+export type MusicTrack = { file: string; title: string; artist: string; license: string; category?: FocusSoundId };
+let playlist: MusicTrack[] | null = null; // null = catalog not loaded yet
 let musicEl: HTMLAudioElement | null = null;
 let musicSrcNode: MediaElementAudioSourceNode | null = null;
 let musicToken: object | null = null; // identifies the active music build (see buildMusic)
@@ -82,15 +86,14 @@ async function loadCatalog(): Promise<MusicTrack[]> {
     // RLS exposes only active rows, so no `active` filter is needed here.
     const { data, error } = await supabase
       .from("music_tracks")
-      .select("url, title, artist, license, channel")
-      .in("channel", ["lofi", "calm"]);
+      .select("url, title, artist, license, channel");
     if (error || !data || data.length === 0) return loadBundledManifest();
     return data.map((r) => ({
       file: r.url as string,
       title: r.title as string,
       artist: r.artist as string,
       license: r.license as string,
-      category: r.channel as MusicCategory,
+      category: r.channel as FocusSoundId,
     }));
   } catch {
     return loadBundledManifest();
@@ -128,27 +131,39 @@ export function tracksOutsideCooldown(pool: MusicTrack[], now = Date.now()): Mus
   return pool.filter((track) => history[track.file] === undefined);
 }
 
-// Tracks in a category (falls back to the whole playlist if none are tagged
-// that way, so an unpopulated category still plays something).
-function tracksFor(category: MusicCategory): MusicTrack[] {
+// Tracks belonging to one channel, and only that channel. There is deliberately
+// no "borrow from the rest of the catalog" fallback: with seven channels that
+// would play café jazz on Ambient drift. An empty channel returns nothing, and
+// the caller uses that channel's generator instead.
+function tracksFor(channel: FocusSoundId): MusicTrack[] {
   if (!playlist) return [];
-  const tagged = playlist.filter((t) => t.category === category);
-  return tagged.length > 0 ? tagged : playlist;
+  return playlist.filter((t) => t.category === channel);
 }
 
-// Whether real tracks are available for a category. Returns false only once the
-// manifest has loaded and the category is genuinely empty (so we fall back to
-// synth); while loading (playlist === null) we optimistically say true.
-export function hasTracks(category: MusicCategory): boolean {
+// Whether real tracks are available for a channel. Returns false only once the
+// catalog has loaded and the channel is genuinely empty (so we fall back to
+// synth); while loading (playlist === null) we optimistically say true, and
+// buildMusic hands back to the generator if the channel turns out to be empty.
+export function hasTracks(channel: FocusSoundId): boolean {
   if (playlist === null) return true;
   if (playlist.length === 0) return false;
-  return tracksFor(category).length > 0;
+  return tracksFor(channel).length > 0;
 }
 
-// CC BY 4.0 requires visible attribution — the sounds panel shows this line.
+// CC BY requires visible attribution — the sounds panel shows this line. Built
+// from the catalog rather than hardcoded, because admins can now upload tracks
+// by other artists under other licenses. incompetech.com is named for Kevin
+// MacLeod specifically; his CC BY terms ask for that source link.
 export function musicCredit(): string | null {
   if (!playlist || playlist.length === 0) return null;
-  return `Music: ${playlist[0].artist} (incompetech.com) · CC BY 4.0`;
+  const artists = [...new Set(playlist.map((t) => t.artist).filter(Boolean))];
+  if (artists.length === 0) return null;
+  const label = (a: string) => (a === "Kevin MacLeod" ? `${a} (incompetech.com)` : a);
+  const shown = artists.length <= 2
+    ? artists.map(label).join(", ")
+    : `${label(artists[0])} and ${artists.length - 1} more`;
+  const licenses = [...new Set(playlist.map((t) => t.license).filter(Boolean))];
+  return `Music: ${shown}${licenses.length === 1 ? ` · ${licenses[0]}` : ""}`;
 }
 
 function musicElement(): HTMLAudioElement {
@@ -734,10 +749,34 @@ function buildLofi(audio: AudioContext, out: GainNode): () => void {
   };
 }
 
-// Real-track playlist for one category: shuffled order, advances on track end,
+// Each channel's generator — the infinite, never-repeating performance it plays
+// when it has no recordings. Café borrows the lo-fi engine and Calm the piano,
+// which is what they already fell back to before the catalog existed.
+const SYNTH: Record<FocusSoundId, (audio: AudioContext, out: GainNode) => () => void> = {
+  melody: buildMelody,
+  lofi: buildLofi,
+  calm: buildPiano,
+  beats: buildLofi,
+  piano: buildPiano,
+  ambient: buildAmbient,
+  rain: buildRainyPiano,
+};
+
+// Real-track playlist for one channel: shuffled order, advances on track end,
 // reshuffles when exhausted. The element routes through `out`, so fades/volume
 // are shared.
-function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory): () => void {
+//
+// `fallback` is the channel's generator. startFocusSound picks this builder
+// optimistically when the catalog hasn't loaded yet (hasTracks can't know), so
+// if the channel turns out to have no tracks we start the generator instead of
+// sitting in silence. It is not a "ran out of music" handoff — an exhausted
+// cooldown still reshuffles and replays the pool below.
+function buildMusic(
+  audio: AudioContext,
+  out: GainNode,
+  channel: FocusSoundId,
+  fallback: (audio: AudioContext, out: GainNode) => () => void,
+): () => void {
   const el = musicElement();
   if (!musicSrcNode) musicSrcNode = audio.createMediaElementSource(el);
   musicSrcNode.connect(out);
@@ -752,14 +791,21 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
 
   let stopped = false;
   let order: MusicTrack[] = [];
+  let fallbackStop: (() => void) | null = null;
   const nextTrack = () => {
     if (stopped) return;
-    const pool = tracksFor(category);
+    const pool = tracksFor(channel);
     // The element may still be carrying the PREVIOUS build's track (a
     // handed-over teardown deliberately no-ops, see the token note above),
     // so any path that won't set a fresh src must silence it — otherwise
     // two musics play at once (the room "double café music" bug).
-    if (pool.length === 0) { el.pause(); return; }
+    if (pool.length === 0) {
+      el.pause();
+      // This channel has no recordings at all — run its generator so the
+      // picker's choice still makes the sound it promises.
+      if (!fallbackStop) fallbackStop = fallback(audio, out);
+      return;
+    }
     if (order.length === 0) {
       order = tracksOutsideCooldown(pool);
       // Heard the whole catalog recently? Reshuffle the full pool and replay
@@ -788,6 +834,11 @@ function buildMusic(audio: AudioContext, out: GainNode, category: MusicCategory)
 
   return () => {
     stopped = true;
+    // Runs regardless of the token check below: the generator is this build's
+    // own graph, not the shared element, so a newer build taking over the
+    // element does not absolve us of stopping it.
+    fallbackStop?.();
+    fallbackStop = null;
     if (musicToken !== token) return; // a newer music build already took over
     el.onended = null;
     el.pause();
@@ -1048,17 +1099,12 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   gain.gain.linearRampToValueAtTime(volume, audio.currentTime + 0.8); // fade in
   gain.connect(audio.destination);
 
-  let stop: () => void;
-  if (id === "beats") stop = buildLofi(audio, gain);
-  else if (id === "piano") stop = buildPiano(audio, gain);
-  else if (id === "ambient") stop = buildAmbient(audio, gain);
-  else if (id === "rain") stop = buildRainyPiano(audio, gain);
-  // Café / Calm play real bundled tracks; a generative station stands in as the
-  // fallback while that category's manifest is missing (e.g. before the workflow ran).
-  else if (id === "lofi") stop = hasTracks("lofi") ? buildMusic(audio, gain, "lofi") : buildLofi(audio, gain);
-  else if (id === "calm") stop = hasTracks("calm") ? buildMusic(audio, gain, "calm") : buildPiano(audio, gain);
-  // "melody" and any unknown/legacy id fall back to the Melody station.
-  else stop = buildMelody(audio, gain);
+  // Every channel prefers its real recordings and falls back to its generator
+  // when it has none — which is exactly how all seven behaved before the
+  // catalog existed, since only Café and Calm ever had tracks. Adding music to
+  // a channel in the admin dashboard is what switches it over.
+  const synth = SYNTH[id] ?? buildMelody; // unknown/legacy ids get Melody
+  const stop = hasTracks(id) ? buildMusic(audio, gain, id, synth) : synth(audio, gain);
 
   masterGain = gain;
   teardown = stop;

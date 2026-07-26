@@ -7,10 +7,10 @@
 // with per-track preview, rename, enable/disable, and delete — plus an upload
 // form that pushes a file straight to the `focus-music` Storage bucket.
 //
-// Two of the seven channels (Café, Calm) play these recordings today. The other
-// five synthesise audio live in the browser and ignore the catalog until the
-// player is wired to prefer real tracks — the header badge says so per channel
-// rather than letting an admin upload into what looks like a void.
+// All seven channels play their catalog when it has anything in it, and fall
+// back to a generative WebAudio performance when empty. So an empty channel is
+// worth calling out — it means listeners are hearing the synth, and the first
+// upload silently changes what that channel is.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Music, Play, Pause, Trash2, Upload, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -18,12 +18,8 @@ import {
   adminListMusicTracks, adminUploadMusicTrack, adminUpdateMusicTrack, adminDeleteMusicTrack,
   MUSIC_MAX_BYTES, type MusicTrackRow,
 } from "./db";
-import { FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
+import { FOCUS_SOUNDS } from "./focusSounds";
 import { Modal } from "./Modal";
-
-// Channels whose audio is generated live by WebAudio. They have no playlist
-// today, so uploads sit in the catalog unused until the player prefers tracks.
-const GENERATIVE: ReadonlySet<string> = new Set<FocusSoundId>(["melody", "beats", "piano", "ambient", "rain"]);
 
 function fmtDuration(seconds: number | null): string {
   if (!seconds || seconds <= 0) return "—";
@@ -147,7 +143,8 @@ export function MusicPage() {
             const active = rows.filter((r) => r.active);
             const seconds = active.reduce((a, r) => a + (r.duration_seconds ?? 0), 0);
             const expanded = open === channel;
-            const generative = GENERATIVE.has(channel);
+            // No active tracks means listeners get this channel's generator.
+            const generative = active.length === 0;
 
             return (
               <section key={channel} className="overflow-hidden rounded-2xl border border-border bg-card/70">
@@ -159,7 +156,7 @@ export function MusicPage() {
                       <span className="font-semibold">{meta?.name ?? channel}</span>
                       {generative && (
                         <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
-                          title="This channel synthesises audio live in the browser and does not play catalog tracks yet.">
+                          title="No tracks on this channel, so listeners hear its generative WebAudio performance. Adding a track switches it to real music.">
                           Generative
                         </span>
                       )}
@@ -177,7 +174,7 @@ export function MusicPage() {
                   <div className="border-t border-border px-4 pb-4 pt-3">
                     {generative && (
                       <p className="mb-3 rounded-xl border border-dashed border-border bg-background/40 p-2.5 text-[11px] text-muted-foreground">
-                        This channel currently generates its audio live and ignores the catalog. Tracks added here are stored and ready, but won't play until the player is wired to prefer real tracks on this channel.
+                        No tracks here, so listeners hear this channel's generative performance — endless and never repeating. Adding a track switches the channel to real music; remove them all and it reverts.
                       </p>
                     )}
 
