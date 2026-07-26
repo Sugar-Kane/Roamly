@@ -39,17 +39,38 @@ export type GamSyncResult = {
   new_rewards: string[];
 };
 
-// The active pets + active plant/tree + equipped accessories to draw on the
-// companion stage (shared by the Garden preview and the timer overlay).
+// What to draw, split across the two stages:
+//  * the pen (pets + equipped accessories + the theme wallpaper behind them)
+//  * the garden bed (every plant/tree the user has planted, at its own growth
+//    stage) — unbounded, because planting is additive rather than one-at-a-time
 export type StageAccessory = { slot: AccessorySlot; emoji: string };
-export function stageProps(g: Gamification): { pets: { id: string; species: string }[]; plant: { emoji: string; stage: number } | null; accessories: StageAccessory[] } {
+export type GardenPlant = { id: string; name: string; emoji: string; stage: number; growth_points: number };
+export type StageProps = {
+  pets: { id: string; species: string }[];
+  plants: GardenPlant[];
+  accessories: StageAccessory[];
+  theme: string | null;
+};
+
+export const isGrowable = (r: GamReward): boolean => r.kind === "plant" || r.kind === "tree";
+
+export function stageProps(g: Gamification): StageProps {
   const pets = g.pets.filter((p) => p.owned && p.is_active).map((p) => ({ id: p.id, species: p.species }));
-  const active = g.rewards.find((r) => r.owned && r.is_active && (r.kind === "plant" || r.kind === "tree"));
-  const plant = active ? { emoji: active.meta.emoji ?? "🌱", stage: growthStage(active.growth_points) } : null;
+  const plants: GardenPlant[] = g.rewards
+    .filter((r) => r.owned && r.is_active && isGrowable(r))
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      emoji: r.meta.emoji ?? "🌱",
+      stage: growthStage(r.growth_points),
+      growth_points: r.growth_points,
+    }));
   const accessories = g.rewards
     .filter((r) => r.owned && r.is_active && r.kind === "accessory" && r.meta.slot)
     .map((r) => ({ slot: r.meta.slot as AccessorySlot, emoji: r.meta.emoji ?? "🎁" }));
-  return { pets, plant, accessories };
+  // One theme at a time; it becomes the pen's wallpaper.
+  const theme = g.rewards.find((r) => r.owned && r.is_active && r.kind === "theme")?.id ?? null;
+  return { pets, plants, accessories, theme };
 }
 
 // XP curve — mirrors public.level_for_xp / public.xp_for_level in the migration.

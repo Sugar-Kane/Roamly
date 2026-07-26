@@ -15,6 +15,13 @@ export type PetSpecies =
   | "dog" | "cat" | "bird" | "rabbit" | "hamster" | "fox" | "penguin" | "owl" | "turtle"
   | "duck" | "frog" | "raccoon" | "hedgehog" | "koala" | "sloth" | "panda" | "dragon" | "unicorn";
 
+// Species that treat the toy ball as a toy: they kick it when they bump into
+// it, and chase a thrown one across the stage. Everyone else ignores it — a
+// sloth or a turtle sitting out the game is the joke, not a bug.
+export const BALL_PLAYERS: ReadonlySet<PetSpecies> = new Set<PetSpecies>([
+  "dog", "cat", "fox", "raccoon", "penguin", "rabbit", "dragon", "unicorn",
+]);
+
 export type PetDef = { id: string; species: PetSpecies; name: string; unlock_sessions: number; sort: number };
 export type RewardKind = "plant" | "tree" | "accessory" | "theme";
 // Every accessory is functional on the pet stage, keyed by its slot (one
@@ -171,6 +178,45 @@ export const PET_ART: Record<PetSpecies, PetPalette & { emoji: string }> = {
   unicorn: { body: "#f0e6f6", belly: "#ffffff", ear: "#e8a9c8", detail: "#7a5fa0", emoji: "🦄" },
 };
 
+// Which way each emoji glyph natively points, so the canvas knows when to
+// mirror it. Many animal emoji are head-on portraits (🐶 🐱 🦊) with no
+// direction at all — mirroring those is a no-op at best, and at worst pops the
+// hat/shades to the wrong side — so they're 0 and never flip. The rest are
+// side views, and they do NOT all point the same way: 🦆 🐢 🦥 face right while
+// 🐧 🦝 🐤 face left. Values verified glyph-by-glyph against the rendered
+// Apple/Noto art; a wrong sign here is exactly the "moonwalking pet" bug.
+export const PET_GLYPH_FACING: Record<PetSpecies, -1 | 0 | 1> = {
+  dog: 0,       // 🐶 head-on
+  cat: 0,       // 🐱 head-on
+  bird: -1,     // 🐤 chick, beak left
+  rabbit: 0,    // 🐰 head-on
+  hamster: 0,   // 🐹 head-on
+  fox: 0,       // 🦊 head-on
+  penguin: -1,  // 🐧 beak left
+  owl: 0,       // 🦉 head-on
+  turtle: 1,    // 🐢 head right
+  duck: 1,      // 🦆 mallard, bill right
+  frog: 0,      // 🐸 head-on
+  raccoon: -1,  // 🦝 full body, head left
+  hedgehog: -1, // 🦔 full body, snout left
+  koala: 0,     // 🐨 head-on
+  sloth: 1,     // 🦥 hanging, face right
+  panda: 0,     // 🐼 head-on
+  dragon: -1,   // 🐉 head lower-left
+  unicorn: -1,  // 🦄 three-quarter head, muzzle left
+};
+
+// Theme rewards are the pen's wallpaper: a backdrop gradient behind the pets
+// plus the floor band they walk on. Before this existed, themes were the one
+// reward kind with no effect anywhere in the app — owning one did nothing.
+export type StageTheme = { skyTop: string; skyBottom: string; floor: string; floorEdge: string; specks?: string };
+export const STAGE_THEMES: Record<string, StageTheme> = {
+  forest_theme:   { skyTop: "#1f3a2c", skyBottom: "#2f5b41", floor: "#3d6b45", floorEdge: "#2a4b31" },
+  midnight_theme: { skyTop: "#0d1326", skyBottom: "#1c2747", floor: "#232f52", floorEdge: "#151d36", specks: "#cdd8ff" },
+  galaxy_theme:   { skyTop: "#160f2e", skyBottom: "#3a1f5c", floor: "#2c1a47", floorEdge: "#1c1030", specks: "#e9d8ff" },
+  rainbow_theme:  { skyTop: "#ffd9e8", skyBottom: "#dcefff", floor: "#ffe9b8", floorEdge: "#f3cf8d" },
+};
+
 // A plant/tree renders through GROWTH_STAGES many stages; growth_points is
 // cumulative completed sessions, so a plant matures as the user studies.
 export const GROWTH_STAGES = 5;
@@ -178,3 +224,7 @@ export const SESSIONS_PER_GROWTH_STAGE = 6;
 export function growthStage(growthPoints: number): number {
   return Math.min(GROWTH_STAGES - 1, Math.floor(Math.max(0, growthPoints) / SESSIONS_PER_GROWTH_STAGE));
 }
+
+const GROWTH_LABELS = ["Seedling", "Sprouting", "Growing", "Thriving", "Full grown"];
+export const growthLabel = (stage: number): string =>
+  GROWTH_LABELS[Math.max(0, Math.min(GROWTH_LABELS.length - 1, stage))]!;
