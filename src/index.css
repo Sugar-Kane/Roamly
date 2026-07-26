@@ -127,19 +127,41 @@
   animation: garden-sway 5.5s ease-in-out infinite;
 }
 
-/* Break-time rain over the garden — the plants are getting watered. */
+/* Break-time rain over the garden — the plants are getting watered.
+   `top` is animated in percentages of the rain layer, which is exactly the
+   sky band above the soil, so a drop always lands ON the dirt line no matter
+   how tall the card is. The splash shares its drop's delay and duration and
+   fires in the last few percent of the cycle, so the two stay in phase with
+   no JS timing at all. */
 @keyframes garden-rain {
-  0% { transform: translateY(-120%); opacity: 0; }
-  10% { opacity: 1; }
-  100% { transform: translateY(700%); opacity: 0; }
+  0% { top: -12%; opacity: 0; }
+  12% { opacity: .9; }
+  92% { opacity: .9; }
+  100% { top: 100%; opacity: 0; }
 }
 .garden-raindrop {
   position: absolute;
-  top: -10%;
+  top: -12%;
   width: 1.5px;
   border-radius: 9999px;
   background: linear-gradient(180deg, rgba(186, 230, 253, 0), rgba(186, 230, 253, .85));
   animation: garden-rain linear infinite;
+}
+
+@keyframes garden-splash {
+  0%, 88% { transform: translateX(-50%) scale(.2); opacity: 0; }
+  93% { transform: translateX(-50%) scale(.9); opacity: .8; }
+  100% { transform: translateX(-50%) scale(1.7); opacity: 0; }
+}
+.garden-splash {
+  position: absolute;
+  bottom: 0;
+  width: 9px;
+  height: 4px;
+  border: 1px solid rgba(186, 230, 253, .9);
+  border-top-color: transparent;
+  border-radius: 0 0 9999px 9999px;
+  animation: garden-splash linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
