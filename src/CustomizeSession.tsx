@@ -17,10 +17,12 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, confettiOn, onToggleConfetti, autoFlow, onToggleAutoFlow, alerts }: {
+export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, confettiOn, onToggleConfetti, autoFlow, onToggleAutoFlow, alerts }: {
   onClose: () => void;
   companionsOn: boolean;
   onToggleCompanions: () => void;
+  gardenOn: boolean;
+  onToggleGarden: () => void;
   confettiOn: boolean;
   onToggleConfetti: () => void;
   autoFlow: boolean;
@@ -37,6 +39,9 @@ export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, co
       <DrawerSection title="Session experience">
         <DrawerRow label="Show pets during focus" hint="Your Garden companions keep you company on the timer.">
           <Toggle on={companionsOn} onClick={onToggleCompanions} label="Show pets during focus" />
+        </DrawerRow>
+        <DrawerRow label="Show garden during focus" hint="Your planted garden on the timer. It rains on breaks — the plants are getting watered.">
+          <Toggle on={gardenOn} onClick={onToggleGarden} label="Show garden during focus" />
         </DrawerRow>
         <DrawerRow label="Completion confetti" hint="Celebrate finished focus sessions. Reduce motion also turns it off.">
           <Toggle on={confettiOn} onClick={onToggleConfetti} label="Completion confetti" />

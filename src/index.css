@@ -127,6 +127,21 @@
   animation: garden-sway 5.5s ease-in-out infinite;
 }
 
+/* Break-time rain over the garden — the plants are getting watered. */
+@keyframes garden-rain {
+  0% { transform: translateY(-120%); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(700%); opacity: 0; }
+}
+.garden-raindrop {
+  position: absolute;
+  top: -10%;
+  width: 1.5px;
+  border-radius: 9999px;
+  background: linear-gradient(180deg, rgba(186, 230, 253, 0), rgba(186, 230, 253, .85));
+  animation: garden-rain linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }

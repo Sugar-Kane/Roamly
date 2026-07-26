@@ -108,7 +108,7 @@ function useImmersive(open: boolean) {
 
 export function FocusMode({
   open, phase, phaseLabel, timeText, progress, title, subtitle, cycles, completed, ring,
-  onExit, controls, music, extra, companions, motivation,
+  onExit, controls, music, extra, companions, companionsInteractive, garden, motivation,
 }: {
   open: boolean;
   phase: Phase;
@@ -124,7 +124,9 @@ export function FocusMode({
   controls?: ReactNode;
   music?: ReactNode;
   extra?: ReactNode;
-  companions?: ReactNode; // pet/plant stage, shown in its own card above the timer
+  companions?: ReactNode; // pet stage, shown in its own card above the timer
+  companionsInteractive?: boolean; // breaks only: lets you grab and throw the ball
+  garden?: ReactNode; // garden bed, its own card — rains during breaks
   motivation?: string | null; // per-session personalized line under the timer
 }) {
   useImmersive(open);
@@ -180,9 +182,18 @@ export function FocusMode({
         {/* Companions get their own in-flow card so pets/plants never crowd
             the Exit button or the timer digits, especially on phones. */}
         {companions && (
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Companions</span>
-            <div className="pointer-events-none h-16 w-full sm:h-20">{companions}</div>
+            {/* Rounded + clipped so an active theme's wallpaper follows the
+                card's corners instead of painting a hard-edged rectangle. */}
+            <div className={`h-16 w-full overflow-hidden rounded-xl sm:h-20 ${companionsInteractive ? "" : "pointer-events-none"}`}>{companions}</div>
+          </div>
+        )}
+
+        {garden && (
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Garden</span>
+            <div className="pointer-events-none h-20 w-full overflow-hidden rounded-xl sm:h-24">{garden}</div>
           </div>
         )}
 

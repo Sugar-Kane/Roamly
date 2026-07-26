@@ -22,6 +22,11 @@ export const BALL_PLAYERS: ReadonlySet<PetSpecies> = new Set<PetSpecies>([
   "dog", "cat", "fox", "raccoon", "penguin", "rabbit", "dragon", "unicorn",
 ]);
 
+// How many companions share the pen at once. More than a pair turns the stage
+// into a scrum at the widths it actually renders at (a ~64px strip on the focus
+// page), so activating a third retires the longest-standing one.
+export const MAX_ACTIVE_PETS = 2;
+
 export type PetDef = { id: string; species: PetSpecies; name: string; unlock_sessions: number; sort: number };
 export type RewardKind = "plant" | "tree" | "accessory" | "theme";
 // Every accessory is functional on the pet stage, keyed by its slot (one
