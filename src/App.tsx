@@ -39,6 +39,8 @@ import { GUEST_TASK_LIMIT, loadGuestSessions, loadGuestTasks, saveGuestSessions,
 import { loadGuestStudyEvents, newStudyEvent, saveGuestStudyEvents, type PlannedStudyDraft, type PlannedStudySession, type StudyEvent } from "./release3";
 import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
 import { computeLocalGamification, fetchGamification, syncGamification, setPetActive, setRewardActive, stageProps, type Gamification, type GamSyncResult } from "./gamification";
+import { MAX_ACTIVE_PETS } from "./petCatalog";
+import { GardenBed } from "./GardenBed";
 import { GamificationView, UnlockToast } from "./GamificationView";
 import { ThemedSelect } from "./ThemedSelect";
 import { usePetSleep } from "./usePetSleep";
@@ -400,6 +402,17 @@ export default function App() {
       <PetStage pets={companionStage.pets} accessories={companionStage.accessories} theme={companionStage.theme} asleep={petSleep.asleep} reduceMotion={a11y.reduceMotion} className="h-full w-full" />
     </Suspense>
   ) : null;
+  // The garden rides along on the focus screens too, and rains on breaks —
+  // your plants drink while you do.
+  const showGarden = gardenOn && companionStage.plants.length > 0;
+  const onBreak = timer.phase !== "focus";
+  // The pen only accepts pointer input on breaks: mid-focus the card stays
+  // inert so a stray click can't start a game of fetch, but once the break
+  // starts the ball is yours to throw.
+  const petsInteractive = onBreak;
+  const gardenNode = showGarden ? (
+    <GardenBed plants={companionStage.plants} raining={onBreak} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
+  ) : null;
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
 
   const completeCountUp = useCallback(() => {
@@ -690,6 +703,14 @@ export default function App() {
   const onToggleCompanion = useCallback(async (kind: "pet" | "reward", id: string, active: boolean) => {
     if (!session?.user.id) return;
     if (kind === "pet") {
+      // The pen holds MAX_ACTIVE_PETS; adding another retires the one that has
+      // been out longest, so the switch always works instead of silently
+      // refusing once you're at the cap.
+      if (active) {
+        const actives = (serverGam?.pets ?? []).filter((p) => p.is_active && p.id !== id);
+        const evict = actives.slice(0, Math.max(0, actives.length - (MAX_ACTIVE_PETS - 1)));
+        await Promise.all(evict.map((p) => setPetActive(p.id, false)));
+      }
       await setPetActive(id, active);
     } else {
       if (active) {
@@ -1042,6 +1063,8 @@ export default function App() {
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
+              garden={gardenNode} gardenOn={gardenOn} onToggleGarden={toggleGarden} hasPlants={companionStage.plants.length > 0}
+              petsInteractive={petsInteractive}
               dockClosed={dockClosed} onReopenDock={reopenDock}
               onOpenCustomize={() => setShowCustomize(true)}
               pipSupported={pipSupported} pipActive={!!pipWindow}
@@ -1167,6 +1190,12 @@ export default function App() {
                 <Moon size={14} /> {petSleep.asleep ? "Wake pets" : "Too distracting"}
               </button>
             )}
+            {companionStage.plants.length > 0 && (
+              <button onClick={toggleGarden} aria-pressed={gardenOn}
+                className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${gardenOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <Sprout size={14} /> {gardenOn ? "Hide garden" : "Show garden"}
+              </button>
+            )}
             {pipSupported && (
               <button onClick={() => { setImmersive(false); openPip().then((pip) => { if (pip) track("pip_open", "from_focus"); }); }}
                 className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
@@ -1180,6 +1209,8 @@ export default function App() {
           </>
         }
         companions={petStageNode}
+        companionsInteractive={petsInteractive}
+        garden={gardenNode}
         motivation={timer.phase === "focus" ? motivation : null}
         extra={
           // Order per user feedback: 1) Tasks, 2) built-in Music, 3) the
@@ -1206,6 +1237,7 @@ export default function App() {
       {showCustomize && (
         <CustomizeSession onClose={() => setShowCustomize(false)}
           companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
+          gardenOn={gardenOn} onToggleGarden={toggleGarden}
           confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
           autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow}
           alerts={alerts} />
@@ -1714,7 +1746,7 @@ function PomodoroExplainerPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, petsInteractive, garden, gardenOn, onToggleGarden, hasPlants, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1757,9 +1789,17 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
             {/* Companions live in their own card (not floating over the Select
                 timer button) so pets/plants/accessories never overlap other UI. */}
             {companions && (
-              <div className="mb-4 w-full rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
+              <div className="mb-4 w-full overflow-hidden rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Companions</span>
-                <div className="pointer-events-none h-16 w-full">{companions}</div>
+                {/* overflow-hidden + a rounded inner box so an active theme's
+                    wallpaper is clipped to the card instead of squaring it off. */}
+                <div className={`h-16 w-full overflow-hidden rounded-xl ${petsInteractive ? "" : "pointer-events-none"}`}>{companions}</div>
+              </div>
+            )}
+            {garden && (
+              <div className="mb-4 w-full overflow-hidden rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Garden</span>
+                <div className="pointer-events-none h-20 w-full overflow-hidden rounded-xl">{garden}</div>
               </div>
             )}
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
@@ -1822,6 +1862,12 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <button onClick={() => (pipActive ? onClosePip?.() : onPopOut?.())} aria-pressed={pipActive}
                   className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${pipActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
                   <PictureInPicture2 size={13} /> {pipActive ? "Close pop-out" : "Pop out timer"}
+                </button>
+              )}
+              {hasPlants && (
+                <button onClick={onToggleGarden} aria-pressed={gardenOn}
+                  className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${gardenOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                  <Sprout size={13} /> {gardenOn ? "Hide garden" : "Show garden"}
                 </button>
               )}
               {showCompanions && (

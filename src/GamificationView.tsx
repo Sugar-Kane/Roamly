@@ -13,7 +13,7 @@ import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
 import { GardenBed } from "./GardenBed";
 import { stageProps, isGrowable, type Gamification, type GamSyncResult } from "./gamification";
-import { ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, SLOT_HINT, growthStage, type PetSpecies } from "./petCatalog";
+import { ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, MAX_ACTIVE_PETS, SLOT_HINT, growthStage, type PetSpecies } from "./petCatalog";
 
 const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 
@@ -138,7 +138,10 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
           <h2 className="flex items-center gap-1.5 text-sm font-semibold"><PawPrint size={15} className="text-roamly-purple" /> Companions</h2>
           <span className="text-xs text-muted-foreground">{ownedPets}/{g.pets.length} unlocked</span>
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">Everyone starts with a dog and a cat. Finish more study sessions to adopt the rest.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Everyone starts with a dog and a cat. Finish more study sessions to adopt the rest.
+          {canCustomize && ` Up to ${MAX_ACTIVE_PETS} can share the timer — picking a third retires whichever has been out longest.`}
+        </p>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {g.pets.map((p) => {
             const emoji = PET_ART[p.species as PetSpecies]?.emoji ?? "🐾";

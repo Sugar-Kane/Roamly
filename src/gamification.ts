@@ -10,7 +10,7 @@ import { supabase } from "./supabaseClient";
 import type { StudyEvent } from "./release3";
 import { type FocusSession, computeStreak } from "./streaks";
 import {
-  ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG,
+  ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, MAX_ACTIVE_PETS,
   earnedAchievementIds, growthStage, type AccessorySlot, type RewardKind, type StudyMetrics,
 } from "./petCatalog";
 
@@ -55,7 +55,11 @@ export type StageProps = {
 export const isGrowable = (r: GamReward): boolean => r.kind === "plant" || r.kind === "tree";
 
 export function stageProps(g: Gamification): StageProps {
-  const pets = g.pets.filter((p) => p.owned && p.is_active).map((p) => ({ id: p.id, species: p.species }));
+  // Hard cap the pen even if the server hands back more actives than the UI
+  // allows (older rows, another device mid-sync) — the stage is too small.
+  const pets = g.pets.filter((p) => p.owned && p.is_active)
+    .slice(0, MAX_ACTIVE_PETS)
+    .map((p) => ({ id: p.id, species: p.species }));
   const plants: GardenPlant[] = g.rewards
     .filter((r) => r.owned && r.is_active && isGrowable(r))
     .map((r) => ({
