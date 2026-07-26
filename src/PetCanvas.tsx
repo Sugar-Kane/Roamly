@@ -383,13 +383,20 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
           ball.vx = 0;
           ball.vy = 0;
           ball.y = 0;
-          ball.x = a.bedX;
+          // Beside the bed, not on it — dropped dead-centre the pet stands
+          // over the ball and it disappears behind the glyph.
+          ball.x = Math.min(width - 16, Math.max(16, a.bedX + petSize() * 0.5));
           a.mode = "idle";
           a.until = 0.6 + rand(rng);
           return;
         }
-        ball.x = a.x + a.facing * petSize() * 0.32;
-        ball.y = petSize() * 0.3; // carried in the mouth, not rolling
+        // Held out in FRONT of the pet, past the leading edge of the glyph
+        // (which is ~half a petSize wide), at roughly mouth height — at a
+        // smaller offset it just overlapped the face instead of reading as
+        // carried. It rides the walk bob so it moves with the gait.
+        const size = petSize();
+        ball.x = a.x + a.facing * size * 0.46;
+        ball.y = size * 0.26 + Math.abs(Math.sin(a.hop)) * 4;
         return;
       }
       // Someone else has it — the game is over for everyone but the carrier.
