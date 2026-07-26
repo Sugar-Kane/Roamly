@@ -570,15 +570,6 @@ function buildRainLayer(audio: AudioContext, out: GainNode): () => void {
   };
 }
 
-function buildRainyPiano(audio: AudioContext, out: GainNode): () => void {
-  const pianoStop = buildPiano(audio, out);
-  const rainStop = buildRainLayer(audio, out);
-  return () => {
-    pianoStop();
-    rainStop();
-  };
-}
-
 function buildLofi(audio: AudioContext, out: GainNode): () => void {
   // Everything runs through one warm lowpass bus.
   const bus = audio.createGain(); bus.gain.value = 1;
@@ -759,7 +750,16 @@ const SYNTH: Record<FocusSoundId, (audio: AudioContext, out: GainNode) => () => 
   beats: buildLofi,
   piano: buildPiano,
   ambient: buildAmbient,
-  rain: buildRainyPiano,
+  rain: buildPiano, // the rainfall is a bed, added separately — see BED
+};
+
+// Textures that define a channel and must survive the switch to real
+// recordings. Rainy piano is piano AND rainfall: without this, uploading piano
+// tracks there would quietly turn it into a second Piano station. The bed plays
+// under whatever the main layer is, generated or recorded, so the channel
+// sounds like itself either way.
+const BED: Partial<Record<FocusSoundId, (audio: AudioContext, out: GainNode) => () => void>> = {
+  rain: buildRainLayer,
 };
 
 // Real-track playlist for one channel: shuffled order, advances on track end,
@@ -1104,7 +1104,9 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
   // catalog existed, since only Café and Calm ever had tracks. Adding music to
   // a channel in the admin dashboard is what switches it over.
   const synth = SYNTH[id] ?? buildMelody; // unknown/legacy ids get Melody
-  const stop = hasTracks(id) ? buildMusic(audio, gain, id, synth) : synth(audio, gain);
+  const stopBed = BED[id]?.(audio, gain); // runs under both paths, if any
+  const stopMain = hasTracks(id) ? buildMusic(audio, gain, id, synth) : synth(audio, gain);
+  const stop = stopBed ? () => { stopMain(); stopBed(); } : stopMain;
 
   masterGain = gain;
   teardown = stop;
