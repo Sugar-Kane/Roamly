@@ -86,12 +86,20 @@ export function GardenBed({ plants, reduceMotion, raining = false, className = "
         </ul>
       )}
 
-      {/* Rain sits above the plants so drops fall in front of them. */}
+      {/* Rain sits above the plants so drops fall in front of them. The layer
+          stops at the soil line (58%), so every drop lands on the dirt rather
+          than sinking through it — and each one gets a splash at the point of
+          impact. Splash and drop share a delay and duration, so they stay in
+          phase forever without any JS timing. */}
       {showStreaks && (
-        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[58%] overflow-hidden" aria-hidden="true">
           {RAIN_DROPS.map((d, i) => (
             <span key={i} className="garden-raindrop"
               style={{ left: `${d.left}%`, height: `${d.height}px`, animationDelay: `${d.delay}s`, animationDuration: `${d.duration}s` }} />
+          ))}
+          {RAIN_DROPS.map((d, i) => (
+            <span key={`s${i}`} className="garden-splash"
+              style={{ left: `${d.left}%`, animationDelay: `${d.delay}s`, animationDuration: `${d.duration}s` }} />
           ))}
         </div>
       )}

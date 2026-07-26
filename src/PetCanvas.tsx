@@ -54,7 +54,7 @@ type Actor = {
   x: number;
   vx: number;
   facing: 1 | -1;
-  mode: "idle" | "walk" | "sit" | "sleep" | "eat" | "chase";
+  mode: "idle" | "walk" | "sit" | "sleep" | "eat" | "chase" | "carry";
   until: number; // seconds remaining in the current behavior
   hop: number; // running phase for the walk bob
   bedX: number;
@@ -67,6 +67,9 @@ const RIVE_SURFACE = 128; // offscreen render size (px) per Rive pet
 const GRAVITY = 900; // px/s² for the thrown ball's arc
 const BOUNCE = 0.55; // floor/ceiling restitution
 const CHASE_SPEED = 105; // px/s — a notch quicker than an idle amble
+const CARRY_SPEED = 80; // px/s — a proud trot home with the ball
+const REST_VX = 8; // px/s below which a rolling ball is considered stopped
+const REST_VY = 55; // px/s impact below which it stops bouncing and settles
 const CHASE_INTEREST = 6; // seconds pets stay interested after a throw
 const MAX_THROW = 700; // px/s cap on release velocity
 
@@ -150,7 +153,10 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
     // Toy-ball state; placed on first frame the toy is equipped. `y` is height
     // above the floor (0 = resting), so a thrown ball arcs and bounces.
     // `interest` counts down the window where playful pets chase it.
-    const ball = { x: 0, y: 0, vx: 0, vy: 0, placed: false, held: false, interest: 0 };
+    // `carrier` is the actor id that has the ball in its mouth. Whoever gets
+    // there first claims it; everyone else stands down and the winner trots it
+    // home to its bed before dropping it.
+    const ball = { x: 0, y: 0, vx: 0, vy: 0, placed: false, held: false, interest: 0, carrier: null as string | null };
 
     const slotEmoji = (slot: AccessorySlot): string | null =>
       stateRef.current.accessories.find((a) => a.slot === slot)?.emoji ?? null;
@@ -172,6 +178,8 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       // Drop actors whose pet is no longer active.
       for (let i = actors.length - 1; i >= 0; i--) {
         if (!want.some((p) => p.id === actors[i]!.id0)) {
+          // Don't let the ball vanish with a pet that was toggled off mid-fetch.
+          if (ball.carrier === actors[i]!.id0) { ball.carrier = null; ball.y = 0; }
           actors[i]!.riv?.cleanup();
           actors.splice(i, 1);
         }
@@ -248,30 +256,41 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         ctx!.font = `${Math.round(size * 0.5)}px ${EMOJI_FONT}`;
         ctx!.fillText(bowl, bowlX(), floor);
       }
+    }
+
+    // The ball draws on its own layer: behind the pets normally, in FRONT of
+    // them while one is carrying it (otherwise it vanishes into the mouth).
+    function drawBall() {
       const toy = slotEmoji("toy");
-      if (toy) {
-        if (!ball.placed) { ball.x = width * 0.4; ball.y = 0; ball.vx = 0; ball.vy = 0; ball.placed = true; }
-        const ballSize = Math.round(size * 0.4);
-        // A shrinking shadow under an airborne ball is what sells the height.
-        if (ball.y > 2) {
-          ctx!.save();
-          ctx!.globalAlpha = Math.max(0.05, 0.22 - ball.y / 600);
-          ctx!.fillStyle = "#000";
-          ctx!.beginPath();
-          ctx!.ellipse(ball.x, floor - 2, ballSize * 0.34, ballSize * 0.12, 0, 0, Math.PI * 2);
-          ctx!.fill();
-          ctx!.restore();
-        }
-        ctx!.font = `${ballSize}px ${EMOJI_FONT}`;
-        ctx!.fillText(toy, ball.x, floor - ball.y);
-      } else {
+      if (!toy) {
         ball.placed = false;
         ball.held = false;
         ball.interest = 0;
+        ball.carrier = null;
+        canvas!.style.touchAction = "";
+        canvas!.style.cursor = "";
+        return;
       }
       // Only claim the touch gesture while there's actually a ball to grab.
-      canvas!.style.touchAction = toy ? "none" : "";
-      if (!toy) canvas!.style.cursor = "";
+      canvas!.style.touchAction = "none";
+      const floor = height - 6;
+      const size = petSize();
+      if (!ball.placed) { ball.x = width * 0.4; ball.y = 0; ball.vx = 0; ball.vy = 0; ball.placed = true; }
+      const ballSize = Math.round(size * 0.4);
+      ctx!.textAlign = "center";
+      ctx!.textBaseline = "alphabetic";
+      // A shrinking shadow under an airborne ball is what sells the height.
+      if (ball.y > 2 && !ball.carrier) {
+        ctx!.save();
+        ctx!.globalAlpha = Math.max(0.05, 0.22 - ball.y / 600);
+        ctx!.fillStyle = "#000";
+        ctx!.beginPath();
+        ctx!.ellipse(ball.x, floor - 2, ballSize * 0.34, ballSize * 0.12, 0, 0, Math.PI * 2);
+        ctx!.fill();
+        ctx!.restore();
+      }
+      ctx!.font = `${ballSize}px ${EMOJI_FONT}`;
+      ctx!.fillText(toy, ball.x, floor - ball.y);
     }
 
     function drawActor(a: Actor, moving: boolean) {
@@ -296,7 +315,7 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       ctx!.translate(a.x + bedShift, floor - bob - bedLift);
       if (flip) ctx!.scale(-1, 1);
       if (useRive) {
-        a.riv!.setWalking(a.mode === "walk" || a.mode === "chase");
+        a.riv!.setWalking(a.mode === "walk" || a.mode === "chase" || a.mode === "carry");
         a.riv!.setSleeping(a.mode === "sleep");
         ctx!.drawImage(a.riv!.canvas, -size / 2, -size, size, size);
       } else {
@@ -333,20 +352,52 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
     }
 
     // True while the ball is worth chasing: held aloft by the pointer, or still
-    // inside the interest window after a throw.
-    const ballIsLive = () => ball.placed && (ball.held || ball.interest > 0);
+    // inside the interest window after a throw — and nobody has claimed it yet.
+    const ballIsLive = () => ball.placed && (ball.held || ball.interest > 0) && !ball.carrier;
 
     function step(a: Actor, dt: number, sleeping: boolean) {
       const pad = 20;
       if (sleeping) {
+        // Dropping off mid-fetch: leave the ball where it stands rather than
+        // freezing it inside a sleeping pet.
+        if (ball.carrier === a.id0) { ball.carrier = null; ball.y = 0; ball.vx = 0; ball.vy = 0; ball.interest = 0; }
         const dx = a.bedX - a.x;
         if (Math.abs(dx) > 2) { a.facing = dx < 0 ? -1 : 1; a.x += Math.sign(dx) * Math.min(Math.abs(dx), 70 * dt); a.mode = "walk"; a.hop += dt * 9; }
         else { a.mode = "sleep"; a.vx = 0; }
         return;
       }
-      // A thrown or dangled ball is irresistible — but only to species that
-      // actually play fetch. Everyone else carries on with their idle life.
-      if (a.playful && ballIsLive()) {
+      // Retrieval. Whoever grabbed the ball trots it home to its bed and drops
+      // it there; the ball rides at mouth height along the way.
+      if (ball.carrier === a.id0) {
+        a.mode = "carry";
+        a.vx = 0;
+        const dx = a.bedX - a.x;
+        if (Math.abs(dx) > 2) {
+          a.facing = dx < 0 ? -1 : 1;
+          a.x += Math.sign(dx) * Math.min(Math.abs(dx), CARRY_SPEED * dt);
+          a.hop += dt * 10;
+        } else {
+          // Home. Drop it at the bed and go back to being a normal animal.
+          ball.carrier = null;
+          ball.interest = 0;
+          ball.vx = 0;
+          ball.vy = 0;
+          ball.y = 0;
+          ball.x = a.bedX;
+          a.mode = "idle";
+          a.until = 0.6 + rand(rng);
+          return;
+        }
+        ball.x = a.x + a.facing * petSize() * 0.32;
+        ball.y = petSize() * 0.3; // carried in the mouth, not rolling
+        return;
+      }
+      // Someone else has it — the game is over for everyone but the carrier.
+      if (ball.carrier) {
+        if (a.mode === "chase" || a.mode === "carry") { a.mode = "idle"; a.vx = 0; a.until = 0.5 + rand(rng); }
+      } else if (a.playful && ballIsLive()) {
+        // A thrown or dangled ball is irresistible — but only to species that
+        // actually play fetch. Everyone else carries on with their idle life.
         a.mode = "chase";
         a.vx = 0;
         const dx = ball.x - a.x;
@@ -356,17 +407,18 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
           a.hop += dt * 12;
         }
         a.x = Math.min(width - pad, Math.max(pad, a.x));
-        // Caught up with it: bat it away so the game keeps going. Only works on
-        // a grounded ball — a held one stays out of reach.
+        // First one to reach it claims it. Only a grounded ball can be grabbed
+        // — one still held by the pointer stays out of reach.
         if (!ball.held && ball.y < 10 && Math.abs(ball.x - a.x) < petSize() * 0.4) {
-          ball.vx = (ball.x >= a.x ? 1 : -1) * (70 + rand(rng) * 80);
-          ball.vy = 130 + rand(rng) * 90;
-          ball.interest = Math.max(ball.interest, 2.5);
+          ball.carrier = a.id0;
+          ball.vx = 0;
+          ball.vy = 0;
         }
         a.until = 0; // re-roll a fresh behavior as soon as interest lapses
         return;
+      } else if (a.mode === "chase" || a.mode === "carry") {
+        a.mode = "idle"; a.vx = 0; a.until = 0.4 + rand(rng);
       }
-      if (a.mode === "chase") { a.mode = "idle"; a.vx = 0; a.until = 0.4 + rand(rng); }
 
       a.until -= dt;
       if (a.until <= 0) {
@@ -387,17 +439,17 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         const dx = bowlX() - 16 - a.x; // stand just left of the bowl
         if (Math.abs(dx) > 3) { a.facing = dx < 0 ? -1 : 1; a.x += Math.sign(dx) * Math.min(Math.abs(dx), 60 * dt); a.hop += dt * 9; }
       }
-      // Walking pets kick the ball when they run into it — playful ones only.
-      if (ball.placed && a.playful && !ball.held && ball.y < 10 && a.mode === "walk"
-          && Math.abs(a.x - ball.x) < petSize() * 0.35) {
-        ball.vx = (ball.x >= a.x ? 1 : -1) * (50 + Math.abs(a.vx));
-      }
+      // Deliberately NO incidental kick here. Pets used to boot the ball
+      // whenever they wandered into it, which meant a resting ball never
+      // stayed at rest — it got re-launched forever by passing traffic. The
+      // ball now only moves when you throw it or a pet is fetching it.
     }
 
     function stepBall(dt: number) {
       if (!ball.placed) return;
       if (ball.interest > 0) ball.interest = Math.max(0, ball.interest - dt);
       if (ball.held) { ball.vx = 0; ball.vy = 0; return; } // the pointer owns it
+      if (ball.carrier) return; // the carrying pet drives its position
       if (ball.vx === 0 && ball.vy === 0 && ball.y === 0) return;
       const pad = 16;
       ball.x += ball.vx * dt;
@@ -405,9 +457,13 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       ball.vy -= GRAVITY * dt;
       if (ball.y <= 0) {
         ball.y = 0;
-        ball.vy = ball.vy < -40 ? -ball.vy * BOUNCE : 0;
-        ball.vx *= Math.max(0, 1 - 1.8 * dt); // rolling friction, ground only
-        if (Math.abs(ball.vx) < 4) ball.vx = 0;
+        // Settle instead of micro-bouncing forever: below REST_VY the impact
+        // is absorbed outright, and rolling friction kills the last of the
+        // horizontal speed. A thrown ball comes fully to rest in a second or
+        // two and then stays put, like a real one.
+        ball.vy = ball.vy < -REST_VY ? -ball.vy * BOUNCE : 0;
+        ball.vx *= Math.max(0, 1 - 3.2 * dt); // rolling friction, ground only
+        if (Math.abs(ball.vx) < REST_VX) ball.vx = 0;
       }
       const ceiling = Math.max(0, height - 14);
       if (ball.y > ceiling) { ball.y = ceiling; ball.vy = -Math.abs(ball.vy) * BOUNCE; }
@@ -419,7 +475,9 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       ctx!.clearRect(0, 0, width, height);
       drawBackdrop();
       drawFurniture();
-      for (const a of actors) drawActor(a, moving && (a.mode === "walk" || a.mode === "chase"));
+      if (!ball.carrier) drawBall();
+      for (const a of actors) drawActor(a, moving && (a.mode === "walk" || a.mode === "chase" || a.mode === "carry"));
+      if (ball.carrier) drawBall();
     }
 
     resize();
@@ -486,6 +544,7 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       if (!overBall(p)) return;
       drag = { id: e.pointerId, prev: null, last: { x: p.x, y: p.y, t: e.timeStamp } };
       ball.held = true;
+      ball.carrier = null; // taking it back out of a pet's mouth ends the fetch
       ball.vx = 0;
       ball.vy = 0;
       canvas!.setPointerCapture(e.pointerId);
