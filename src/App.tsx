@@ -615,11 +615,16 @@ export default function App() {
   // the user browses other tabs mid-session. It only reacts to TIMER
   // transitions — manual previews while the timer is idle, and manual pauses
   // mid-focus, are left alone.
+  //
+  // Both timers count. The count-up has no phases, so running IS the whole
+  // condition; the Pomodoro only plays through its focus blocks. The two are
+  // mutually exclusive (starting either resets the other), so they can't both
+  // be driving the sound at once.
   const prevShouldPlay = useRef(false);
   useEffect(() => {
     if (inRoomRef.current) return; // a room is driving the engine
     if (!soundAuto || !focusSound) return;
-    const shouldPlay = timer.running && timer.phase === "focus";
+    const shouldPlay = (timer.running && timer.phase === "focus") || countUp.running;
     if (shouldPlay === prevShouldPlay.current) return;
     prevShouldPlay.current = shouldPlay;
     if (shouldPlay) {
@@ -631,7 +636,7 @@ export default function App() {
       setFocusVolume(0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timer.running, timer.phase, soundAuto, focusSound]);
+  }, [timer.running, timer.phase, countUp.running, soundAuto, focusSound]);
 
   // Usage ping when a session actually starts running (throttled in track()).
   useEffect(() => {
@@ -2240,7 +2245,7 @@ function FocusSoundsPanel({ sounds, bare = false }: any) {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-3 py-2">
         <div className="min-w-0">
           <p className="text-sm font-medium">Play with timer</p>
-          <p className="text-[11px] leading-snug text-muted-foreground">Starts on focus, fades out for breaks.</p>
+          <p className="text-[11px] leading-snug text-muted-foreground">Starts with either timer, fades out for breaks.</p>
         </div>
         <button role="switch" aria-checked={sounds.auto} aria-label="Play sound with timer" onClick={() => sounds.setAuto(!sounds.auto)}
           className={`relative h-6 w-11 shrink-0 rounded-full transition ${sounds.auto ? "bg-primary" : "bg-border"}`}>
