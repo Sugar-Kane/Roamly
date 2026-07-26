@@ -1176,7 +1176,9 @@ export default function App() {
           // Order per user feedback: 1) Tasks, 2) built-in Music, 3) the
           // Spotify/Apple embed — so the two music boxes sit together under the
           // task list. The built-in sounds keep the same card styling the
-          // FocusMode `music` slot gave them.
+          // FocusMode `music` slot gave them. Deliberately NOT the Focus tab's
+          // order, where Music now leads: in here you have already committed to
+          // a session, so the checklist is what you want in front of you.
           <div className="space-y-4">
             <AdBreakPrompt active={timer.phase !== "focus" && !isPremium}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)} />
@@ -1185,8 +1187,6 @@ export default function App() {
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask}
               estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached}
               breakActive={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
-            {/* One music panel: built-in Focus sounds on top, then Spotify and
-                Apple — same layout as the non-immersive Focus tab. */}
             <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed} sounds={sounds} />
           </div>
         } />
@@ -1907,6 +1907,9 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
         </Modal>
       )}
 
+      <MusicPanel embed={embed} service={shownEmbed.service} onServiceChange={onPickService} onPlay={playEmbed}
+        dockClosed={dockClosed} onReopenDock={onReopenDock} sounds={sounds} />
+
       <div>
         <div className="min-w-0">
           <h2 className="mb-3 font-display text-lg font-semibold">Up next</h2>
@@ -1985,9 +1988,6 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
           </div>
         </div>
       </div>
-
-      <MusicPanel embed={embed} service={shownEmbed.service} onServiceChange={onPickService} onPlay={playEmbed}
-        dockClosed={dockClosed} onReopenDock={onReopenDock} sounds={sounds} />
     </div>
   );
 }
