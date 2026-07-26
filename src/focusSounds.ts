@@ -10,6 +10,8 @@
 //    recently heard track from the shuffle; once the whole catalog has been
 //    heard, the station reshuffles the full pool and replays it.
 
+import { supabase } from "./supabaseClient";
+
 export type FocusSoundId =
   | "melody" | "lofi" | "calm" | "beats" | "piano" | "ambient" | "rain";
 
@@ -57,10 +59,45 @@ let musicEl: HTMLAudioElement | null = null;
 let musicSrcNode: MediaElementAudioSourceNode | null = null;
 let musicToken: object | null = null; // identifies the active music build (see buildMusic)
 
-const playlistReady = fetch("/audio/lofi/manifest.json")
-  .then((r) => (r.ok ? r.json() : []))
-  .then((rows: MusicTrack[]) => { playlist = Array.isArray(rows) ? rows : []; })
-  .catch(() => { playlist = []; });
+// The catalog is admin-managed in public.music_tracks (see the Music section of
+// the admin dashboard), so tracks can be added without a redeploy. The bundled
+// manifest is the fallback: it still ships with the app and covers the cases
+// where the database can't answer — Supabase env vars missing (local demo
+// mode), the user offline with a warm cache, or the query failing. Playback
+// semantics are unchanged either way; only the source of the list moved.
+async function loadBundledManifest(): Promise<MusicTrack[]> {
+  try {
+    const r = await fetch("/audio/lofi/manifest.json");
+    if (!r.ok) return [];
+    const rows = await r.json();
+    return Array.isArray(rows) ? (rows as MusicTrack[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function loadCatalog(): Promise<MusicTrack[]> {
+  if (!supabase) return loadBundledManifest();
+  try {
+    // RLS exposes only active rows, so no `active` filter is needed here.
+    const { data, error } = await supabase
+      .from("music_tracks")
+      .select("url, title, artist, license, channel")
+      .in("channel", ["lofi", "calm"]);
+    if (error || !data || data.length === 0) return loadBundledManifest();
+    return data.map((r) => ({
+      file: r.url as string,
+      title: r.title as string,
+      artist: r.artist as string,
+      license: r.license as string,
+      category: r.channel as MusicCategory,
+    }));
+  } catch {
+    return loadBundledManifest();
+  }
+}
+
+const playlistReady = loadCatalog().then((rows) => { playlist = rows; });
 
 const TRACK_HISTORY_KEY = "roamly-music-track-history-v1";
 const TRACK_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;

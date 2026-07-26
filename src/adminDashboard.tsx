@@ -12,7 +12,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   LayoutDashboard, Users, Activity, BarChart3, DollarSign, MessageSquare,
-  AlertTriangle, Megaphone, Mail, Table2, Download, RefreshCw, ChevronRight,
+  AlertTriangle, Megaphone, Mail, Table2, Music, Download, RefreshCw, ChevronRight,
   ArrowUp, ArrowDown, Minus, Info, X, Menu,
 } from "lucide-react";
 import {
@@ -31,7 +31,7 @@ const AdminStackedBars = lazy(() => import("./Charts").then((m) => ({ default: m
 // ---------------------------------------------------------------------------
 export type AdminSectionId =
   | "overview" | "users" | "engagement" | "features" | "revenue"
-  | "feedback" | "errors" | "ads" | "invites" | "explorer";
+  | "feedback" | "errors" | "ads" | "invites" | "music" | "explorer";
 
 export const ADMIN_SECTIONS: { id: AdminSectionId; label: string; icon: typeof Users }[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -43,6 +43,7 @@ export const ADMIN_SECTIONS: { id: AdminSectionId; label: string; icon: typeof U
   { id: "errors", label: "Errors", icon: AlertTriangle },
   { id: "ads", label: "Ads", icon: Megaphone },
   { id: "invites", label: "Invites", icon: Mail },
+  { id: "music", label: "Music", icon: Music },
   { id: "explorer", label: "Data Explorer", icon: Table2 },
 ];
 

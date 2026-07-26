@@ -1150,3 +1150,125 @@ export async function uploadStudyMaterial(userId: string, file: File): Promise<s
   if (error) { console.warn("[Roamly] uploadStudyMaterial failed", error.message); return null; }
   return path;
 }
+
+// ---------------------------------------------------------------------------
+// Focus-music library (admin)
+// ---------------------------------------------------------------------------
+// The catalog lives in public.music_tracks; audio files are either bundled in
+// the repo under /audio (source 'bundled') or uploaded here to the
+// `focus-music` Storage bucket (source 'upload'). Reads of the ACTIVE catalog
+// are public — that's what every visitor's player fetches — while every write
+// goes through an is_admin()-gated SECURITY DEFINER RPC.
+
+const FOCUS_MUSIC_BUCKET = "focus-music";
+export const MUSIC_MAX_BYTES = 60 * 1024 * 1024;
+
+export type MusicTrackRow = {
+  id: string;
+  channel: string;
+  title: string;
+  artist: string;
+  url: string;
+  license: string;
+  source: "bundled" | "upload";
+  duration_seconds: number | null;
+  active: boolean;
+  created_at: string;
+};
+
+export async function adminListMusicTracks(): Promise<MusicTrackRow[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_list_music_tracks");
+  if (error) { console.warn("[Roamly] adminListMusicTracks failed", error.message); return []; }
+  return (data ?? []) as MusicTrackRow[];
+}
+
+export async function adminUpdateMusicTrack(
+  id: string,
+  fields: { title?: string; artist?: string; channel?: string; active?: boolean },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { error } = await supabase.rpc("admin_update_music_track", {
+    p_id: id,
+    p_title: fields.title ?? null,
+    p_artist: fields.artist ?? null,
+    p_channel: fields.channel ?? null,
+    p_active: fields.active ?? null,
+  });
+  if (error) { console.warn("[Roamly] adminUpdateMusicTrack failed", error.message); return { error: "Couldn't update that track." }; }
+  return {};
+}
+
+// Removes the row first, then the Storage object. The RPC returns the object
+// path for uploads (null for bundled tracks, which have no object to remove).
+// Row-first means a failed object delete leaves an orphaned file rather than a
+// row pointing at audio that no longer exists.
+export async function adminDeleteMusicTrack(id: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { data, error } = await supabase.rpc("admin_delete_music_track", { p_id: id });
+  if (error) { console.warn("[Roamly] adminDeleteMusicTrack failed", error.message); return { error: "Couldn't delete that track." }; }
+  const path = data as string | null;
+  if (path) await supabase.storage.from(FOCUS_MUSIC_BUCKET).remove([path]);
+  return {};
+}
+
+// Reads the real duration from the decoded file, so the admin list can show
+// per-channel minutes without a server-side audio library. Resolves null if
+// the browser can't decode it — the upload still proceeds.
+function readDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const el = new Audio();
+    const done = (value: number | null) => { URL.revokeObjectURL(url); resolve(value); };
+    el.preload = "metadata";
+    el.onloadedmetadata = () => done(Number.isFinite(el.duration) && el.duration > 0 ? Math.round(el.duration) : null);
+    el.onerror = () => done(null);
+    el.src = url;
+  });
+}
+
+// Uploads one audio file to the bucket and registers it on a channel. Storage
+// first, then the row — if the row insert fails we remove the orphaned object
+// so a retry isn't blocked by a half-finished upload.
+export async function adminUploadMusicTrack(
+  channel: string,
+  file: File,
+  meta: { title?: string; artist?: string; license?: string },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  if (file.size > MUSIC_MAX_BYTES) return { error: `That file is ${(file.size / 1048576).toFixed(0)} MB — the limit is 60 MB.` };
+  if (!file.type.startsWith("audio/")) return { error: "That doesn't look like an audio file." };
+
+  const duration = await readDuration(file);
+  const ext = (file.name.split(".").pop() || "mp3").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8) || "mp3";
+  const path = `${channel}/${crypto.randomUUID()}.${ext}`;
+
+  const { error: uploadError } = await supabase.storage.from(FOCUS_MUSIC_BUCKET).upload(path, file, {
+    cacheControl: "31536000", // immutable: the path carries a fresh UUID per upload
+    contentType: file.type,
+    upsert: false,
+  });
+  if (uploadError) {
+    console.warn("[Roamly] adminUploadMusicTrack upload failed", uploadError.message);
+    return { error: "Couldn't upload that file." };
+  }
+
+  const { data: pub } = supabase.storage.from(FOCUS_MUSIC_BUCKET).getPublicUrl(path);
+  // Fall back to the filename (minus extension) when no title was typed.
+  const title = meta.title?.trim() || file.name.replace(/\.[^.]+$/, "");
+  const { error } = await supabase.rpc("admin_add_music_track", {
+    p_channel: channel,
+    p_title: title,
+    p_url: pub.publicUrl,
+    p_artist: meta.artist?.trim() || "Unknown",
+    p_license: meta.license?.trim() || "All rights reserved",
+    p_source: "upload",
+    p_duration_seconds: duration,
+  });
+  if (error) {
+    await supabase.storage.from(FOCUS_MUSIC_BUCKET).remove([path]);
+    console.warn("[Roamly] adminUploadMusicTrack insert failed", error.message);
+    return { error: "Uploaded, but couldn't save it to the channel." };
+  }
+  return {};
+}

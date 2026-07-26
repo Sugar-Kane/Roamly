@@ -21,6 +21,7 @@ import { FeaturesPage, EngagementPage } from "./adminAnalytics";
 import { UserDetail } from "./adminUserDetail";
 import { RevenuePage } from "./adminRevenue";
 import { InvitesPage, ErrorsPage } from "./adminOps";
+import { MusicPage } from "./adminMusic";
 import { ExplorerPage } from "./adminExplorer";
 
 
@@ -64,6 +65,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
     ads: <AdminAds />,
     revenue: <RevenuePage state={filters} />,
     invites: <InvitesPage state={filters} />,
+    music: <MusicPage />,
     explorer: <ExplorerPage state={filters} />,
   };
 
