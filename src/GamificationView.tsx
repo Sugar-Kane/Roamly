@@ -8,17 +8,28 @@
 // pet/plant is active; guests see a live local computation of their progress.
 
 import { lazy, Suspense } from "react";
-import { Sprout, PawPrint, Trophy, Lock, Check, Star, Sparkles } from "lucide-react";
+import { Sprout, PawPrint, Trophy, Lock, Check, Star, Sparkles, Flower2 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
-import { stageProps, type Gamification, type GamSyncResult } from "./gamification";
+import { GardenBed } from "./GardenBed";
+import { stageProps, isGrowable, type Gamification, type GamSyncResult } from "./gamification";
 import { ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, SLOT_HINT, growthStage, type PetSpecies } from "./petCatalog";
 
 const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 
 const KIND_LABEL: Record<string, string> = { plant: "Plant", tree: "Tree", accessory: "Accessory", theme: "Theme" };
 
-export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions }: {
+// Shared pill switch (companions on the timer, garden visibility).
+function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle: () => void }) {
+  return (
+    <button role="switch" aria-checked={on} aria-label={label} onClick={onToggle}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? "bg-primary" : "bg-border"}`}>
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+    </button>
+  );
+}
+
+export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden }: {
   gamification: Gamification;
   session: Session | null;
   reduceMotion: boolean;
@@ -26,9 +37,12 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
   onToggle: (kind: "pet" | "reward", id: string, active: boolean) => void;
   companionsOn: boolean;
   onToggleCompanions: () => void;
+  gardenOn: boolean;
+  onToggleGarden: () => void;
 }) {
   const g = gamification;
   const stage = stageProps(g);
+  const plantable = g.rewards.filter((r) => r.owned && isGrowable(r) && !r.is_active).length;
   const span = Math.max(1, g.xp_for_next - g.xp_for_level);
   const within = Math.max(0, Math.min(1, (g.xp - g.xp_for_level) / span));
   const earnedAch = g.achievements.filter((a) => a.earned).length;
@@ -58,9 +72,9 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
         <div className="relative mt-4 h-28 overflow-hidden rounded-xl border border-border bg-secondary/40">
           {!companionsOn ? (
             <p className="grid h-full place-items-center text-xs text-muted-foreground">Companions are hidden on your timer.</p>
-          ) : stage.pets.length > 0 || stage.plant ? (
+          ) : stage.pets.length > 0 ? (
             <Suspense fallback={null}>
-              <PetStage pets={stage.pets} plant={stage.plant} accessories={stage.accessories} asleep={false} reduceMotion={reduceMotion} className="absolute inset-0 h-full w-full" />
+              <PetStage pets={stage.pets} accessories={stage.accessories} theme={stage.theme} asleep={false} reduceMotion={reduceMotion} className="absolute inset-0 h-full w-full" />
             </Suspense>
           ) : (
             <p className="grid h-full place-items-center text-xs text-muted-foreground">Your companions will appear here.</p>
@@ -68,13 +82,33 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
         </div>
         <div className="mt-3 flex items-center justify-between gap-3">
           <p className="text-[11px] text-muted-foreground">Show companions on your focus timer</p>
-          <button role="switch" aria-checked={companionsOn} aria-label="Show companions on the timer" onClick={onToggleCompanions}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition ${companionsOn ? "bg-primary" : "bg-border"}`}>
-            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${companionsOn ? "left-[22px]" : "left-0.5"}`} />
-          </button>
+          <Switch on={companionsOn} label="Show companions on the timer" onToggle={onToggleCompanions} />
         </div>
         {!canCustomize && (
           <p className="mt-3 text-[11px] text-muted-foreground">Your progress is saved on this device only. <button onClick={onSignIn} className="font-medium text-primary underline-offset-2 hover:underline">Sign in</button> to keep it everywhere and customize your companions.</p>
+        )}
+      </div>
+
+      {/* Garden — its own area, independent of the companion pen */}
+      <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold"><Flower2 size={15} className="text-roamly-green" /> Your garden</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">{stage.plants.length} planted</span>
+            <Switch on={gardenOn} label="Show your garden" onToggle={onToggleGarden} />
+          </div>
+        </div>
+        {gardenOn ? (
+          <>
+            <GardenBed plants={stage.plants} reduceMotion={reduceMotion} className="mt-3 h-40 bg-secondary/30" />
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              Every plant grows a stage for each {" "}
+              <span className="font-medium text-foreground">{GROWTH_STAGES}</span>-stage run of study sessions. Plant as many as you like — the bed makes room.
+              {plantable > 0 && ` You have ${plantable} unplanted ${plantable === 1 ? "reward" : "rewards"} waiting below.`}
+            </p>
+          </>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">Garden hidden. Flip the switch to see what you've grown.</p>
         )}
       </div>
 
@@ -136,11 +170,11 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
       {/* Level rewards */}
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
         <h2 className="flex items-center gap-1.5 text-sm font-semibold"><Star size={15} className="text-roamly-blue" /> Level rewards</h2>
-        <p className="mt-1 text-xs text-muted-foreground">Plants and trees grow as you study; accessories go to work on your pet stage; themes unlock at new levels.</p>
+        <p className="mt-1 text-xs text-muted-foreground">Plants and trees go in your garden and grow as you study; accessories go to work on your pet stage; themes redecorate it.</p>
         <div className="mt-3 space-y-1.5">
           {g.rewards.map((r) => {
-            const growable = r.kind === "plant" || r.kind === "tree";
-            const usable = r.kind === "accessory" && !!r.meta.slot;
+            const growable = isGrowable(r);
+            const usable = (r.kind === "accessory" && !!r.meta.slot) || r.kind === "theme";
             const stg = growable ? growthStage(r.growth_points) : 0;
             return (
               <div key={r.id} className={`flex items-center gap-3 rounded-xl border p-2.5 ${r.owned ? "border-border bg-card/60" : "border-border bg-card/40 opacity-70"}`}>
@@ -162,7 +196,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
                   growable && canCustomize ? (
                     <button onClick={() => onToggle("reward", r.id, !r.is_active)}
                       className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium transition ${r.is_active ? "bg-roamly-green/15 text-roamly-green" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
-                      {r.is_active ? "Growing ✓" : "Grow here"}
+                      {r.is_active ? "In garden ✓" : "Add to garden"}
                     </button>
                   ) : usable && canCustomize ? (
                     <button onClick={() => onToggle("reward", r.id, !r.is_active)}
@@ -189,10 +223,24 @@ const ACH_NAME = new Map(ACHIEVEMENT_CATALOG.map((a) => [a.id, a.name] as const)
 const PET_NAME = new Map(PET_CATALOG.map((p) => [p.id, { name: p.name, emoji: PET_ART[p.species].emoji }] as const));
 const REWARD_NAME = new Map(REWARD_CATALOG.map((r) => [r.id, { name: r.name, emoji: r.meta.emoji ?? "🎁" }] as const));
 
-export function UnlockToast({ result, onClose }: { result: GamSyncResult; onClose: () => void }) {
-  const rows: { emoji: string; label: string; sub: string }[] = [
+const GROWABLE_IDS = new Set(REWARD_CATALOG.filter((r) => r.kind === "plant" || r.kind === "tree").map((r) => r.id));
+
+export function UnlockToast({ result, onClose, onPlant, planted = [] }: {
+  result: GamSyncResult;
+  onClose: () => void;
+  // Planting straight from the unlock is the point: a new plant only earns
+  // growth once it's actually in the ground.
+  onPlant?: (rewardId: string) => void;
+  planted?: string[];
+}) {
+  const rows: { emoji: string; label: string; sub: string; plantId?: string }[] = [
     ...result.new_pets.map((id) => ({ emoji: PET_NAME.get(id)?.emoji ?? "🐾", label: PET_NAME.get(id)?.name ?? id, sub: "New companion" })),
-    ...result.new_rewards.map((id) => ({ emoji: REWARD_NAME.get(id)?.emoji ?? "🎁", label: REWARD_NAME.get(id)?.name ?? id, sub: "Level reward" })),
+    ...result.new_rewards.map((id) => ({
+      emoji: REWARD_NAME.get(id)?.emoji ?? "🎁",
+      label: REWARD_NAME.get(id)?.name ?? id,
+      sub: GROWABLE_IDS.has(id) ? "Ready to plant" : "Level reward",
+      plantId: GROWABLE_IDS.has(id) ? id : undefined,
+    })),
     ...result.new_achievements.map((id) => ({ emoji: "🏆", label: ACH_NAME.get(id) ?? id, sub: "Achievement" })),
   ];
   if (rows.length === 0) return null;
@@ -202,12 +250,24 @@ export function UnlockToast({ result, onClose }: { result: GamSyncResult; onClos
         <h2 className="flex items-center gap-2 font-display text-xl font-semibold"><Sparkles size={20} className="text-roamly-coral" /> Nice work!</h2>
         <p className="mt-1 text-sm text-muted-foreground">You just unlocked{rows.length > 1 ? ` ${rows.length} things` : ""}:</p>
         <div className="mt-4 space-y-2">
-          {rows.map((r, i) => (
-            <div key={i} className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-3">
-              <span className="text-2xl" aria-hidden="true">{r.emoji}</span>
-              <div><p className="text-sm font-semibold">{r.label}</p><p className="text-[11px] text-muted-foreground">{r.sub}</p></div>
-            </div>
-          ))}
+          {rows.map((r, i) => {
+            const isPlanted = !!r.plantId && planted.includes(r.plantId);
+            return (
+              <div key={i} className="flex items-center gap-3 rounded-xl border border-border bg-card/60 p-3">
+                <span className="text-2xl" aria-hidden="true">{r.emoji}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{r.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{isPlanted ? "Planted — it'll grow as you study" : r.sub}</p>
+                </div>
+                {r.plantId && onPlant && (
+                  <button onClick={() => onPlant(r.plantId!)} disabled={isPlanted}
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${isPlanted ? "bg-roamly-green/15 text-roamly-green" : "bg-secondary text-foreground hover:bg-secondary/70"}`}>
+                    {isPlanted ? "In garden ✓" : "Add to garden"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
         <button onClick={onClose} className="mt-5 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow">Awesome</button>
       </div>

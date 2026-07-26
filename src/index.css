@@ -115,6 +115,18 @@
   .themed-file-input:disabled::file-selector-button { cursor: not-allowed; opacity: 0.6; }
 }
 
+/* Garden plants breathe in the breeze. Purely decorative, and the
+   reduced-motion block below flattens it along with everything else. */
+@keyframes garden-sway {
+  0%, 100% { transform: rotate(-2.5deg); }
+  50% { transform: rotate(2.5deg); }
+}
+.garden-sway {
+  display: inline-block;
+  transform-origin: 50% 90%;
+  animation: garden-sway 5.5s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }

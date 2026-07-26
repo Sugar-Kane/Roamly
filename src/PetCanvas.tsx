@@ -9,7 +9,9 @@
 //  * bed — each pet gets a little bed; sleeping pets nap ON it instead of the
 //    floor (without one they just curl up where they stand).
 //  * toy — a ball sits on the floor; walking pets kick it and it rolls,
-//    decelerates, and bounces off the stage edges.
+//    decelerates, and bounces off the stage edges. It's also grabbable: drag
+//    it with a pointer and let go to throw it (release velocity carries into
+//    an arc), and every awake pet drops what it's doing to chase it down.
 //  * bowl — pets occasionally wander over to the snack bowl and pause to eat.
 //  * hat / face — drawn on every pet (head or eye-line), emoji and Rive alike.
 //
@@ -30,11 +32,10 @@
 // species is actually on stage, so emoji-only users never download it.
 
 import { useEffect, useRef } from "react";
-import { PET_ART, type AccessorySlot, type PetSpecies } from "./petCatalog";
+import { BALL_PLAYERS, PET_ART, PET_GLYPH_FACING, STAGE_THEMES, type AccessorySlot, type PetSpecies } from "./petCatalog";
 import { RIVE_PETS } from "./petRive";
 
 export type StagePet = { id: string; species: string };
-export type StagePlant = { emoji: string; stage: number } | null;
 export type StageAccessory = { slot: AccessorySlot; emoji: string };
 
 type RiveHandle = {
@@ -53,14 +54,21 @@ type Actor = {
   x: number;
   vx: number;
   facing: 1 | -1;
-  mode: "idle" | "walk" | "sit" | "sleep" | "eat";
+  mode: "idle" | "walk" | "sit" | "sleep" | "eat" | "chase";
   until: number; // seconds remaining in the current behavior
   hop: number; // running phase for the walk bob
   bedX: number;
+  playful: boolean; // species chases/kicks the toy ball
+  glyphFacing: -1 | 0 | 1; // native direction of the emoji (0 = head-on)
 };
 
 const EMOJI_FONT = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
 const RIVE_SURFACE = 128; // offscreen render size (px) per Rive pet
+const GRAVITY = 900; // px/s² for the thrown ball's arc
+const BOUNCE = 0.55; // floor/ceiling restitution
+const CHASE_SPEED = 105; // px/s — a notch quicker than an idle amble
+const CHASE_INTEREST = 6; // seconds pets stay interested after a throw
+const MAX_THROW = 700; // px/s cap on release velocity
 
 function petEmoji(species: string): string {
   return PET_ART[species as PetSpecies]?.emoji ?? "🐾";
@@ -116,18 +124,18 @@ function rand(state: { s: number }): number {
   return state.s / 0xffffffff;
 }
 
-export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, className }: {
+export function PetStage({ pets, accessories = [], theme = null, asleep, reduceMotion, className }: {
   pets: StagePet[];
-  plant: StagePlant;
   accessories?: StageAccessory[];
+  theme?: string | null; // active theme reward id — the pen's wallpaper
   asleep: boolean;
   reduceMotion: boolean;
   className?: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Latest props for the animation loop without re-arming it every render.
-  const stateRef = useRef({ pets, plant, accessories, asleep, reduceMotion });
-  stateRef.current = { pets, plant, accessories, asleep, reduceMotion };
+  const stateRef = useRef({ pets, accessories, theme, asleep, reduceMotion });
+  stateRef.current = { pets, accessories, theme, asleep, reduceMotion };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -139,8 +147,10 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
     const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1);
     const actors: Actor[] = [];
     const rng = { s: 20260714 };
-    // Toy-ball state; placed on first frame the toy is equipped.
-    const ball = { x: 0, vx: 0, placed: false };
+    // Toy-ball state; placed on first frame the toy is equipped. `y` is height
+    // above the floor (0 = resting), so a thrown ball arcs and bounces.
+    // `interest` counts down the window where playful pets chase it.
+    const ball = { x: 0, y: 0, vx: 0, vy: 0, placed: false, held: false, interest: 0 };
 
     const slotEmoji = (slot: AccessorySlot): string | null =>
       stateRef.current.accessories.find((a) => a.slot === slot)?.emoji ?? null;
@@ -181,22 +191,42 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
           until: 0.5 + rand(rng) * 1.5,
           hop: rand(rng) * Math.PI * 2,
           bedX: 30 + i * 40,
+          playful: BALL_PLAYERS.has(p.species as PetSpecies),
+          glyphFacing: PET_GLYPH_FACING[p.species as PetSpecies] ?? 0,
         });
       });
     }
 
     const petSize = () => Math.max(26, Math.min(46, height * 0.52));
 
-    function drawPlant() {
-      const pl = stateRef.current.plant;
-      if (!pl) return;
-      const size = 16 + pl.stage * 6;
-      ctx!.font = `${size}px ${EMOJI_FONT}`;
-      ctx!.textAlign = "center";
-      ctx!.textBaseline = "alphabetic";
-      ctx!.globalAlpha = 0.95;
-      ctx!.fillText(pl.emoji, width - 22, height - 6);
-      ctx!.globalAlpha = 1;
+    // Theme wallpaper: a backdrop wash plus the floor band the pets stand on.
+    // No active theme = transparent, so the card's own background shows through
+    // exactly as it did before themes did anything.
+    function drawBackdrop() {
+      const th = stateRef.current.theme ? STAGE_THEMES[stateRef.current.theme] : undefined;
+      if (!th) return;
+      const floor = height - 6;
+      const sky = ctx!.createLinearGradient(0, 0, 0, floor);
+      sky.addColorStop(0, th.skyTop);
+      sky.addColorStop(1, th.skyBottom);
+      ctx!.fillStyle = sky;
+      ctx!.fillRect(0, 0, width, floor);
+      if (th.specks) {
+        // Deterministic star field — same seed every frame so it doesn't crawl.
+        const stars = { s: 99991 };
+        ctx!.fillStyle = th.specks;
+        for (let i = 0; i < 26; i++) {
+          const sx = rand(stars) * width;
+          const sy = rand(stars) * floor * 0.7;
+          ctx!.globalAlpha = 0.35 + rand(stars) * 0.5;
+          ctx!.fillRect(sx, sy, 1.5, 1.5);
+        }
+        ctx!.globalAlpha = 1;
+      }
+      ctx!.fillStyle = th.floor;
+      ctx!.fillRect(0, floor, width, height - floor);
+      ctx!.fillStyle = th.floorEdge;
+      ctx!.fillRect(0, floor, width, 1.5);
     }
 
     // Furniture layer: beds (one per pet), snack bowl, and the toy ball —
@@ -220,12 +250,28 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
       }
       const toy = slotEmoji("toy");
       if (toy) {
-        if (!ball.placed) { ball.x = width * 0.4; ball.vx = 0; ball.placed = true; }
-        ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
-        ctx!.fillText(toy, ball.x, floor);
+        if (!ball.placed) { ball.x = width * 0.4; ball.y = 0; ball.vx = 0; ball.vy = 0; ball.placed = true; }
+        const ballSize = Math.round(size * 0.4);
+        // A shrinking shadow under an airborne ball is what sells the height.
+        if (ball.y > 2) {
+          ctx!.save();
+          ctx!.globalAlpha = Math.max(0.05, 0.22 - ball.y / 600);
+          ctx!.fillStyle = "#000";
+          ctx!.beginPath();
+          ctx!.ellipse(ball.x, floor - 2, ballSize * 0.34, ballSize * 0.12, 0, 0, Math.PI * 2);
+          ctx!.fill();
+          ctx!.restore();
+        }
+        ctx!.font = `${ballSize}px ${EMOJI_FONT}`;
+        ctx!.fillText(toy, ball.x, floor - ball.y);
       } else {
         ball.placed = false;
+        ball.held = false;
+        ball.interest = 0;
       }
+      // Only claim the touch gesture while there's actually a ball to grab.
+      canvas!.style.touchAction = toy ? "none" : "";
+      if (!toy) canvas!.style.cursor = "";
     }
 
     function drawActor(a: Actor, moving: boolean) {
@@ -240,11 +286,17 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
       const onBed = a.mode === "sleep" && !!slotEmoji("bed");
       const bedLift = onBed ? size * 0.15 : 0;
       const bedShift = onBed ? size * 0.3 : 0;
+      // Rive artboards are authored facing right, so they mirror when heading
+      // left. Emoji mirror relative to whichever way their glyph already
+      // points — and head-on glyphs (facing 0) never mirror at all.
+      const flip = useRive
+        ? a.facing === -1
+        : a.glyphFacing !== 0 && a.facing !== a.glyphFacing;
       ctx!.save();
       ctx!.translate(a.x + bedShift, floor - bob - bedLift);
-      if (a.facing === -1) ctx!.scale(-1, 1);
+      if (flip) ctx!.scale(-1, 1);
       if (useRive) {
-        a.riv!.setWalking(a.mode === "walk");
+        a.riv!.setWalking(a.mode === "walk" || a.mode === "chase");
         a.riv!.setSleeping(a.mode === "sleep");
         ctx!.drawImage(a.riv!.canvas, -size / 2, -size, size, size);
       } else {
@@ -280,6 +332,10 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
       }
     }
 
+    // True while the ball is worth chasing: held aloft by the pointer, or still
+    // inside the interest window after a throw.
+    const ballIsLive = () => ball.placed && (ball.held || ball.interest > 0);
+
     function step(a: Actor, dt: number, sleeping: boolean) {
       const pad = 20;
       if (sleeping) {
@@ -288,6 +344,30 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
         else { a.mode = "sleep"; a.vx = 0; }
         return;
       }
+      // A thrown or dangled ball is irresistible — but only to species that
+      // actually play fetch. Everyone else carries on with their idle life.
+      if (a.playful && ballIsLive()) {
+        a.mode = "chase";
+        a.vx = 0;
+        const dx = ball.x - a.x;
+        if (Math.abs(dx) > 3) {
+          a.facing = dx < 0 ? -1 : 1;
+          a.x += Math.sign(dx) * Math.min(Math.abs(dx), CHASE_SPEED * dt);
+          a.hop += dt * 12;
+        }
+        a.x = Math.min(width - pad, Math.max(pad, a.x));
+        // Caught up with it: bat it away so the game keeps going. Only works on
+        // a grounded ball — a held one stays out of reach.
+        if (!ball.held && ball.y < 10 && Math.abs(ball.x - a.x) < petSize() * 0.4) {
+          ball.vx = (ball.x >= a.x ? 1 : -1) * (70 + rand(rng) * 80);
+          ball.vy = 130 + rand(rng) * 90;
+          ball.interest = Math.max(ball.interest, 2.5);
+        }
+        a.until = 0; // re-roll a fresh behavior as soon as interest lapses
+        return;
+      }
+      if (a.mode === "chase") { a.mode = "idle"; a.vx = 0; a.until = 0.4 + rand(rng); }
+
       a.until -= dt;
       if (a.until <= 0) {
         const roll = rand(rng);
@@ -307,27 +387,39 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
         const dx = bowlX() - 16 - a.x; // stand just left of the bowl
         if (Math.abs(dx) > 3) { a.facing = dx < 0 ? -1 : 1; a.x += Math.sign(dx) * Math.min(Math.abs(dx), 60 * dt); a.hop += dt * 9; }
       }
-      // Walking pets kick the ball when they run into it.
-      if (ball.placed && a.mode === "walk" && Math.abs(a.x - ball.x) < petSize() * 0.35) {
+      // Walking pets kick the ball when they run into it — playful ones only.
+      if (ball.placed && a.playful && !ball.held && ball.y < 10 && a.mode === "walk"
+          && Math.abs(a.x - ball.x) < petSize() * 0.35) {
         ball.vx = (ball.x >= a.x ? 1 : -1) * (50 + Math.abs(a.vx));
       }
     }
 
     function stepBall(dt: number) {
-      if (!ball.placed || ball.vx === 0) return;
+      if (!ball.placed) return;
+      if (ball.interest > 0) ball.interest = Math.max(0, ball.interest - dt);
+      if (ball.held) { ball.vx = 0; ball.vy = 0; return; } // the pointer owns it
+      if (ball.vx === 0 && ball.vy === 0 && ball.y === 0) return;
       const pad = 16;
       ball.x += ball.vx * dt;
-      ball.vx *= Math.max(0, 1 - 1.8 * dt); // friction
-      if (Math.abs(ball.vx) < 4) ball.vx = 0;
+      ball.y += ball.vy * dt;
+      ball.vy -= GRAVITY * dt;
+      if (ball.y <= 0) {
+        ball.y = 0;
+        ball.vy = ball.vy < -40 ? -ball.vy * BOUNCE : 0;
+        ball.vx *= Math.max(0, 1 - 1.8 * dt); // rolling friction, ground only
+        if (Math.abs(ball.vx) < 4) ball.vx = 0;
+      }
+      const ceiling = Math.max(0, height - 14);
+      if (ball.y > ceiling) { ball.y = ceiling; ball.vy = -Math.abs(ball.vy) * BOUNCE; }
       if (ball.x < pad) { ball.x = pad; ball.vx = Math.abs(ball.vx) * 0.7; }
       if (ball.x > width - pad) { ball.x = width - pad; ball.vx = -Math.abs(ball.vx) * 0.7; }
     }
 
     function render(moving: boolean) {
       ctx!.clearRect(0, 0, width, height);
-      drawPlant();
+      drawBackdrop();
       drawFurniture();
-      for (const a of actors) drawActor(a, moving && a.mode === "walk");
+      for (const a of actors) drawActor(a, moving && (a.mode === "walk" || a.mode === "chase"));
     }
 
     resize();
@@ -370,6 +462,69 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
     };
     raf = requestAnimationFrame(loop);
 
+    // ---- Grab & throw ----------------------------------------------------
+    // The ball is the one interactive thing on the stage: press on it, drag it
+    // anywhere in the pen, and release to throw. Release velocity comes from
+    // the last two pointer samples, so a flick actually flings it.
+    const floorY = () => height - 6;
+    const ballCenter = () => ({ x: ball.x, y: floorY() - ball.y - petSize() * 0.14 });
+    const grabRadius = () => Math.max(22, petSize() * 0.45);
+    const localPoint = (e: PointerEvent) => {
+      const r = canvas!.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const overBall = (p: { x: number; y: number }) => {
+      const c = ballCenter();
+      return ball.placed && Math.hypot(p.x - c.x, p.y - c.y) <= grabRadius();
+    };
+
+    type Sample = { x: number; y: number; t: number };
+    let drag: { id: number; prev: Sample | null; last: Sample } | null = null;
+
+    const onPointerDown = (e: PointerEvent) => {
+      const p = localPoint(e);
+      if (!overBall(p)) return;
+      drag = { id: e.pointerId, prev: null, last: { x: p.x, y: p.y, t: e.timeStamp } };
+      ball.held = true;
+      ball.vx = 0;
+      ball.vy = 0;
+      canvas!.setPointerCapture(e.pointerId);
+      canvas!.style.cursor = "grabbing";
+      e.preventDefault();
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const p = localPoint(e);
+      if (!drag || drag.id !== e.pointerId) {
+        canvas!.style.cursor = overBall(p) ? "grab" : "";
+        return;
+      }
+      ball.x = Math.min(width - 16, Math.max(16, p.x));
+      ball.y = Math.min(Math.max(0, height - 14), Math.max(0, floorY() - p.y));
+      drag.prev = drag.last;
+      drag.last = { x: p.x, y: p.y, t: e.timeStamp };
+      e.preventDefault();
+    };
+
+    const releaseBall = (e: PointerEvent) => {
+      if (!drag || drag.id !== e.pointerId) return;
+      const from = drag.prev ?? drag.last;
+      const dt = Math.max(16, drag.last.t - from.t) / 1000;
+      const clamp = (v: number) => Math.max(-MAX_THROW, Math.min(MAX_THROW, v));
+      ball.vx = clamp((drag.last.x - from.x) / dt);
+      ball.vy = clamp(-(drag.last.y - from.y) / dt); // screen y is inverted
+      ball.held = false;
+      ball.interest = CHASE_INTEREST; // a plain drop still gets them curious
+      drag = null;
+      canvas!.style.cursor = overBall(localPoint(e)) ? "grab" : "";
+      if (canvas!.hasPointerCapture(e.pointerId)) canvas!.releasePointerCapture(e.pointerId);
+    };
+
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", releaseBall);
+    canvas.addEventListener("pointercancel", releaseBall);
+
     const onVisible = () => {
       if (document.visibilityState === "hidden") { running = false; cancelAnimationFrame(raf); }
       else if (!running) { running = true; last = 0; raf = requestAnimationFrame(loop); }
@@ -382,12 +537,17 @@ export function PetStage({ pets, plant, accessories = [], asleep, reduceMotion, 
       running = false;
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisible);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", releaseBall);
+      canvas.removeEventListener("pointercancel", releaseBall);
       ro.disconnect();
       for (const a of actors) a.riv?.cleanup();
     };
-    // Re-arm only when switching between animated and static rendering; all
-    // other prop changes are read live from stateRef inside the loop.
-  }, [reduceMotion]);
+    // Re-arm when switching between animated and static rendering, and on a
+    // theme change so the static (reduce-motion) frame repaints its wallpaper.
+    // Every other prop is read live from stateRef inside the loop.
+  }, [reduceMotion, theme]);
 
   return <canvas ref={canvasRef} aria-hidden="true" className={className} />;
 }

@@ -113,9 +113,15 @@ export default function App() {
   // guests compute it locally from their focus history (see `gamification`).
   const [serverGam, setServerGam] = useState<Gamification | null>(null);
   const [gamPopup, setGamPopup] = useState<GamSyncResult | null>(null);
+  // Rewards planted straight from the unlock popup, so its buttons can show
+  // "In garden ✓" immediately instead of waiting on the server round-trip.
+  const [justPlanted, setJustPlanted] = useState<string[]>([]);
   // Companions (pets/plants on the timer) are OFF by default; opt in per device.
   const [companionsOn, setCompanionsOn] = useState(() => loadPref("roamly-companions") === "1");
   const toggleCompanions = () => setCompanionsOn((v) => { savePref("roamly-companions", v ? "0" : "1"); return !v; });
+  // The garden is its own area with its own switch; shown by default.
+  const [gardenOn, setGardenOn] = useState(() => loadPref("roamly-garden") !== "0");
+  const toggleGarden = () => setGardenOn((v) => { savePref("roamly-garden", v ? "0" : "1"); return !v; });
   // Completion confetti is ON by default; opt out per device (persisted).
   const [confettiOn, setConfettiOn] = useState(() => loadPref("roamly-confetti") !== "0");
   const toggleConfetti = () => setConfettiOn((v) => { savePref("roamly-confetti", v ? "0" : "1"); return !v; });
@@ -388,10 +394,10 @@ export default function App() {
   // device pref is off or nothing is active.
   const petSleep = usePetSleep(timer);
   const companionStage = useMemo(() => stageProps(gamification), [gamification]);
-  const showCompanions = companionsOn && (companionStage.pets.length > 0 || !!companionStage.plant);
+  const showCompanions = companionsOn && companionStage.pets.length > 0;
   const petStageNode = showCompanions ? (
     <Suspense fallback={null}>
-      <PetStage pets={companionStage.pets} plant={companionStage.plant} accessories={companionStage.accessories} asleep={petSleep.asleep} reduceMotion={a11y.reduceMotion} className="h-full w-full" />
+      <PetStage pets={companionStage.pets} accessories={companionStage.accessories} theme={companionStage.theme} asleep={petSleep.asleep} reduceMotion={a11y.reduceMotion} className="h-full w-full" />
     </Suspense>
   ) : null;
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
@@ -677,9 +683,10 @@ export default function App() {
 
   const gateThen = (fn: () => void) => (isPremium ? fn() : setShowUpsell(true));
 
-  // Pick which pet/plant/accessory is shown on the timer (signed-in only).
-  // Only one plant/tree grows at a time, and only one accessory fits each
-  // slot (bed/hat/face/toy/bowl), so activating one turns its rivals off.
+  // Pick which pet/plant/accessory/theme is active (signed-in only).
+  // Exclusivity differs by kind: one accessory per slot (bed/hat/face/toy/bowl)
+  // and one theme on the pen, but plants and trees are additive — the garden
+  // holds as many as you care to plant, so they never evict each other.
   const onToggleCompanion = useCallback(async (kind: "pet" | "reward", id: string, active: boolean) => {
     if (!session?.user.id) return;
     if (kind === "pet") {
@@ -690,7 +697,8 @@ export default function App() {
         const rivals = (serverGam?.rewards ?? []).filter((r) => {
           if (!r.is_active || r.id === id) return false;
           if (target?.kind === "accessory") return r.kind === "accessory" && r.meta.slot === target.meta.slot;
-          return r.kind === "plant" || r.kind === "tree";
+          if (target?.kind === "theme") return r.kind === "theme";
+          return false; // plants/trees coexist in the garden
         });
         await Promise.all(rivals.map((r) => setRewardActive(r.id, false)));
       }
@@ -1078,7 +1086,8 @@ export default function App() {
               {session ? (
                 <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
                   onSignIn={onSignIn} onToggle={onToggleCompanion}
-                  companionsOn={companionsOn} onToggleCompanions={toggleCompanions} />
+                  companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
+                  gardenOn={gardenOn} onToggleGarden={toggleGarden} />
               ) : (
                 <GardenLock onSignIn={onSignIn} />
               )}
@@ -1242,7 +1251,14 @@ export default function App() {
       {showUpsell && <Upsell onClose={() => setShowUpsell(false)} onUpgrade={() => { setShowUpsell(false); startCheckout(); }}
         onBuyCredits={() => { setShowUpsell(false); setView("premium"); }} />}
       {showAuth && <AuthPanel onClose={() => setShowAuth(false)} />}
-      {gamPopup && <UnlockToast result={gamPopup} onClose={() => setGamPopup(null)} />}
+      {gamPopup && (
+        <UnlockToast result={gamPopup} onClose={() => setGamPopup(null)}
+          planted={justPlanted}
+          onPlant={session ? (rewardId) => {
+            setJustPlanted((ids) => [...ids, rewardId]);
+            void onToggleCompanion("reward", rewardId, true);
+          } : undefined} />
+      )}
       {needsPassword && session && (
         <SetPasswordModal onDone={() => {
           setNeedsPassword(false);
