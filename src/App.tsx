@@ -1063,8 +1063,7 @@ export default function App() {
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
-              garden={gardenNode} gardenOn={gardenOn} onToggleGarden={toggleGarden} hasPlants={companionStage.plants.length > 0}
-              petsInteractive={petsInteractive}
+              garden={gardenNode} petsInteractive={petsInteractive}
               dockClosed={dockClosed} onReopenDock={reopenDock}
               onOpenCustomize={() => setShowCustomize(true)}
               pipSupported={pipSupported} pipActive={!!pipWindow}
@@ -1746,7 +1745,7 @@ function PomodoroExplainerPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, petsInteractive, garden, gardenOn, onToggleGarden, hasPlants, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, petsInteractive, garden, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1862,12 +1861,6 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <button onClick={() => (pipActive ? onClosePip?.() : onPopOut?.())} aria-pressed={pipActive}
                   className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${pipActive ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
                   <PictureInPicture2 size={13} /> {pipActive ? "Close pop-out" : "Pop out timer"}
-                </button>
-              )}
-              {hasPlants && (
-                <button onClick={onToggleGarden} aria-pressed={gardenOn}
-                  className={`flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-xs font-medium transition ${gardenOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-                  <Sprout size={13} /> {gardenOn ? "Hide garden" : "Show garden"}
                 </button>
               )}
               {showCompanions && (
