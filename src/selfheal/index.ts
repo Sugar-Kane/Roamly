@@ -63,8 +63,10 @@ export function initSelfHealing(options: SelfHealingOptions = {}): void {
 }
 
 /** Called by the app when auth state settles, mirroring setTrackUser(). */
-export function identifySelfHealing(userId: string | null, isPremium: boolean | null): void {
-  try { identify(userId, isPremium); } catch { /* ignore */ }
+export function identifySelfHealing(
+  userId: string | null, isPremium: boolean | null, token?: string | null
+): void {
+  try { identify(userId, isPremium, token); } catch { /* ignore */ }
 }
 
 export { expect } from "./outcomes";

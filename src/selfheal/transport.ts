@@ -16,7 +16,7 @@
 // PII scrub, and server-stamped release/geo the client can't forge.
 
 import type { SelfHealEvent, Severity } from "./types";
-import { getContext } from "./session";
+import { getContext, currentAuthToken } from "./session";
 import { redactPayload } from "./redact";
 
 const ENDPOINT = "/api/selfheal";
@@ -151,9 +151,19 @@ export async function flush(beacon = false): Promise<void> {
       return;
     }
 
+    // Ingest derives identity from a VERIFIED token or records none — a
+    // client-claimed user_id is ignored, so without this header every row is
+    // anonymous. Cookies stay off; this is a bearer token to our own origin.
+    // (The sendBeacon path above cannot set headers at all, so unload batches
+    // are anonymous by construction; the session row keeps the user_id an
+    // earlier authenticated batch established.)
+    const token = currentAuthToken();
     const res = await fetch(ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
       body,
       keepalive: true,
       // Telemetry is not user data; never send cookies with it.

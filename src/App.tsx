@@ -214,7 +214,7 @@ export default function App() {
     // Same identity, second consumer: the self-healing SDK attributes incidents
     // and evaluates premium-gated flags from it. Signed-out sessions stay
     // covered (userId null) — anonymous failures are the ones nobody reports.
-    identifySelfHealing(userId ?? null, null);
+    identifySelfHealing(userId ?? null, null, session?.access_token ?? null);
     if (!userId) {
       setProfile(null);
       const guestTasks = loadGuestTasks();
