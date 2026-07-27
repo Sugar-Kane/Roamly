@@ -12,9 +12,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type SpotifyController = {
+export type SpotifyController = {
   destroy: () => void;
   pause: () => void;
+  resume: () => void;
+  togglePlay: () => void;
   addListener: (event: string, cb: (e: { data?: { isPaused?: boolean; isBuffering?: boolean } }) => void) => void;
 };
 type SpotifyIFrameApi = {
@@ -43,7 +45,7 @@ function loadIFrameApi(): Promise<SpotifyIFrameApi | null> {
   return apiPromise;
 }
 
-export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay }: {
+export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, onController, onPausedChange }: {
   uri: string;
   fallbackSrc: string; // plain embed URL used if the API script can't load
   height: number;
@@ -51,12 +53,22 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay }: 
   pauseSignal: number;
   // Fired when playback actually starts inside the player.
   onPlay: () => void;
+  // Handed the live controller (and null on teardown) so surfaces outside this
+  // component — notably the pop-out timer window, which cannot host a second
+  // player — can drive playback remotely.
+  onController?: (c: SpotifyController | null) => void;
+  // Play/pause state, so those remote surfaces can render the right icon.
+  onPausedChange?: (paused: boolean) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SpotifyController | null>(null);
   const [failed, setFailed] = useState(false);
   const onPlayRef = useRef(onPlay);
   onPlayRef.current = onPlay;
+  const onControllerRef = useRef(onController);
+  onControllerRef.current = onController;
+  const onPausedRef = useRef(onPausedChange);
+  onPausedRef.current = onPausedChange;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -74,10 +86,12 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay }: 
         if (cancelled) { try { c.destroy(); } catch { /* already gone */ } return; }
         controller = c;
         controllerRef.current = c;
+        onControllerRef.current?.(c);
         let wasPaused = true;
         c.addListener("playback_update", (e) => {
           const paused = e.data?.isPaused !== false;
           if (wasPaused && !paused) onPlayRef.current();
+          if (paused !== wasPaused) onPausedRef.current?.(paused);
           wasPaused = paused;
         });
       });
@@ -85,6 +99,8 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay }: 
     return () => {
       cancelled = true;
       controllerRef.current = null;
+      onControllerRef.current?.(null);
+      onPausedRef.current?.(true);
       try { controller?.destroy(); } catch { /* already destroyed */ }
       if (host.contains(mount)) mount.remove();
     };
