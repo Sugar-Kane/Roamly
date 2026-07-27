@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 
 export type SpotifyController = {
   destroy: () => void;
+  play: () => void;
   pause: () => void;
   resume: () => void;
   togglePlay: () => void;
@@ -45,10 +46,14 @@ function loadIFrameApi(): Promise<SpotifyIFrameApi | null> {
   return apiPromise;
 }
 
-export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, onController, onPausedChange }: {
+export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, onController, onPausedChange, autoplay = false }: {
   uri: string;
   fallbackSrc: string; // plain embed URL used if the API script can't load
   height: number;
+  // Start playing as soon as the player is ready, instead of loading paused.
+  // Set only when the user actively picked this station (never for the dock's
+  // preloaded default), so nothing starts making noise on its own.
+  autoplay?: boolean;
   // Bumped by App whenever a focus sound starts; the player pauses in response.
   pauseSignal: number;
   // Fired when playback actually starts inside the player.
@@ -69,6 +74,10 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, on
   onControllerRef.current = onController;
   const onPausedRef = useRef(onPausedChange);
   onPausedRef.current = onPausedChange;
+  // Read through a ref so toggling autoplay never re-runs the mount effect —
+  // that would tear down and rebuild a happily playing controller.
+  const autoplayRef = useRef(autoplay);
+  autoplayRef.current = autoplay;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -87,6 +96,13 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, on
         controller = c;
         controllerRef.current = c;
         onControllerRef.current?.(c);
+        // `ready` fires once the embed can accept commands — calling play() in
+        // this callback instead is too early and is silently dropped.
+        if (autoplayRef.current) {
+          c.addListener("ready", () => {
+            try { c.play(); } catch { /* autoplay refused — the player still shows */ }
+          });
+        }
         let wasPaused = true;
         c.addListener("playback_update", (e) => {
           const paused = e.data?.isPaused !== false;

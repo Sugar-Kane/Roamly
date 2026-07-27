@@ -6,7 +6,13 @@
 // chips did, so nothing resets or migrates.
 
 import { Drawer, DrawerSection, DrawerRow } from "./Drawer";
-import { Bell, BellOff } from "lucide-react";
+import { BellOff } from "lucide-react";
+
+const NOTIFY_HINT = {
+  on: "You'll get a system notification at each phase end, even in another tab.",
+  off: "Get a system notification when a phase ends, even in another tab.",
+  denied: "Blocked in your browser's site settings. In-app alerts still work.",
+};
 
 function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; label: string }) {
   return (
@@ -29,11 +35,17 @@ export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, ga
   onToggleAutoFlow: () => void;
   alerts: {
     permission: string;
-    requestPermission: () => void;
     soundEnabled: boolean;
     setSoundEnabled: (on: boolean) => void;
+    notifyEnabled: boolean;
+    setNotifyEnabled: (on: boolean) => void;
   };
 }) {
+  const blocked = alerts.permission === "denied";
+  // "Granted but switched off in-app" and "never asked" both read as off — the
+  // switch reflects whether notifications will actually arrive, not the raw
+  // browser permission.
+  const notifyOn = alerts.permission === "granted" && alerts.notifyEnabled;
   return (
     <Drawer label="Customize Session" onClose={onClose} testId="customize-session">
       <DrawerSection title="Session experience">
@@ -58,22 +70,18 @@ export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, ga
         <DrawerRow label="Completion sound" hint="A short chime when a focus block or break finishes.">
           <Toggle on={alerts.soundEnabled} onClick={() => alerts.setSoundEnabled(!alerts.soundEnabled)} label="Completion sound" />
         </DrawerRow>
-        {alerts.permission === "granted" && (
-          <DrawerRow label="Browser notifications" hint="On — you'll get a system notification at each phase end.">
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Bell size={13} /> On</span>
-          </DrawerRow>
-        )}
-        {alerts.permission === "denied" && (
-          <DrawerRow label="Browser notifications" hint="Blocked in your browser's site settings. In-app alerts still work.">
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><BellOff size={13} /> Blocked</span>
-          </DrawerRow>
-        )}
-        {alerts.permission === "default" && (
-          <DrawerRow label="Browser notifications" hint="Get a system notification when a phase ends, even in another tab.">
-            <button onClick={alerts.requestPermission}
-              className="flex min-h-[2.5rem] items-center gap-1.5 rounded-full border border-primary bg-primary/10 px-3.5 text-xs font-medium text-primary transition hover:bg-primary/15">
-              <Bell size={13} /> Enable
-            </button>
+        {/* One switch for all three permission states. Turning it on asks for
+            the browser permission when that hasn't been granted yet, so there's
+            no separate Enable button. Blocked is the only dead end — the
+            permission can only be restored from the browser's own site
+            settings, so the switch is disabled and says so. */}
+        {alerts.permission !== "unsupported" && (
+          <DrawerRow label="Browser notifications" hint={NOTIFY_HINT[blocked ? "denied" : notifyOn ? "on" : "off"]}>
+            {blocked ? (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><BellOff size={13} /> Blocked</span>
+            ) : (
+              <Toggle on={notifyOn} onClick={() => alerts.setNotifyEnabled(!notifyOn)} label="Browser notifications" />
+            )}
           </DrawerRow>
         )}
       </DrawerSection>

@@ -678,3 +678,47 @@ test("visible buttons have accessible names", async ({ page }) => {
     expect(name, `button #${i} lacks an accessible name`).not.toBe("");
   }
 });
+
+// Headless Chromium reports Notification.permission as "denied" no matter what
+// permissions the context grants, so the granted state is stubbed at the API
+// level. That is exactly the input the component branches on.
+test.describe("with notifications granted", () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(Notification, "permission", { get: () => "granted", configurable: true });
+    });
+  });
+
+  test("browser notifications toggle on and off from Customize Session", async ({ page }) => {
+    await goHome(page);
+    await page.getByRole("button", { name: "Start", exact: true }).click();
+    await page.getByTestId("focus-overlay").getByRole("button", { name: "Customize Session" }).click();
+    const drawer = page.getByTestId("customize-session");
+    // Granted used to render a dead "On" label with no way back off. It is a
+    // real switch now — the browser permission can't be revoked from JS, so
+    // "off" is an app preference that gates delivery.
+    const notify = drawer.getByRole("switch", { name: "Browser notifications" });
+    await expect(notify).toBeVisible();
+    await expect(notify).toHaveAttribute("aria-checked", "true");
+    await notify.click();
+    await expect(notify).toHaveAttribute("aria-checked", "false");
+    // The off choice survives a reload.
+    await page.reload();
+    await page.getByRole("button", { name: "Start", exact: true }).click();
+    await page.getByTestId("focus-overlay").getByRole("button", { name: "Customize Session" }).click();
+    await expect(page.getByTestId("customize-session").getByRole("switch", { name: "Browser notifications" }))
+      .toHaveAttribute("aria-checked", "false");
+  });
+});
+
+test("the garden toggle lives only in Customize Session", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Focus mode" }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  // It used to sit in the timer's control row next to Pause/Skip.
+  await expect(overlay.getByRole("button", { name: /garden/i })).toHaveCount(0);
+  await overlay.getByRole("button", { name: "Customize Session" }).click();
+  await expect(page.getByTestId("customize-session").getByRole("switch", { name: "Show garden during focus" }))
+    .toBeVisible();
+});
