@@ -1,0 +1,60 @@
+# Scheduled investigation sweep.
+#
+# The pg_cron sweeps inside Postgres do detection (contract success rates,
+# journey timeouts, flag auto-rollback). This workflow does the part that needs
+# to call out of the database: AI diagnosis of whatever detection has queued.
+#
+# Runs every 15 minutes rather than continuously, deliberately. Investigation
+# costs money per incident, and an incident that has existed for 14 minutes is
+# not meaningfully worse than one that has existed for 1 — while a runaway loop
+# investigating the same fingerprint every 30 seconds would be a budget
+# incident of its own. Truly urgent cases don't wait for this: a critical
+# incident is alerted the moment sh_record_incident opens it.
+
+name: Self-Healing Sweep
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Which stage to run
+        required: false
+        default: investigate
+        type: choice
+        options: [investigate, reproduce, patch]
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Trigger investigation
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          STAGE: ${{ inputs.stage || 'investigate' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "APP_URL / CRON_SECRET not configured; nothing to do."
+            exit 0
+          fi
+          # The endpoint caps itself at 5 incidents per invocation, so a backlog
+          # drains gradually instead of spending the month's AI budget in one
+          # sweep after an outage generates a thousand incidents.
+          RESPONSE=$(curl -sS -X POST "$APP_URL/api/selfheal" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "content-type: application/json" \
+            -d "{\"op\":\"investigate\",\"stage\":\"$STAGE\"}" \
+            -w "\n%{http_code}")
+          CODE=$(echo "$RESPONSE" | tail -1)
+          echo "$RESPONSE" | head -n -1
+          if [ "$CODE" != "200" ]; then
+            echo "::error::Investigation sweep returned HTTP $CODE"
+            exit 1
+          fi

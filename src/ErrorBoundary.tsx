@@ -4,6 +4,7 @@
 
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { reportError } from "./errors";
+import { reportReactCrash, forceReplay, flushTelemetry } from "./selfheal";
 
 type Props = { children: ReactNode };
 type State = { crashed: boolean };
@@ -17,6 +18,13 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     reportError(error.message || "render crash", `${error.stack ?? ""}\n${info.componentStack ?? ""}`);
+    // Also feed the self-healing pipeline: the component stack is what lets the
+    // AI jump straight to the failing file instead of guessing from a message.
+    // A render crash always warrants a replay trace and an immediate flush —
+    // the user is about to reload, taking the in-memory queue with them.
+    reportReactCrash(error.message || "render crash", info.componentStack ?? "", error.stack);
+    forceReplay();
+    void flushTelemetry(true);
   }
 
   render() {

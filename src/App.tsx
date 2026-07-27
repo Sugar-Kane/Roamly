@@ -13,6 +13,7 @@ import { supabase, arrivedViaEmailLink } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, saveThemePreference, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
+import { identifySelfHealing } from "./selfheal";
 import { loadPref, savePref } from "./storage";
 import { FeedbackModal } from "./Feedback";
 import { useEndOfPhaseAlerts } from "./useEndOfPhaseAlerts";
@@ -210,6 +211,10 @@ export default function App() {
   useEffect(() => {
     const userId = session?.user.id;
     setTrackUser(userId ?? null);
+    // Same identity, second consumer: the self-healing SDK attributes incidents
+    // and evaluates premium-gated flags from it. Signed-out sessions stay
+    // covered (userId null) — anonymous failures are the ones nobody reports.
+    identifySelfHealing(userId ?? null, null);
     if (!userId) {
       setProfile(null);
       const guestTasks = loadGuestTasks();
@@ -242,6 +247,7 @@ export default function App() {
       const nextProfile = await fetchProfile(userId);
       if (cancelled) return;
       setProfile(nextProfile);
+      identifySelfHealing(userId, nextProfile?.is_premium ?? null);
 
       // Theme preference priority: the account's saved theme wins; if the
       // account has none yet, adopt the device's current pick and save it as

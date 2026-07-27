@@ -1272,3 +1272,219 @@ export async function adminUploadMusicTrack(
   }
   return {};
 }
+
+// ---------------------------------------------------------------------------
+// Self-healing platform (Bug Intelligence dashboard)
+// ---------------------------------------------------------------------------
+// Every read is an is_admin()-gated SECURITY DEFINER RPC, matching the rest of
+// the admin dashboard. The sh_* tables themselves have RLS on with no policies,
+// so these RPCs are the only way a browser can see any of this data.
+//
+// WRITES that carry consequences (approving a patch, opening a PR, disabling a
+// flag) deliberately do NOT go through PostgREST — they POST to
+// /api/selfheal with op:"action", which re-authenticates, re-runs the classifier,
+// and writes the audit log. A client must never be able to move a patch to
+// "approved" by writing a row.
+
+export type ShSeverity = "info" | "low" | "medium" | "high" | "critical";
+export type ShApprovalLevel = "auto" | "pr_only" | "manual";
+
+export type ShOverview = {
+  open_incidents: number; critical_incidents: number; affected_users: number;
+  auto_resolved: number; awaiting_approval: number;
+  mttd_seconds: number | null; mttr_seconds: number | null;
+  outcome_success_rate: number | null; journey_completion_rate: number | null;
+  sessions: number; error_sessions: number;
+};
+
+export type ShIncident = {
+  id: string; title: string; kind: string; status: string; severity: ShSeverity;
+  approval_level: ShApprovalLevel; source: string; route: string | null;
+  component: string | null; contract_key: string | null; journey_key: string | null;
+  occurrences: number; affected_users: number; priority_score: number;
+  suspected_release: string | null; first_seen_at: string; last_seen_at: string;
+  assigned_email: string | null; has_diagnosis: boolean; has_patch: boolean;
+  patch_status: string | null; pr_url: string | null; preview_url: string | null;
+  ai_confidence: number | null; total_count: number;
+};
+
+export type ShFeatureHealth = {
+  contract_key: string; label: string; attempts: number; successes: number;
+  success_rate: number | null; floor_rate: number; p95_ms: number | null; severity: ShSeverity;
+};
+
+export type ShIncidentDay = { day: string; opened: number; resolved: number; affected_users: number };
+
+export type ShFlag = {
+  key: string; label: string; description: string | null; enabled: boolean;
+  rollout_percent: number; premium_only: boolean; beta_only: boolean;
+  auto_disabled_at: string | null; auto_disabled_reason: string | null; updated_at: string;
+};
+
+export async function shOverview(startISO: string, endISO: string): Promise<ShOverview | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_sh_overview", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] shOverview failed", error.message); return null; }
+  const r = (data ?? [])[0] as Record<string, unknown> | undefined;
+  if (!r) return null;
+  return {
+    open_incidents: num(r.open_incidents), critical_incidents: num(r.critical_incidents),
+    affected_users: num(r.affected_users), auto_resolved: num(r.auto_resolved),
+    awaiting_approval: num(r.awaiting_approval),
+    mttd_seconds: r.mttd_seconds == null ? null : num(r.mttd_seconds),
+    mttr_seconds: r.mttr_seconds == null ? null : num(r.mttr_seconds),
+    outcome_success_rate: r.outcome_success_rate == null ? null : num(r.outcome_success_rate),
+    journey_completion_rate: r.journey_completion_rate == null ? null : num(r.journey_completion_rate),
+    sessions: num(r.sessions), error_sessions: num(r.error_sessions),
+  };
+}
+
+export async function shIncidents(params: {
+  status?: string | null; severity?: string | null; search?: string; limit?: number; offset?: number;
+}): Promise<ShIncident[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_sh_incidents", {
+    p_status: params.status || null, p_severity: params.severity || null,
+    p_search: params.search || null, p_limit: params.limit ?? 50, p_offset: params.offset ?? 0,
+  });
+  if (error) { console.warn("[Roamly] shIncidents failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    id: String(r.id), title: String(r.title), kind: String(r.kind), status: String(r.status),
+    severity: String(r.severity) as ShSeverity, approval_level: String(r.approval_level) as ShApprovalLevel,
+    source: String(r.source), route: r.route ? String(r.route) : null,
+    component: r.component ? String(r.component) : null,
+    contract_key: r.contract_key ? String(r.contract_key) : null,
+    journey_key: r.journey_key ? String(r.journey_key) : null,
+    occurrences: num(r.occurrences), affected_users: num(r.affected_users),
+    priority_score: num(r.priority_score),
+    suspected_release: r.suspected_release ? String(r.suspected_release) : null,
+    first_seen_at: String(r.first_seen_at), last_seen_at: String(r.last_seen_at),
+    assigned_email: r.assigned_email ? String(r.assigned_email) : null,
+    has_diagnosis: Boolean(r.has_diagnosis), has_patch: Boolean(r.has_patch),
+    patch_status: r.patch_status ? String(r.patch_status) : null,
+    pr_url: r.pr_url ? String(r.pr_url) : null,
+    preview_url: r.preview_url ? String(r.preview_url) : null,
+    ai_confidence: r.ai_confidence == null ? null : num(r.ai_confidence),
+    total_count: num(r.total_count),
+  }));
+}
+
+export async function shIncidentDetail(id: string): Promise<Record<string, unknown> | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.rpc("admin_sh_incident_detail", { p_id: id });
+  if (error) { console.warn("[Roamly] shIncidentDetail failed", error.message); return null; }
+  return (data ?? null) as Record<string, unknown> | null;
+}
+
+export async function shFeatureHealth(startISO: string, endISO: string): Promise<ShFeatureHealth[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_sh_feature_health", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] shFeatureHealth failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    contract_key: String(r.contract_key), label: String(r.label),
+    attempts: num(r.attempts), successes: num(r.successes),
+    success_rate: r.success_rate == null ? null : num(r.success_rate),
+    floor_rate: num(r.floor_rate), p95_ms: r.p95_ms == null ? null : num(r.p95_ms),
+    severity: String(r.severity) as ShSeverity,
+  }));
+}
+
+export async function shIncidentSeries(startISO: string, endISO: string): Promise<ShIncidentDay[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_sh_incident_series", { p_start: startISO, p_end: endISO });
+  if (error) { console.warn("[Roamly] shIncidentSeries failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    day: String(r.day), opened: num(r.opened), resolved: num(r.resolved), affected_users: num(r.affected_users),
+  }));
+}
+
+export async function shSetIncident(
+  id: string, fields: { status?: string; severity?: ShSeverity; resolution?: string },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { error } = await supabase.rpc("admin_sh_set_incident", {
+    p_id: id, p_status: fields.status ?? null, p_severity: fields.severity ?? null,
+    p_assign: null, p_resolution: fields.resolution ?? null,
+  });
+  if (error) {
+    if (error.message.includes("not_admin")) return { error: "You don't have admin access." };
+    return { error: "Couldn't update that incident." };
+  }
+  return {};
+}
+
+export async function shFlags(): Promise<ShFlag[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_sh_flags");
+  if (error) { console.warn("[Roamly] shFlags failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    key: String(r.key), label: String(r.label),
+    description: r.description ? String(r.description) : null,
+    enabled: Boolean(r.enabled), rollout_percent: num(r.rollout_percent),
+    premium_only: Boolean(r.premium_only), beta_only: Boolean(r.beta_only),
+    auto_disabled_at: r.auto_disabled_at ? String(r.auto_disabled_at) : null,
+    auto_disabled_reason: r.auto_disabled_reason ? String(r.auto_disabled_reason) : null,
+    updated_at: String(r.updated_at),
+  }));
+}
+
+export async function shSetFlag(
+  key: string, fields: { enabled?: boolean; rollout?: number; reason?: string },
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { error } = await supabase.rpc("admin_sh_set_flag", {
+    p_key: key, p_enabled: fields.enabled ?? null,
+    p_rollout: fields.rollout ?? null, p_reason: fields.reason ?? null,
+  });
+  if (error) return { error: error.message.includes("not_admin") ? "You don't have admin access." : "Couldn't update that flag." };
+  return {};
+}
+
+/**
+ * Consequential actions go through the API, never straight to the database.
+ * The endpoint re-verifies admin membership, re-runs sh_classify_approval (so
+ * a stale client can't approve at an outdated tier), and writes sh_audit_log
+ * before acting.
+ */
+export async function shAction(
+  action: "approve" | "reject" | "open_pr" | "rollback" | "disable_flag" | "ignore",
+  payload: { patchId?: string; incidentId?: string; flagKey?: string; reason?: string },
+): Promise<{ ok?: boolean; url?: string; error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) return { error: "Sign in again." };
+  try {
+    const res = await fetch("/api/selfheal", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ op: "action", action, ...payload }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: (body as { error?: string }).error ?? "That action failed." };
+    return { ok: true, url: (body as { url?: string }).url };
+  } catch {
+    return { error: "Couldn't reach the server." };
+  }
+}
+
+/** Kick off (or re-run) AI analysis for one incident. */
+export async function shInvestigate(
+  incidentId: string, stage: "investigate" | "reproduce" | "patch",
+): Promise<{ ok?: boolean; error?: string }> {
+  if (!supabase) return { error: "Not available." };
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) return { error: "Sign in again." };
+  try {
+    const res = await fetch("/api/selfheal", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      body: JSON.stringify({ op: "investigate", incidentId, stage }),
+    });
+    if (!res.ok) return { error: "Analysis failed." };
+    return { ok: true };
+  } catch {
+    return { error: "Couldn't reach the server." };
+  }
+}

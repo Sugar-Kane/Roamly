@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
-import { limitOrResponse } from "./_ratelimit";
+import { limitOrResponse } from "./_ratelimit.js";
 
 // All user-facing Stripe session operations behind one endpoint (Vercel's
 // Hobby plan caps a deployment at 12 serverless functions, and these three

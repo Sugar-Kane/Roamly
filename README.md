@@ -19,14 +19,34 @@ Browser (React 19 + Vite SPA, src/)
 - **Premium** is a Stripe subscription. `profiles.is_premium` is flipped **only** by the webhook; column-level grants stop clients from self-upgrading.
 - **AI uploads** (PDF/images/Word/PowerPoint/text) go to Supabase Storage (`study-uploads`, per-user folders), then `api/generate-tasks` has Claude extract a task list. Quotas: free 3/month, premium 10/month, plus a global monthly circuit-breaker bounding total spend.
 
+## Self-healing platform
+
+Roamly runs an AI self-healing platform that detects broken features from user
+behaviour — not just crashes — diagnoses the cause, writes a failing test,
+proposes a fix, and puts one decision in front of a human. Its central idea is
+**feature outcome contracts**: every important feature declares what "it worked"
+means (a row exists, a route was entered, a toast appeared), and anything that
+fails to reach its declared outcome inside its timeout is a defect, reported
+with exactly which expectation went unmet.
+
+Payments, authentication, authorization, RLS, and schema are **never** touched
+by automation, enforced in four independent layers with a database trigger as
+the authoritative one.
+
+Full blueprint: **[`docs/self-healing/`](docs/self-healing/)**. Operator surface:
+Admin → Bug Intelligence.
+
 ## Repo layout
 
 ```
 src/            React app (App.tsx is the shell + most views)
   db.ts         Supabase data layer      rooms.ts   rooms/friends/notifications
   focusSounds.ts WebAudio music engine   track.ts   usage telemetry
+  selfheal/     self-healing SDK: outcome contracts, journeys, sensors,
+                privacy-aware replay, feature flags, batched telemetry
 api/            Vercel functions: create-checkout-session, create-portal-session,
-                stripe-webhook, invite, generate-tasks, health
+                stripe-webhook, invite, generate-tasks, health,
+                selfheal (telemetry ingest + AI investigation + actions)
 supabase/       schema.sql (CANONICAL — full schema incl. RLS + RPCs)
                 dated *.sql migration files (already folded into schema.sql)
                 rooms_schema.sql (historical; superseded by schema.sql)
