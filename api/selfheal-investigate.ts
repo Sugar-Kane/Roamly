@@ -54,8 +54,8 @@ export async function POST(request: Request): Promise<Response> {
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
 
   // Two accepted callers: the cron secret, or an admin's JWT. Nothing else.
-  const authorized = await authorize(request, admin);
-  if (!authorized.ok) return json({ error: authorized.reason }, authorized.status);
+  const denied = await authorize(request, admin);
+  if (denied) return denied;
 
   let body: { incidentId?: string; stage?: string };
   try { body = await request.json() as typeof body; } catch { body = {}; }
@@ -87,13 +87,17 @@ export async function POST(request: Request): Promise<Response> {
   return json({ ok: true, stage, processed: results.length, results }, 200);
 }
 
-async function authorize(
-  request: Request, admin: SupabaseClient
-): Promise<{ ok: true } | { ok: false; reason: string; status: number }> {
+/**
+ * Returns null when the caller is allowed, or a ready-to-send error Response.
+ * Same shape as limitOrResponse() in _ratelimit.ts — deliberately, rather than
+ * a discriminated union, because Vercel type-checks functions with its own
+ * compiler settings and union narrowing does not survive that trip.
+ */
+async function authorize(request: Request, admin: SupabaseClient): Promise<Response | null> {
   const cronSecret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization") ?? "";
 
-  if (cronSecret && auth === `Bearer ${cronSecret}`) return { ok: true };
+  if (cronSecret && auth === `Bearer ${cronSecret}`) return null;
 
   if (auth.startsWith("Bearer ")) {
     const { data, error } = await admin.auth.getUser(auth.slice(7));
@@ -102,11 +106,11 @@ async function authorize(
       // Checked here against the service-role client rather than trusted from
       // the caller — this endpoint spends money and reads source code.
       const { data: row } = await admin.from("admins").select("user_id").eq("user_id", data.user.id).maybeSingle();
-      if (row) return { ok: true };
-      return { ok: false, reason: "not_admin", status: 403 };
+      if (row) return null;
+      return json({ error: "not_admin" }, 403);
     }
   }
-  return { ok: false, reason: "unauthorized", status: 401 };
+  return json({ error: "unauthorized" }, 401);
 }
 
 /** Highest-priority incidents with no diagnosis yet. */
