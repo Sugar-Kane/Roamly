@@ -21,6 +21,7 @@ import { FeaturesPage, EngagementPage } from "./adminAnalytics";
 import { UserDetail } from "./adminUserDetail";
 import { RevenuePage } from "./adminRevenue";
 import { InvitesPage, ErrorsPage } from "./adminOps";
+import { SelfHealingPage } from "./adminSelfHealing";
 import { MusicPage } from "./adminMusic";
 import { ExplorerPage } from "./adminExplorer";
 
@@ -57,6 +58,7 @@ export function AdminView({ isAdmin }: { isAdmin: boolean }) {
   // scheduled for later phases show a labeled placeholder rather than fake data.
   const content: Record<AdminSectionId, ReactNode> = {
     overview: <AdminOverviewPage state={filters} onDrill={setSection} />,
+    selfhealing: <SelfHealingPage state={filters} />,
     users: <AdminUsers />,
     features: <FeaturesPage state={filters} />,
     engagement: <EngagementPage state={filters} />,

@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
-import { limitOrResponse } from "./_ratelimit";
-import { apiLog } from "./_log";
+import { limitOrResponse } from "./_ratelimit.js";
+import { apiLog } from "./_log.js";
 
 // Self-service, PERMANENT account deletion — the user deleting THEIR OWN
 // account. Unlike api/admin-account's delete_user, there is no admin allowlist: the
