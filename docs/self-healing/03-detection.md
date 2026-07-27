@@ -127,16 +127,34 @@ A click on something that looks interactive where **nothing observable
 happened**: no structural DOM change, no navigation, no network request, within
 1.2s.
 
-The subtlety that makes this work is what counts as "something happened".
-Roamly always has a running timer rewriting text and toggling animation
-classes, so a naive `MutationObserver` on `{childList, subtree, attributes,
-characterData}` reports activity 100% of the time and suppresses every real dead
-click. (The first implementation did exactly this; `tests/selfheal.spec.ts`
-caught it.) `isResponsiveMutation()` therefore counts only:
+The subtlety that makes this work is what counts as "something happened", and
+getting it wrong breaks the detector silently in **both** directions. Two
+versions of this code were wrong before the current one, and the test suite
+caught both:
 
-- **structural** changes (nodes added/removed — never attributes or text), that are
-- inside the clicked element's neighbourhood, **or** a newly mounted overlay
-  (`role=dialog|status|alert|menu|listbox|tooltip`, `[aria-modal]`, `[data-sh]`).
+1. Observing `{childList, subtree, attributes, characterData}` and counting any
+   mutation. Roamly always has a running timer rewriting text and toggling
+   animation classes, so this was true 100% of the time — it suppressed every
+   real dead click.
+2. Counting a mutation whose target *contains* the clicked element. That reads
+   as "a change around the button", but `document.body.contains(anyButton)` is
+   always true, so any root-level re-render — constant in a React SPA — had the
+   same suppressing effect. **Ancestor containment is not evidence.**
+
+`isResponsiveMutation()` therefore counts only **structural** changes (nodes
+added or removed — never attributes or text) that are:
+
+- inside the clicked element's own subtree, **or**
+- inside its immediate parent's subtree, and only when that parent is narrow
+  enough to mean something (`<body>` and `<html>` are excluded), **or**
+- a newly mounted overlay — `role=dialog|alertdialog|status|alert|menu|listbox|tooltip`,
+  `[aria-modal]`, `[data-state=open]`, or `[data-sh]`.
+
+The known tradeoff: a button that renders a response somewhere far away in the
+tree, with no overlay role and no `data-sh` attribute, will be reported as a
+dead click. That is the correct direction to err — a false positive costs one
+triage, while the suppression bugs above cost the entire detector — and adding
+`data-sh` to the responding element fixes it.
 
 Disabled and `aria-disabled` controls are excluded — a disabled button doing
 nothing is correct behaviour. Anchors with a real `href` are excluded — the

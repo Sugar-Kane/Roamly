@@ -55,12 +55,22 @@ function looksInteractive(el: Element | null): boolean {
  * ignored entirely.
  */
 function isResponsiveMutation(records: MutationRecord[], clicked: Element): boolean {
+  // The clicked element's immediate neighbourhood — but only when that is a
+  // narrow enough scope to mean anything. An earlier version accepted any
+  // ANCESTOR of the clicked element, which is always satisfied by <body>: in a
+  // React SPA something re-renders at the root constantly, so every dead click
+  // read as responsive. Ancestor containment is not evidence.
+  const scope = clicked.parentElement;
+  const scopeIsMeaningful =
+    scope != null && scope !== document.body && scope !== document.documentElement;
+
   for (const record of records) {
     if (record.type !== "childList" || record.addedNodes.length + record.removedNodes.length === 0) continue;
     const target = record.target as Element;
 
-    // A change inside (or around) the thing that was clicked.
-    if (clicked.contains(target) || target.contains(clicked)) return true;
+    // A change inside the thing that was clicked, or among its siblings.
+    if (clicked.contains(target)) return true;
+    if (scopeIsMeaningful && scope.contains(target)) return true;
 
     // A newly mounted overlay: dialog, toast, menu, tooltip — the usual ways a
     // button responds without touching its own subtree.

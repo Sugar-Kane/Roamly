@@ -92,19 +92,29 @@ test("telemetry batches carry no user-typed content", async ({ page }) => {
 test("a dead click is detected and reported", async ({ page }) => {
   const batches = await captureTelemetry(page);
 
+  // The detector treats ANY request in its window as evidence the click did
+  // something. Background Supabase traffic against the placeholder backend
+  // would land in that window non-deterministically, so it is stubbed out —
+  // otherwise this test is a coin flip that passes locally and fails in CI.
+  await page.route("**/*.supabase.co/**", (route) => route.abort());
+
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
 
   // Inject a button that looks interactive and does nothing — the exact defect
-  // class the dead-click detector exists to catch.
+  // class the dead-click detector exists to catch. Mounted inside its own
+  // container rather than directly on <body>, so the element sits at a
+  // realistic depth in the tree.
   await page.evaluate(() => {
+    const host = document.createElement("div");
+    // Pinned above the app chrome: the fixed bottom nav would otherwise
+    // intercept the click and the test would fail for the wrong reason.
+    host.style.cssText = "position:fixed;top:0;left:0;z-index:9999";
     const button = document.createElement("button");
     button.textContent = "Broken Action";
     button.setAttribute("data-sh", "test-dead-button");
-    // Pinned above the app chrome: the fixed bottom nav would otherwise
-    // intercept the click and the test would fail for the wrong reason.
-    button.style.cssText = "position:fixed;top:0;left:0;z-index:9999";
-    document.body.appendChild(button);
+    host.appendChild(button);
+    document.body.appendChild(host);
   });
 
   await page.getByRole("button", { name: "Broken Action" }).click();
