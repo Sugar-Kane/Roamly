@@ -801,6 +801,13 @@ declare
   v_blob text;
   v_manual text[] := array[
     'stripe','billing','checkout','subscription','price','invoice','webhook',
+    -- Entitlement logic is as money-critical as the payment rails: getting it
+    -- wrong either gives the product away or locks out people who paid. The
+    -- classifier corpus caught this gap on first run.
+    -- NOT 'gate' — substring of navigate/aggregate/delegate, which would send
+    -- most routine frontend work to manual review. A safety control that is
+    -- noisy is a safety control that gets switched off.
+    'premium','entitlement','paywall','credits','quota',
     'auth','session','token','jwt','password','login','signup',
     'rls','policy','grant','revoke','security definer','service_role',
     'migration','schema.sql','alter table','drop table','delete from',
@@ -1355,7 +1362,7 @@ insert into public.sh_feature_contracts (key, label, component, expectations, ti
   ('task.complete', 'Complete task', 'src/App.tsx',
    '[{"type":"db_row","table":"tasks"},{"type":"state","matcher":"done"}]', 6000, 'medium', 'pr_only', 0.98),
   ('focus.session_complete', 'Finish a focus session', 'src/FocusMode.tsx',
-   '[{"type":"db_row","table":"study_sessions"},{"type":"analytics_event","event":"session_complete"}]', 10000, 'high', 'pr_only', 0.97),
+   '[{"type":"db_row","table":"focus_sessions"},{"type":"analytics_event","event":"session_complete"}]', 10000, 'high', 'pr_only', 0.97),
   ('upload.study_file', 'Upload study file', 'src/UploadTasks.tsx',
    '[{"type":"api_2xx","matcher":"storage/v1/object"},{"type":"dom","matcher":"upload-ready"}]', 60000, 'high', 'pr_only', 0.93),
   ('ai.generate_tasks', 'AI task generation', 'api/generate-tasks.ts',
@@ -1365,11 +1372,11 @@ insert into public.sh_feature_contracts (key, label, component, expectations, ti
   ('billing.portal', 'Billing portal', 'api/billing.ts',
    '[{"type":"api_2xx","matcher":"/api/billing"},{"type":"navigation","route":"stripe"}]', 20000, 'high', 'manual', 0.95),
   ('rooms.join', 'Join a study room', 'src/RoomsLive.tsx',
-   '[{"type":"db_row","table":"room_participants"},{"type":"state","matcher":"realtime_subscribed"},{"type":"dom","matcher":"room-timer"}]', 15000, 'high', 'pr_only', 0.95),
+   '[{"type":"api_2xx","matcher":"rpc/join_room"},{"type":"state","matcher":"realtime_subscribed"},{"type":"dom","matcher":"room-timer"}]', 15000, 'high', 'pr_only', 0.95),
   ('rooms.create', 'Create a study room', 'src/RoomsLive.tsx',
    '[{"type":"db_row","table":"rooms"},{"type":"navigation","route":"rooms"}]', 12000, 'medium', 'pr_only', 0.95),
   ('calendar.plan_session', 'Plan a study session', 'src/StudyInsights.tsx',
-   '[{"type":"db_row","table":"planned_sessions"},{"type":"dom","matcher":"calendar-entry"}]', 8000, 'medium', 'pr_only', 0.97),
+   '[{"type":"db_row","table":"planned_study_sessions"},{"type":"dom","matcher":"calendar-entry"}]', 8000, 'medium', 'pr_only', 0.97),
   ('notifications.deliver', 'Notification delivered', 'src/Notifications.tsx',
    '[{"type":"db_row","table":"notifications"},{"type":"dom","matcher":"notification-item"}]', 10000, 'low', 'pr_only', 0.95),
   ('feedback.submit', 'Submit feedback', 'src/Feedback.tsx',

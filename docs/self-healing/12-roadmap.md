@@ -78,15 +78,24 @@ maintenance task below, not an optional nicety.
 |---|---|---|
 | SDK behaviour | Boot safety, PII exclusion, dead-click detection, failure isolation, table inaccessibility, admin gating | `tests/selfheal.spec.ts` (12 tests, 2 viewports) |
 | Detection thresholds | Synthetic event streams asserting the sweep opens/doesn't open incidents | **Phase 2** — needs a seeded test database |
-| Safety classifier | `sh_classify_approval()` against a corpus of representative diffs | **Phase 2** — pgTAP; this is the highest-value untested surface |
+| Safety classifier | `sh_classify_approval()` against a corpus of representative diffs | `supabase/tests/sh_classify_approval_corpus.sql` — 16 cases, run by hand after any classifier change |
 | Ingest validation | Malformed, oversized, and hostile batches | **Phase 2** |
 | Dashboard | Admin gating covered; interaction flows | Phase 2 |
 | Generated tests | Fail-before/pass-after harness | Phase 3 |
 
-The most important gap is the safety classifier. It is currently exercised only
-indirectly. A pgTAP suite asserting that a corpus of Stripe/RLS/schema diffs all
-classify as `manual`, and that only genuinely cosmetic diffs classify as `auto`,
-should land early in Phase 2 — it is the control everything else depends on.
+The classifier corpus (`supabase/tests/sh_classify_approval_corpus.sql`) earned
+its keep on its first run against the live database: it caught that a diff
+changing premium **gating** classified as `pr_only` rather than `manual`. The
+keyword list covered the payment rails — stripe, billing, checkout,
+subscription, price, invoice — but not entitlement logic, which is just as
+money-critical. Automation could have opened a mergeable PR that gave the
+product away. `premium`, `entitlement`, `paywall`, `credits` and `quota` are now
+in the list, and the corpus includes a negative control so nobody "fixes" a
+future gap by adding a keyword broad enough (`gate`) to route all routine work
+to manual review.
+
+Remaining gap: the corpus is run by hand. Wiring it into CI needs a database
+connection the workflow does not currently have — Phase 2.
 
 Two tests in the current suite deserve mention as regression protection against
 mistakes already made: the dead-click test caught a detector that counted the

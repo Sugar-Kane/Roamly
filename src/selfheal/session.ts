@@ -117,11 +117,31 @@ export function getContext(): SessionContext | null {
   return context;
 }
 
+/**
+ * The signed-in user's access token, held in memory ONLY and used solely as a
+ * request header on the ingest call. It is never written into a payload, never
+ * persisted, and never leaves this module by any other route.
+ *
+ * It exists because ingest refuses to trust a client-supplied user_id — it
+ * derives identity from a verified JWT or records none at all. Without a token
+ * on the wire that means every row is anonymous, which silently zeroes the
+ * reach term of the priority score and the "affected users" figure.
+ */
+let authToken: string | null = null;
+
+export function currentAuthToken(): string | null {
+  return authToken;
+}
+
 /** Called by the app when auth state settles. */
-export function identify(userId: string | null, isPremium: boolean | null): void {
+export function identify(userId: string | null, isPremium: boolean | null, token?: string | null): void {
   if (!context) return;
   context.userId = userId;
   context.isPremium = isPremium;
+  // `undefined` means "unchanged" so a caller that doesn't have the token to
+  // hand cannot accidentally clear it; an explicit null signs out.
+  if (token !== undefined) authToken = token;
+  if (userId === null) authToken = null;
 }
 
 export { uuid };

@@ -63,7 +63,10 @@ export const CONTRACT_LIST: FeatureContract[] = [
   contract({
     key: "focus.session_complete", label: "Finish a focus session", component: "src/FocusMode.tsx",
     expectations: [
-      { type: "db_row", table: "study_sessions" },
+      // Table names verified against the live schema — a contract naming a
+      // table that does not exist can never be satisfied, so it would report
+      // the feature as 100% broken forever.
+      { type: "db_row", table: "focus_sessions" },
       { type: "analytics_event", event: "session_complete", optional: true },
     ],
     timeoutMs: 10_000, severity: "high", approvalLevel: "pr_only",
@@ -71,7 +74,7 @@ export const CONTRACT_LIST: FeatureContract[] = [
   }),
   contract({
     key: "calendar.plan_session", label: "Plan a study session", component: "src/StudyInsights.tsx",
-    expectations: [{ type: "db_row", table: "planned_sessions" }, { type: "dom", selector: "calendar-entry" }],
+    expectations: [{ type: "db_row", table: "planned_study_sessions" }, { type: "dom", selector: "calendar-entry" }],
     timeoutMs: 8_000, severity: "medium", approvalLevel: "pr_only",
   }),
 
@@ -122,7 +125,9 @@ export const CONTRACT_LIST: FeatureContract[] = [
   contract({
     key: "rooms.join", label: "Join a study room", component: "src/RoomsLive.tsx",
     expectations: [
-      { type: "db_row", table: "room_participants" },
+      // Joining is an RPC (rooms.ts calls join_room), not a table insert —
+      // there is no room_participants table to watch for.
+      { type: "api_2xx", matcher: "rpc/join_room" },
       { type: "state", matcher: "realtime_subscribed" },
       { type: "dom", selector: "room-timer" },
     ],

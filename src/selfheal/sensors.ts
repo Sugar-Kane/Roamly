@@ -293,9 +293,35 @@ function installErrorSensors(): void {
 
 const SLOW_REQUEST_MS = 8000;
 
+/**
+ * Requests that answer non-2xx BY DESIGN, where the status is not a defect.
+ *
+ * Deliberately short and specific: every entry is a blind spot, so each needs
+ * a stated reason and the narrowest pattern that covers it. The first real
+ * incident this platform ever opened was one of these — a 401 at severity
+ * high, recurring several times per session, which left alone would have
+ * trained the operator to ignore the dashboard in week one.
+ */
+const EXPECTED_NON_2XX: { pattern: RegExp; why: string }[] = [
+  // rooms.ts syncServerClock() GETs the PostgREST root with only an apikey to
+  // read the Date response header for shared-timer clock sync. PostgREST
+  // answers 401; the code never reads the body, and 401 still carries Date.
+  // (Sending an Authorization header would make it a 200, but room clock sync
+  // is load-bearing for every shared timer and is not worth touching to
+  // silence a log line.)
+  { pattern: /\/rest\/v1\/?(\?|$)/, why: "clock-sync probe reads only the Date header" },
+];
+
+function expectedNon2xx(url: string): boolean {
+  return EXPECTED_NON_2XX.some((e) => e.pattern.test(url));
+}
+
 function installNetworkSensors(): void {
   onNetwork((obs) => {
     recordFrame("d", { u: obs.url, s: obs.status, ms: obs.durationMs });
+    // Still recorded in the replay trace above — the request happened and may
+    // be diagnostic context — but never raised as a problem on its own.
+    if (!obs.ok && expectedNon2xx(obs.rawUrl)) return;
     if (obs.status === 0) {
       emit("network_error", navigator.onLine ? "high" : "low", {
         url: obs.url, method: obs.method, error: obs.error,
