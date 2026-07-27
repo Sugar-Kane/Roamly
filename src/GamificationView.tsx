@@ -34,8 +34,14 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
 // (server catalog ahead of the client) lands in the last section instead of
 // disappearing from the page.
 const ACH_CATEGORY = new Map(ACHIEVEMENT_CATALOG.map((a) => [a.id, a.category] as const));
-const FALLBACK_CATEGORY: AchievementCategory = ACHIEVEMENT_CATEGORY_ORDER[ACHIEVEMENT_CATEGORY_ORDER.length - 1]!;
-const achievementCategory = (id: string): AchievementCategory => ACH_CATEGORY.get(id) ?? FALLBACK_CATEGORY;
+// Unknown ids get their own trailing bucket rather than being filed under the
+// last real category — landing a new focus tier under "Group study" would both
+// mislabel it and skew that section's count.
+const OTHER_SECTION = "other" as const;
+type AchievementSection = AchievementCategory | typeof OTHER_SECTION;
+const SECTION_ORDER: AchievementSection[] = [...ACHIEVEMENT_CATEGORY_ORDER, OTHER_SECTION];
+const SECTION_LABEL: Record<AchievementSection, string> = { ...ACHIEVEMENT_CATEGORY_LABEL, [OTHER_SECTION]: "More" };
+const achievementCategory = (id: string): AchievementSection => ACH_CATEGORY.get(id) ?? OTHER_SECTION;
 
 export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden }: {
   gamification: Gamification;
@@ -56,7 +62,9 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
   const earnedAch = g.achievements.filter((a) => a.earned).length;
   const ownedPets = g.pets.filter((p) => p.owned).length;
   const canCustomize = !!session;
-  const atPetCap = g.pets.filter((p) => p.is_active).length >= MAX_ACTIVE_PETS;
+  // `owned &&` matches stageProps: a stale active-but-unowned row would
+  // otherwise eat a slot the user has no toggle to free.
+  const atPetCap = g.pets.filter((p) => p.owned && p.is_active).length >= MAX_ACTIVE_PETS;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -134,7 +142,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
             vanishing. Each heading carries its own earned count so progress is
             legible per area. */}
         <div className="mt-3 space-y-4">
-          {ACHIEVEMENT_CATEGORY_ORDER.map((cat) => {
+          {SECTION_ORDER.map((cat) => {
             const rows = g.achievements.filter((a) => achievementCategory(a.id) === cat);
             if (rows.length === 0) return null;
             const done = rows.filter((a) => a.earned).length;
@@ -142,7 +150,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
               <div key={cat}>
                 <div className="flex items-baseline justify-between gap-2">
                   <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                    {ACHIEVEMENT_CATEGORY_LABEL[cat]}
+                    {SECTION_LABEL[cat]}
                   </h3>
                   <span className="text-[10px] text-muted-foreground">{done}/{rows.length}</span>
                 </div>
