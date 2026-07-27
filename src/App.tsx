@@ -5,7 +5,7 @@ import { METHODS, THEMES, sortTasks, tagColor, readableTextOn, type Task } from 
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, embedSrcToUri, type SpotifyEmbedType } from "./spotify";
-import { SpotifyEmbed } from "./SpotifyEmbed";
+import { SpotifyEmbed, type SpotifyController } from "./SpotifyEmbed";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
 const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
 const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
@@ -501,6 +501,18 @@ export default function App() {
   //    only exists for Spotify; picking an Apple station still takes over via
   //    playEmbed below.
   const [embedStopSignal, setEmbedStopSignal] = useState(0);
+  // There is exactly ONE streaming player and it lives in this window: an
+  // iframe reloads (and goes silent) the instant it moves to another document,
+  // so the pop-out timer window can't host a copy without either killing the
+  // music or doubling it. Instead the pop-out gets a REMOTE control — Spotify's
+  // iFrame controller stays here and the pop-out's button calls into it. Apple
+  // Music publishes no such API, so its pop-out strip is read-only (the audio
+  // still plays from this tab while the user works elsewhere).
+  const spotifyController = useRef<SpotifyController | null>(null);
+  const [embedPaused, setEmbedPaused] = useState(true);
+  const toggleEmbedPlayback = useCallback(() => {
+    try { spotifyController.current?.togglePlay(); } catch { /* not ready yet */ }
+  }, []);
   useEffect(() => {
     setOnPlaybackStart(() => setEmbedStopSignal((n) => n + 1));
     return () => setOnPlaybackStart(null);
@@ -1165,8 +1177,16 @@ export default function App() {
           so playback survives tab switches. */}
       {(embed !== null || !dockClosed) && (
         <MusicDock shown={shownEmbed} minimized={dockMin} onToggleMin={toggleDockMin} onPickService={pickDockService} onClose={closeDock}
-          hidden={view !== "focus" || immersive || !!pipWindow || dockClosed}
-          stopSignal={embedStopSignal} onPlaying={onEmbedPlaying} />
+          // Stays mounted and playing everywhere; only its visibility changes.
+          // It is deliberately NOT hidden during immersive focus (it lifts above
+          // the overlay instead) — picking a station in there used to load the
+          // player behind the overlay, where it couldn't be reached without
+          // exiting focus mode. Nor is it hidden while the timer is popped out:
+          // this window is still where the one player lives.
+          hidden={view !== "focus" || dockClosed} immersive={immersive}
+          stopSignal={embedStopSignal} onPlaying={onEmbedPlaying}
+          onController={(c: SpotifyController | null) => { spotifyController.current = c; }}
+          onPausedChange={setEmbedPaused} />
       )}
       <FocusMode open={immersive} phase={timer.phase}
         phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
@@ -1232,7 +1252,10 @@ export default function App() {
             <FocusTasksCard tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask} toggleTask={toggleTask}
               estimateReachedTask={estimateReachedTask} onResolveEstimate={resolveEstimateReached}
               breakActive={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
-            <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed} sounds={sounds} />
+            {/* dockClosed/onReopenDock so a user who dismissed the mini-player
+                can bring it back without leaving focus mode. */}
+            <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed}
+              dockClosed={dockClosed} onReopenDock={reopenDock} sounds={sounds} />
           </div>
         } />
       {/* Shared Customize Session drawer — opened from the normal timer's button
@@ -1268,7 +1291,10 @@ export default function App() {
                 aria-label="Skip"><SkipForward size={16} /></button>
             </>
           }
-          extra={embed ? <StreamingPlayer shown={embed} compact plain stopSignal={embedStopSignal} /> : undefined} />,
+          extra={embed ? (
+            <PipNowPlaying shown={embed} paused={embedPaused}
+              onToggle={embed.service === "spotify" ? toggleEmbedPlayback : undefined} />
+          ) : undefined} />,
         pipWindow.document.body
       )}
       {/* The pop-out is a separate document, so the main confetti canvas can't
@@ -2459,13 +2485,12 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
 // app can pause it and detect its play button; Apple Music has no such API, so
 // it stays a plain iframe that stopSignal remounts (a reload is the only way
 // to silence an uncontrolled embed).
-function EmbedPlayer({ shown, height, stopSignal, onPlaying, plain = false }: any) {
-  // `plain` skips the API player: the PiP window is a separate document the
-  // main-window iFrame API script can't manage.
-  const spotifyUri = !plain && shown.service === "spotify" ? embedSrcToUri(shown.src) : null;
+function EmbedPlayer({ shown, height, stopSignal, onPlaying, onController, onPausedChange }: any) {
+  const spotifyUri = shown.service === "spotify" ? embedSrcToUri(shown.src) : null;
   if (spotifyUri) {
     return <SpotifyEmbed key={shown.src} uri={spotifyUri} fallbackSrc={shown.src} height={height}
-      pauseSignal={stopSignal ?? 0} onPlay={onPlaying ?? (() => {})} />;
+      pauseSignal={stopSignal ?? 0} onPlay={onPlaying ?? (() => {})}
+      onController={onController} onPausedChange={onPausedChange} />;
   }
   return (
     <iframe key={`${stopSignal ?? 0}-${shown.src}`} src={shown.src} width="100%" height={height}
@@ -2474,26 +2499,47 @@ function EmbedPlayer({ shown, height, stopSignal, onPlaying, plain = false }: an
   );
 }
 
-function StreamingPlayer({ shown, compact = false, stopSignal, onPlaying, plain = false }: any) {
+// Now-playing strip for the pop-out window. NOT a player: the one streaming
+// iframe stays in the main tab (moving it between documents reloads it, and a
+// second copy would just double the audio), so this shows what that player is
+// playing and — for Spotify, via its iFrame controller — drives it remotely.
+// Apple Music has no such API, so it gets the label and a pointer back to the
+// tab. Either way the sound keeps coming from the main tab while the user works
+// in other apps, which is the whole point of popping out.
+function PipNowPlaying({ shown, paused, onToggle }: {
+  shown: { service: "spotify" | "apple"; label: string };
+  paused: boolean;
+  onToggle?: () => void;
+}) {
   return (
-    <div className={`mb-3 overflow-hidden rounded-xl border border-border bg-card/70 ${compact ? "" : "shadow-sm"}`}>
-      <p className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-        <Music size={12} className="text-primary" />
-        <span className="truncate">{shown.service === "spotify" ? "Spotify" : "Apple Music"} · {shown.label}</span>
-      </p>
-      <EmbedPlayer shown={shown} height={compact ? 96 : Math.min(shown.height, 152)} stopSignal={stopSignal} onPlaying={onPlaying} plain={plain} />
+    <div className="flex items-center gap-2 rounded-xl border border-border bg-card/70 px-2.5 py-1.5">
+      <Music size={12} className="shrink-0 text-primary" />
+      <span className="min-w-0 flex-1 truncate text-[0.7rem] font-medium text-muted-foreground">
+        {shown.service === "spotify" ? "Spotify" : "Apple Music"} · {shown.label}
+      </span>
+      {onToggle ? (
+        <button onClick={onToggle} aria-label={paused ? "Play music" : "Pause music"}
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border bg-card text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+          {paused ? <Play size={12} fill="currentColor" /> : <Pause size={12} fill="currentColor" />}
+        </button>
+      ) : (
+        <span className="shrink-0 text-[0.6rem] text-muted-foreground">in tab</span>
+      )}
     </div>
   );
 }
 
-function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidden = false, stopSignal, onPlaying }: any) {
+function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidden = false, immersive = false, stopSignal, onPlaying, onController, onPausedChange }: any) {
   return (
     // z-[45]: above the bottom nav (z-40), below every modal (z-50+) — a
     // permanent fixture must never eat taps meant for an open dialog.
+    // In immersive focus mode it lifts to z-[125]: above that overlay (z-120)
+    // but still below every dialog reachable from in there (z-130+). The bottom
+    // nav is covered by the overlay too, so the gap that clears it drops away.
     // `inert` while hidden: opacity/pointer-events only hide it visually —
     // without it the controls stay tabbable and announced to screen readers.
     <div data-testid="music-dock" inert={hidden} aria-hidden={hidden}
-      className={`fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[45] overflow-hidden rounded-2xl border border-border bg-card shadow-xl transition ${hidden ? "pointer-events-none opacity-0" : "opacity-100"} sm:left-auto sm:right-4 sm:w-96`}>
+      className={`fixed inset-x-3 overflow-hidden rounded-2xl border border-border bg-card shadow-xl transition ${immersive ? "bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-[125]" : "bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-[45]"} ${hidden ? "pointer-events-none opacity-0" : "opacity-100"} sm:left-auto sm:right-4 sm:w-96`}>
       <div className="flex items-center">
         <button onClick={onToggleMin} className="flex min-w-0 flex-1 items-center justify-between px-3 py-1.5 text-left"
           aria-label={minimized ? "Expand music player" : "Minimize music player"} aria-expanded={!minimized}>
@@ -2521,7 +2567,8 @@ function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidd
             </button>
           ))}
         </div>
-        <EmbedPlayer shown={shown} height={Math.min(shown.height, 152)} stopSignal={stopSignal} onPlaying={onPlaying} />
+        <EmbedPlayer shown={shown} height={Math.min(shown.height, 152)} stopSignal={stopSignal} onPlaying={onPlaying}
+          onController={onController} onPausedChange={onPausedChange} />
       </div>
     </div>
   );

@@ -603,6 +603,31 @@ test("Spotify and Apple Music stay fully closed until intentionally opened", asy
   expect(await page.evaluate(() => localStorage.getItem("roamly-music-service"))).toBe("apple");
 });
 
+test("music picked inside focus mode is reachable without leaving it", async ({ page }) => {
+  await goHome(page);
+  await page.getByRole("button", { name: "Focus mode" }).click();
+  const overlay = page.getByTestId("focus-overlay");
+  await expect(overlay).toBeVisible();
+  // Picking a station from inside the overlay used to load the mini-player
+  // BEHIND it, so the only way to reach the player was to exit focus mode.
+  await overlay.getByRole("button", { name: "Apple Music", exact: true }).click();
+  const dock = page.getByTestId("music-dock");
+  await expect(dock).toBeVisible();
+  const expand = dock.getByRole("button", { name: "Expand music player" });
+  if (await expand.isVisible()) await expand.click(); // phones start minimized
+  // Visible AND on top of the overlay: hit-testing the dock must land in the
+  // dock, not on the overlay that covers the rest of the screen.
+  await expect(async () => {
+    const onTop = await dock.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + 8));
+    });
+    expect(onTop, "mini-player should sit above the focus overlay").toBe(true);
+  }).toPass();
+  // Exactly one player exists — never a second copy competing for the audio.
+  await expect(page.locator('iframe[title="Music player"]')).toHaveCount(1);
+});
+
 test("starting the timer counts down", async ({ page }) => {
   await goHome(page);
   await page.getByRole("button", { name: "Start", exact: true }).click();
