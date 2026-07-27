@@ -72,7 +72,7 @@ by whoever is on call.
 **Trigger:** ingest write latency p95 > 500ms, *or* `sh_events` inserts
 consuming >20% of database CPU.
 
-1. **Put a queue in front of ingest.** `/api/telemetry` writes to a durable
+1. **Put a queue in front of ingest.** The ingest handler writes to a durable
    buffer (Upstash QStash — already in the stack via `@upstash/redis` — or
    Kafka/Redpanda if the volume justifies it) and returns 202 immediately. A
    consumer drains it into Postgres in large batches. This decouples user-facing

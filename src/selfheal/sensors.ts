@@ -29,6 +29,11 @@ function emit(kind: EventKind, severity: Severity, payload: Record<string, unkno
 // finds the "button does nothing" bugs users normally have to report.
 
 const DEAD_CLICK_WINDOW_MS = 1200;
+/**
+ * How long after a click a request may START and still be considered caused by
+ * it. Handlers fire their request promptly; anything later is coincidence.
+ */
+const CLICK_CAUSAL_WINDOW_MS = 600;
 
 function looksInteractive(el: Element | null): boolean {
   if (!el) return false;
@@ -91,6 +96,7 @@ function installDeadClickDetector(): void {
     if (!looksInteractive(target)) return;
     const el = target!.closest("button,a,[role=button],[data-sh]") as HTMLElement;
 
+    const clickedAt = Date.now();
     const routeBefore = currentRoute();
     const htmlBefore = document.body.childElementCount;
     let mutated = false;
@@ -101,7 +107,18 @@ function installDeadClickDetector(): void {
     });
     // childList only, deliberately: see isResponsiveMutation.
     observer.observe(document.body, { childList: true, subtree: true });
-    const offNet = onNetwork(() => { networked = true; });
+
+    // Only requests that could have been CAUSED by the click count as a
+    // response. Observations arrive when a request settles, so a background
+    // poll or a realtime reconnect that was already in flight when the click
+    // happened would otherwise land inside the window and mask a genuine dead
+    // click — the same "global signal treated as local evidence" mistake the
+    // mutation rule above had to fix twice. A click handler issues its request
+    // promptly, so we compare against the request's START time.
+    const offNet = onNetwork((obs) => {
+      const startedAt = obs.ts - obs.durationMs;
+      if (startedAt >= clickedAt - 50 && startedAt <= clickedAt + CLICK_CAUSAL_WINDOW_MS) networked = true;
+    });
 
     window.setTimeout(() => {
       observer.disconnect();

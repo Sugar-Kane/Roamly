@@ -45,7 +45,7 @@ function json(body: unknown, status: number): Response {
   });
 }
 
-export async function POST(request: Request): Promise<Response> {
+export async function handleInvestigate(request: Request): Promise<Response> {
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;

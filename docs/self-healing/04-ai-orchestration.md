@@ -1,6 +1,6 @@
 # 04 — AI orchestration
 
-Implementation: `api/selfheal-investigate.ts`.
+Implementation: `api/_selfheal-investigate.ts`, routed via `api/selfheal.ts`.
 
 ## Why three stages, not one agent loop
 

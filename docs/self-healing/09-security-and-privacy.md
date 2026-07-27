@@ -101,7 +101,7 @@ into the app must appear in no telemetry batch.
 | Path traversal in a generated patch | `patchFiles()` rejects `..`, absolute paths, `.github/`, `.env*` |
 | Supply-chain injection via a generated patch | CI **hard-fails** on any `package.json`/`package-lock.json` change in a self-healing PR |
 | Secret leakage into a commit | CI scans added lines for secret patterns and fails |
-| Compromised admin session | Cannot downgrade an approval tier (classifier re-runs server-side), cannot merge Level 3, every action is audited; `/api/selfheal-action` is rate-limited to 30/5min |
+| Compromised admin session | Cannot downgrade an approval tier (classifier re-runs server-side), cannot merge Level 3, every action is audited; the action handler is rate-limited to 30/5min |
 | Stolen `CRON_SECRET` | Grants only the ability to trigger investigation of existing incidents — no write path to patches beyond what the classifier permits |
 | Telemetry endpoint used to probe the backend | Returns 2xx for nearly everything; no error text distinguishes "session exists" from "session doesn't" |
 

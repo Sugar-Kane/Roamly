@@ -8,7 +8,7 @@ import { test, expect, type Page, type Request } from "@playwright/test";
 //   * it detects the failures it claims to detect;
 //   * its own data is not reachable from a browser.
 //
-// They run against a build with placeholder Supabase vars, so /api/telemetry
+// They run against a build with placeholder Supabase vars, so /api/selfheal
 // does not exist — the SDK must behave correctly with the ingest endpoint
 // returning 404, which is also what a telemetry outage looks like in
 // production.
@@ -41,7 +41,7 @@ async function flushTelemetry(page: Page): Promise<void> {
 /** Capture every telemetry batch the page attempts to send. */
 async function captureTelemetry(page: Page): Promise<Record<string, unknown>[]> {
   const batches: Record<string, unknown>[] = [];
-  await page.route("**/api/telemetry", async (route, request: Request) => {
+  await page.route("**/api/selfheal", async (route, request: Request) => {
     try {
       batches.push(JSON.parse(request.postData() ?? "{}"));
     } catch { /* malformed batches are themselves a failure, asserted below */ }
@@ -92,11 +92,12 @@ test("telemetry batches carry no user-typed content", async ({ page }) => {
 test("a dead click is detected and reported", async ({ page }) => {
   const batches = await captureTelemetry(page);
 
-  // The detector treats ANY request in its window as evidence the click did
-  // something. Background Supabase traffic against the placeholder backend
-  // would land in that window non-deterministically, so it is stubbed out —
-  // otherwise this test is a coin flip that passes locally and fails in CI.
-  await page.route("**/*.supabase.co/**", (route) => route.abort());
+  // Keep background Supabase traffic out of the detector's window. Note this
+  // leaves the requests PENDING rather than aborting them: an aborted request
+  // is a failed request, which is still network activity the detector would
+  // observe — the stub would have caused the very thing it was meant to
+  // prevent. A pending request never settles, so it is never observed.
+  await page.route("**/*.supabase.co/**", () => { /* intentionally unresolved */ });
 
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
@@ -132,7 +133,7 @@ test("a dead click is detected and reported", async ({ page }) => {
 test("telemetry failures never surface to the user", async ({ page }) => {
   // Every ingest attempt fails. The app must be completely unaffected — this
   // is the "monitoring outage must not become a product outage" guarantee.
-  await page.route("**/api/telemetry", (route) => route.fulfill({ status: 500, body: "boom" }));
+  await page.route("**/api/selfheal", (route) => route.fulfill({ status: 500, body: "boom" }));
 
   const pageErrors: string[] = [];
   page.on("pageerror", (err) => pageErrors.push(err.message));

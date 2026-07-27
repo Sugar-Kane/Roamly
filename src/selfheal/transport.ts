@@ -1,4 +1,4 @@
-// Batched, lossy-by-design transport to /api/telemetry.
+// Batched, lossy-by-design transport to the /api/selfheal ingest handler.
 //
 // Non-negotiable properties, in priority order:
 //   1. NEVER break the app. Every path is try/caught; a transport failure is
@@ -19,7 +19,7 @@ import type { SelfHealEvent, Severity } from "./types";
 import { getContext } from "./session";
 import { redactPayload } from "./redact";
 
-const ENDPOINT = "/api/telemetry";
+const ENDPOINT = "/api/selfheal";
 const MAX_QUEUE = 200;
 const FLUSH_INTERVAL_MS = 10_000;
 const FLUSH_AT = 25;
@@ -96,6 +96,9 @@ function buildBatch(): Record<string, unknown> | null {
     outcomes.some((o) => o.status === "failed" || o.status === "timeout");
 
   const batch: Record<string, unknown> = {
+    // Routed by /api/selfheal to the ingest handler. See api/selfheal.ts for
+    // why the three endpoints share one serverless function.
+    op: "telemetry",
     v: 1,
     session: sessionRegistered ? { id: ctx.sessionId } : ctx,
     events,

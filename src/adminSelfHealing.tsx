@@ -6,7 +6,7 @@
 // sits at the top, because a patch nobody notices is worse than no patch.
 //
 // Security: every read here is an is_admin()-gated RPC and every consequential
-// write goes through /api/selfheal-action. Rendering is gated on isAdmin by
+// write goes through /api/selfheal (op: "action"). Rendering is gated on isAdmin by
 // AdminView before this component ever mounts, but that is defence in depth,
 // not the control — the control is server-side.
 

@@ -49,7 +49,7 @@ export function installNetworkMonitor(): void {
     const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     // Never observe our own ingest calls — that is an infinite loop generator.
-    const isSelf = rawUrl.includes("/api/telemetry");
+    const isSelf = rawUrl.includes("/api/selfheal");
     try {
       const res = await originalFetch(input as RequestInfo, init);
       if (!isSelf) {
@@ -87,7 +87,7 @@ export function installNetworkMonitor(): void {
     this.__shStart = performance.now();
     const finish = (status: number, error?: string) => {
       const rawUrl = this.__shUrl || "";
-      if (rawUrl.includes("/api/telemetry")) return;
+      if (rawUrl.includes("/api/selfheal")) return;
       emit({
         method: this.__shMethod || "GET", url: redactUrl(rawUrl), rawUrl, status,
         ok: status >= 200 && status < 400,

@@ -1,8 +1,38 @@
 # 07 — API contracts
 
-## `POST /api/telemetry`
+## One route, three operations
 
-The ingest endpoint. **Authentication optional** — see
+All three self-healing operations share a single Vercel function,
+`api/selfheal.ts`, dispatched on a top-level **`op`** field:
+
+| `op` | Handler | Auth |
+|---|---|---|
+| `telemetry` | `api/_selfheal-telemetry.ts` | none required (anonymous-capable) |
+| `investigate` | `api/_selfheal-investigate.ts` | `CRON_SECRET` or admin JWT |
+| `action` | `api/_selfheal-action.ts` | admin JWT |
+
+**Why one route:** Vercel counts every non-underscore file in `api/` as a
+serverless function, and the Hobby plan permits 12 per deployment. The repo
+already ships 11, so three new routes failed the deploy outright
+(`exceeded_serverless_functions_per_deployment`). Splitting them back into
+three files on a Pro plan is mechanical — each handler is already a
+self-contained module with its own authentication.
+
+Two properties make the sharing safe and fast: authentication is **per
+handler**, not per function, so the router grants nothing and a misroute
+merely reaches a handler that then rejects the caller; and the heavy
+dependencies (Anthropic SDK, GitHub client) are **dynamically imported** only
+on the paths that use them, so the hot ingest path does not pay their
+cold-start cost.
+
+Dispatch deliberately uses `op` rather than `action`, because the
+approve/reject handler already uses `action` for its own verbs.
+
+---
+
+## `op: "telemetry"`
+
+The ingest operation. **Authentication optional** — see
 [01 §5](01-architecture.md#5-why-these-boundaries) for why anonymous batches are
 accepted, and [09](09-security-and-privacy.md) for how that is made safe.
 
@@ -13,6 +43,7 @@ accepted, and [09](09-security-and-privacy.md) for how that is made safe.
 
 ```jsonc
 {
+  "op": "telemetry",
   "v": 1,
   "session": {                        // full context on the first batch only
     "sessionId": "uuid",              // required, client-generated, unguessable
@@ -62,7 +93,7 @@ accepted, and [09](09-security-and-privacy.md) for how that is made safe.
 | 202 | `{ "ok": true, "incidents": 1 }` | Accepted; N incidents opened or folded into |
 | 200 | `{ "ok": true, "note": "not_configured" }` | Supabase env absent — no-op |
 | 200 | `{ "ok": false }` | Server-side failure. **Deliberately 2xx**: a failed ingest must not trigger the client's retry backoff into a storm |
-| 400 | `{ "error": "invalid body" \| "invalid session" }` | Malformed, or `sessionId` is not a UUID |
+| 400 | `{ "error": "invalid body" \| "invalid session" \| "unknown op" }` | Malformed, unrecognised `op`, or `sessionId` is not a UUID |
 | 413 | `{ "error": "payload too large" }` | >128KB |
 | 429 | `{ "error": "…" }` + `retry-after` | >240 batches/hour/IP |
 
@@ -76,7 +107,7 @@ a full re-scrub of every payload.
 
 ---
 
-## `POST /api/selfheal-investigate`
+## `op: "investigate"`
 
 **Auth:** `Bearer <CRON_SECRET>` (scheduled sweep) **or** `Bearer <admin jwt>`
 (admin membership re-checked server-side against `public.admins`).
@@ -85,6 +116,7 @@ a full re-scrub of every payload.
 
 ```jsonc
 {
+  "op": "investigate",
   "incidentId": "uuid",              // optional; omit to sweep the backlog
   "stage": "investigate" | "reproduce" | "patch"   // default "investigate"
 }
@@ -113,12 +145,13 @@ Caps at **5 incidents per invocation**.
 
 ---
 
-## `POST /api/selfheal-action`
+## `op: "action"`
 
 **Auth:** `Bearer <admin jwt>`, required. Rate-limited to 30/5min per admin.
 
 ```jsonc
-{ "action": "approve"|"reject"|"open_pr"|"rollback"|"disable_flag"|"ignore",
+{ "op": "action",
+  "action": "approve"|"reject"|"open_pr"|"rollback"|"disable_flag"|"ignore",
   "patchId": "uuid",      // approve | reject | open_pr | rollback
   "incidentId": "uuid",   // ignore
   "flagKey": "rooms.voice",// disable_flag

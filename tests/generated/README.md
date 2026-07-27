@@ -21,7 +21,7 @@ the only thing standing between this bug and its return.
   against a preview build with placeholder Supabase vars, so tests stub network
   responses with `page.route()` rather than talking to anything.
 - No `child_process`, no filesystem access, no reading privileged env vars.
-  `extractCode()` in `api/selfheal-investigate.ts` rejects generated code
+  `extractCode()` in `api/_selfheal-investigate.ts` rejects generated code
   containing any of these before it is ever stored.
 - Deterministic: no arbitrary sleeps, no retry loops.
 - Under ~60 lines. A reproduction that needs more than that is a sign the

@@ -47,10 +47,10 @@ jobs:
           # The endpoint caps itself at 5 incidents per invocation, so a backlog
           # drains gradually instead of spending the month's AI budget in one
           # sweep after an outage generates a thousand incidents.
-          RESPONSE=$(curl -sS -X POST "$APP_URL/api/selfheal-investigate" \
+          RESPONSE=$(curl -sS -X POST "$APP_URL/api/selfheal" \
             -H "Authorization: Bearer $CRON_SECRET" \
             -H "content-type: application/json" \
-            -d "{\"stage\":\"$STAGE\"}" \
+            -d "{\"op\":\"investigate\",\"stage\":\"$STAGE\"}" \
             -w "\n%{http_code}")
           CODE=$(echo "$RESPONSE" | tail -1)
           echo "$RESPONSE" | head -n -1

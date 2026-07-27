@@ -14,7 +14,7 @@
                                        │ batched JSON, ≤48KB
                                        │ (anonymous-capable)
                     ┌──────────────────▼───────────────────────┐
-   Vercel functions │ /api/telemetry  — scrub, clamp, rate-limit│
+   Vercel function  │ /api/selfheal   — scrub, clamp, rate-limit│
                     │ /api/_instrument — wraps every other route│
                     └──────────────────┬───────────────────────┘
                                        │ service role
@@ -37,7 +37,7 @@
                            └───────────┬──────────┘             │
                                        │                        │ approve
                            ┌───────────▼────────────────────────▼─────────┐
-                           │ /api/selfheal-action                          │
+                           │ /api/selfheal  (op: action)                   │
                            │  issue → branch → commit → PR                 │
                            │  (re-runs the classifier; never merges L3)    │
                            └───────────┬───────────────────────────────────┘
@@ -60,14 +60,14 @@ anything else directly.
 | Event tracking | `src/selfheal/sensors.ts`, `net.ts` | DOM/network/perf events | `sh_events` rows | rrweb, OpenTelemetry browser SDK |
 | Behaviour monitoring | `outcomes.ts`, `journeys.ts` | `expect()` calls | `sh_outcomes`, `sh_journey_runs` | — (this is the differentiator) |
 | Error detection | `sh_record_incident()`, pg_cron sweeps | events + outcome rates | `sh_incidents` | Sentry issue grouping |
-| Evidence collection | `selfheal-investigate.ts` § collectEvidence | incident id | `sh_incident_evidence` | any log aggregator |
-| Root cause analysis | `selfheal-investigate.ts` § investigate | evidence bundle | `sh_diagnoses` | any LLM, or a human |
+| Evidence collection | `_selfheal-investigate.ts` § collectEvidence | incident id | `sh_incident_evidence` | any log aggregator |
+| Root cause analysis | `_selfheal-investigate.ts` § investigate | evidence bundle | `sh_diagnoses` | any LLM, or a human |
 | Reproduction | § reproduce | diagnosis | `sh_repro_attempts` + spec file | manual repro |
 | Regression tests | CI + `tests/generated/` | repro spec | pass/fail | hand-written tests |
 | Patch generation | § proposePatch | diagnosis + source | `sh_patches` | human engineer |
 | Automated testing | `.github/workflows/self-healing.yml` | PR | CI status → `sh_patches.status` | any CI |
 | Preview deploy | Vercel PR preview | PR | preview URL | Netlify, Cloudflare |
-| Human approval | dashboard → `selfheal-action` | patch id | `sh_audit_log` + merge | GitHub review alone |
+| Human approval | dashboard → `_selfheal-action.ts` | patch id | `sh_audit_log` + merge | GitHub review alone |
 | Production deploy | Vercel on merge to `main` | merge | release | — |
 
 ## 3. Sequence: a silent feature failure, end to end
@@ -106,7 +106,7 @@ the session as saved, and the row silently never exists.
         A second incident opens, fingerprinted on the CONTRACT, carrying
         business_impact: "67 of 71 attempts failed in the last 15 min".
 
- 14:20  selfheal-sweep.yml fires → POST /api/selfheal-investigate.
+ 14:20  selfheal-sweep.yml fires → POST /api/selfheal {op:"investigate"}.
         collectEvidence() pulls: the 40 most recent events, the outcome rows
         with their expectation diffs, session context (device/browser/release),
         the 30s lead-up from the same sessions, src/FocusMode.tsx from GitHub,
@@ -208,4 +208,4 @@ one, which is the single biggest lever on running cost.
 | The model hallucinates a fix | Bad code proposed | Confidence gate at 0.55, CI gauntlet, human merge, `diagnosis_correct` tracking |
 | The model is prompt-injected | Attempted privilege escalation | DB classifier is authoritative; prompts are data-only; see [09](09-security-and-privacy.md) |
 | Runaway AI spend | Budget incident | 5 incidents/invocation cap, 15-min sweep cadence, Anthropic console spend limit |
-| The platform itself is the bug | Recursive incidents | `selfheal.telemetry` master kill switch, `/api/telemetry` excluded from its own network monitor |
+| The platform itself is the bug | Recursive incidents | `selfheal.telemetry` master kill switch, `/api/selfheal` excluded from its own network monitor |

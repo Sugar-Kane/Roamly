@@ -96,7 +96,7 @@ hard-fails on:
   something automation gets to take on its own;
 - any secret-shaped string in added lines.
 
-## What `/api/selfheal-action` will and will not do
+## What the action handler will and will not do
 
 | Action | Behaviour |
 |---|---|

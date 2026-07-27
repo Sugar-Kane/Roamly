@@ -46,7 +46,7 @@ src/            React app (App.tsx is the shell + most views)
                 privacy-aware replay, feature flags, batched telemetry
 api/            Vercel functions: create-checkout-session, create-portal-session,
                 stripe-webhook, invite, generate-tasks, health,
-                telemetry (ingest), selfheal-investigate, selfheal-action
+                selfheal (telemetry ingest + AI investigation + actions)
 supabase/       schema.sql (CANONICAL — full schema incl. RLS + RPCs)
                 dated *.sql migration files (already folded into schema.sql)
                 rooms_schema.sql (historical; superseded by schema.sql)

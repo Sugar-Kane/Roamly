@@ -7,7 +7,7 @@
 // is never captured, only measured (length, type, whether it parsed).
 //
 // Defence in depth: this is layer 1 of 3. Layer 2 is the server scrubber in
-// api/telemetry.ts (because a bug here must not become a breach), layer 3 is
+// api/_scrub.ts (because a bug here must not become a breach), layer 3 is
 // the DB's absence of any client read path. Assume this layer WILL be bypassed
 // by some future code path and design the others accordingly.
 

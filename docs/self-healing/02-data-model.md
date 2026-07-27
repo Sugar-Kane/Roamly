@@ -10,8 +10,8 @@ oversight; it is the design. No browser session — anonymous, authenticated, or
 premium — can read or write any of these tables directly. There are exactly
 three doors:
 
-1. **The service role**, used only by `/api/telemetry`, `/api/_instrument`,
-   `/api/selfheal-*`, and the CI reporter.
+1. **The service role**, used only by the `/api/selfheal` handlers,
+   `api/_instrument.ts`, and the CI reporter.
 2. **`is_admin()`-gated `SECURITY DEFINER` RPCs**, which is how the dashboard
    reads. Same pattern as the existing admin dashboard.
 3. **`sh_public_flags()`**, the one deliberate exception: flags must be readable

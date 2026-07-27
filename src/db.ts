@@ -1282,7 +1282,7 @@ export async function adminUploadMusicTrack(
 //
 // WRITES that carry consequences (approving a patch, opening a PR, disabling a
 // flag) deliberately do NOT go through PostgREST — they POST to
-// /api/selfheal-action, which re-authenticates, re-runs the safety classifier,
+// /api/selfheal with op:"action", which re-authenticates, re-runs the classifier,
 // and writes the audit log. A client must never be able to move a patch to
 // "approved" by writing a row.
 
@@ -1455,10 +1455,10 @@ export async function shAction(
   const token = sessionData.session?.access_token;
   if (!token) return { error: "Sign in again." };
   try {
-    const res = await fetch("/api/selfheal-action", {
+    const res = await fetch("/api/selfheal", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ action, ...payload }),
+      body: JSON.stringify({ op: "action", action, ...payload }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) return { error: (body as { error?: string }).error ?? "That action failed." };
@@ -1477,10 +1477,10 @@ export async function shInvestigate(
   const token = sessionData.session?.access_token;
   if (!token) return { error: "Sign in again." };
   try {
-    const res = await fetch("/api/selfheal-investigate", {
+    const res = await fetch("/api/selfheal", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify({ incidentId, stage }),
+      body: JSON.stringify({ op: "investigate", incidentId, stage }),
     });
     if (!res.ok) return { error: "Analysis failed." };
     return { ok: true };

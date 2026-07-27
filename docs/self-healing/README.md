@@ -57,11 +57,12 @@ src/selfheal/            Frontend SDK — contracts, journeys, sensors, replay, 
   session.ts             Session + rotating anonymous identity
 
 api/
-  telemetry.ts           Ingest — anonymous-capable, rate-limited, double-scrubbed
+  selfheal.ts            The one route: dispatches on `op`, lazy-loads handlers
+  _selfheal-telemetry.ts Ingest — anonymous-capable, rate-limited, double-scrubbed
+  _selfheal-investigate.ts  AI: evidence → root cause → repro → patch
+  _selfheal-action.ts    Approve / reject / PR / rollback / kill switch
   _scrub.ts              Server-side PII scrubbing, layer 2 of 3
   _instrument.ts         Backend route wrapper — traces, incidents, dependency triage
-  selfheal-investigate.ts  AI: evidence → root cause → repro → patch
-  selfheal-action.ts     Approve / reject / PR / rollback / kill switch
 
 supabase/migrations/20260727120000_self_healing_platform.sql
                          17 tables, fingerprinting, priority scoring, the safety
