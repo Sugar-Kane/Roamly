@@ -18,9 +18,9 @@ import {
 } from "lucide-react";
 import {
   shOverview, shIncidents, shIncidentDetail, shFeatureHealth, shIncidentSeries,
-  shSetIncident, shFlags, shSetFlag, shAction, shInvestigate,
+  shSetIncident, shFlags, shSetFlag, shAction, shInvestigate, shAffectedUsers,
   type ShOverview, type ShIncident, type ShFeatureHealth, type ShIncidentDay,
-  type ShFlag, type ShSeverity, type ShApprovalLevel,
+  type ShFlag, type ShSeverity, type ShApprovalLevel, type ShAffectedUser,
 } from "./db";
 import { FilterBar, KpiCard, csvDownload, type AdminFilterState } from "./adminDashboard";
 import { Modal } from "./Modal";
@@ -89,6 +89,7 @@ export function SelfHealingPage({ state }: { state: AdminFilterState }) {
   const [health, setHealth] = useState<ShFeatureHealth[]>([]);
   const [series, setSeries] = useState<ShIncidentDay[]>([]);
   const [flags, setFlags] = useState<ShFlag[]>([]);
+  const [affected, setAffected] = useState<ShAffectedUser[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [openIncident, setOpenIncident] = useState<string | null>(null);
@@ -112,7 +113,9 @@ export function SelfHealingPage({ state }: { state: AdminFilterState }) {
       shFeatureHealth(startISO, endISO),
       shIncidentSeries(startISO, endISO),
       shFlags(),
-    ]).then(([o, i, h, s, f]) => {
+      shAffectedUsers(startISO, endISO),
+    ]).then(([o, i, h, s, f, au]) => {
+      setAffected(au);
       setOverview(o);
       // "active" is a client-side concern (the RPC filters by one exact status),
       // so the closed states are dropped here rather than adding a fourth
@@ -161,7 +164,7 @@ export function SelfHealingPage({ state }: { state: AdminFilterState }) {
             <KpiCard label="Critical" value={overview?.critical_incidents ?? 0}
               tip="Open incidents at critical severity — these page a human." />
             <KpiCard label="Affected users" value={overview?.affected_users ?? 0}
-              tip="Distinct users who hit an incident in this window." />
+              tip="Distinct signed-in users who hit an incident in this window — counted once each, however many incidents they hit. Signed-out sessions carry no identity and are not counted here." />
             <KpiCard label="Awaiting approval" value={overview?.awaiting_approval ?? 0}
               tip="Patches with passing CI, waiting on a human decision." />
           </div>
@@ -255,6 +258,8 @@ export function SelfHealingPage({ state }: { state: AdminFilterState }) {
                   <IncidentRow key={incident.id} incident={incident} onOpen={() => setOpenIncident(incident.id)} />
                 ))}
               </div>
+
+              <AffectedUsersTable rows={affected} />
             </>
           )}
 
@@ -329,6 +334,8 @@ function IncidentDetail({ id, onClose, onChanged }: { id: string; onClose: () =>
   const repro = (detail?.repro ?? []) as Record<string, unknown>[];
   const timeline = (detail?.timeline ?? []) as Record<string, unknown>[];
   const similar = (detail?.similar ?? []) as Record<string, unknown>[];
+  const users = (detail?.users ?? []) as Record<string, unknown>[];
+  const anonSessions = Number(detail?.anonymous_sessions ?? 0);
   const patch = patches[0];
 
   // Tracks whether this dialog is still on screen, so a request that outlives
@@ -400,6 +407,40 @@ function IncidentDetail({ id, onClose, onChanged }: { id: string; onClose: () =>
               </span>
             </p>
           )}
+
+          <Section title="Affected users" icon={Users}>
+            {users.length === 0 && anonSessions === 0 && (
+              <p className="text-xs text-muted-foreground">No sessions recorded for this incident.</p>
+            )}
+            {users.length > 0 && (
+              <ul className="space-y-1.5">
+                {users.map((u) => {
+                  const uid = String(u.user_id ?? "");
+                  return (
+                    <li key={uid} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
+                      <span className="font-medium">{String(u.display_name || u.email || "Unknown user")}</span>
+                      {u.email != null && String(u.display_name || "") !== String(u.email) && (
+                        <span className="text-muted-foreground">{String(u.email)}</span>
+                      )}
+                      <span className="text-muted-foreground">
+                        · {Number(u.events)} event{Number(u.events) === 1 ? "" : "s"}
+                      </span>
+                      {u.last_seen != null && (
+                        <span className="text-muted-foreground">· last {relTime(String(u.last_seen))}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {anonSessions > 0 && (
+              // Stated rather than omitted: signed-out telemetry carries no
+              // identity, so a short user list is not the same as low impact.
+              <p className={`text-xs text-muted-foreground ${users.length > 0 ? "mt-1.5" : ""}`}>
+                {anonSessions} signed-out session{anonSessions === 1 ? "" : "s"} also hit this — not attributable to an account.
+              </p>
+            )}
+          </Section>
 
           <Section title="Root cause" icon={Sparkles}>
             {diagnosis ? (
@@ -517,6 +558,67 @@ function IncidentDetail({ id, onClose, onChanged }: { id: string; onClose: () =>
         </div>
       )}
     </Modal>
+  );
+}
+
+/**
+ * Who is actually hitting problems, worst-affected first.
+ *
+ * Ordered by OPEN incidents before total, because the question this answers is
+ * "who is still suffering", not "who has ever had a bad session" — a user with
+ * one live incident matters more than one with five that are all closed.
+ */
+function AffectedUsersTable({ rows }: { rows: ShAffectedUser[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <section className="mt-5" aria-label="Affected users">
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <Users className="h-3.5 w-3.5" aria-hidden />Who is affected
+      </h3>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        Signed-in users who hit an incident in this window. Signed-out sessions carry no identity
+        and are counted per incident instead.
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[34rem] text-left text-xs">
+          <thead className="text-muted-foreground">
+            <tr>
+              <th scope="col" className="py-1.5 pr-3 font-medium">User</th>
+              <th scope="col" className="py-1.5 pr-3 font-medium">Open</th>
+              <th scope="col" className="py-1.5 pr-3 font-medium">Incidents</th>
+              <th scope="col" className="py-1.5 pr-3 font-medium">Worst</th>
+              <th scope="col" className="py-1.5 pr-3 font-medium">Last seen</th>
+              <th scope="col" className="py-1.5 font-medium">Route</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((u) => (
+              <tr key={u.user_id} className="border-t border-border/60">
+                <td className="py-1.5 pr-3">
+                  <span className="font-medium">{u.display_name || u.email || "Unknown user"}</span>
+                  {u.email && u.display_name && u.display_name !== u.email && (
+                    <span className="ml-1.5 text-muted-foreground">{u.email}</span>
+                  )}
+                </td>
+                <td className="py-1.5 pr-3">
+                  {u.open_incidents > 0
+                    ? <span className="font-semibold text-destructive">{u.open_incidents}</span>
+                    : <span className="text-muted-foreground">—</span>}
+                </td>
+                <td className="py-1.5 pr-3">{u.incidents}</td>
+                <td className="py-1.5 pr-3">
+                  <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${SEVERITY_STYLE[u.worst_severity]}`}>
+                    {u.worst_severity}
+                  </span>
+                </td>
+                <td className="py-1.5 pr-3 text-muted-foreground">{relTime(u.last_seen_at)}</td>
+                <td className="py-1.5 text-muted-foreground">{u.last_route ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
