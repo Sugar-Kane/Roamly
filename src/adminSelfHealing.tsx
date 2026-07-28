@@ -322,10 +322,25 @@ function IncidentDetail({ id, onClose, onChanged }: { id: string; onClose: () =>
   const similar = (detail?.similar ?? []) as Record<string, unknown>[];
   const patch = patches[0];
 
-  const run = async (label: string, fn: () => Promise<{ error?: string }>) => {
+  // `closeOnDone` marks the actions that END this incident — resolving it or
+  // ignoring it. Everything else (investigate, repro, propose, reject a patch,
+  // roll back) leaves the incident open and its result is meant to be read
+  // here, so those keep the modal up and refresh it in place. Without the
+  // distinction a resolved incident sat in an open dialog looking unfinished,
+  // and the obvious response was to click Resolve again.
+  const run = async (
+    label: string,
+    fn: () => Promise<{ error?: string }>,
+    opts?: { closeOnDone?: boolean },
+  ) => {
     setBusy(label); setMessage(null);
     const result = await fn();
     setBusy(null);
+    if (!result.error && opts?.closeOnDone) {
+      onChanged();  // refresh the list behind us; skip reload(), this is unmounting
+      onClose();
+      return;
+    }
     setMessage(result.error ?? `${label} done.`);
     reload(); onChanged();
   };
@@ -476,9 +491,9 @@ function IncidentDetail({ id, onClose, onChanged }: { id: string; onClose: () =>
                 onClick={() => run("Roll back", () => shAction("rollback", { patchId: String(patch.id), reason: "rolled back from dashboard" }))} />
             )}
             <Action label="Mark resolved" icon={CheckCircle2} busy={busy === "Resolve"}
-              onClick={() => run("Resolve", () => shSetIncident(id, { status: "resolved", resolution: "patched" }))} />
+              onClick={() => run("Resolve", () => shSetIncident(id, { status: "resolved", resolution: "patched" }), { closeOnDone: true })} />
             <Action label="Ignore" icon={XCircle} busy={busy === "Ignore"}
-              onClick={() => run("Ignore", () => shAction("ignore", { incidentId: id, reason: "not a bug" }))} />
+              onClick={() => run("Ignore", () => shAction("ignore", { incidentId: id, reason: "not a bug" }), { closeOnDone: true })} />
           </div>
         </div>
       )}
