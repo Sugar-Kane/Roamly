@@ -130,6 +130,106 @@ test("a dead click is detected and reported", async ({ page }) => {
     .toContain("test-dead-button");
 });
 
+test("a determinate progress bar is not a stuck spinner", async ({ page }) => {
+  // Both spinner incidents this platform has ever opened were progress BARS:
+  // the focus-phase timer and the task-completion bar, each of which sits on
+  // screen for the whole session with no network behind it by design. One was
+  // "patched". The detector must tell a progress display apart from a loading
+  // state, and must still catch the loading state.
+  test.setTimeout(60_000);
+  const batches = await captureTelemetry(page);
+
+  // Let Supabase calls SETTLE (unlike the dead-click test, which needs them
+  // pending): the watchdog only fires with zero requests in flight, so a
+  // permanently pending request would suppress the positive control below and
+  // the test would pass for the wrong reason.
+  await page.route("**/*.supabase.co/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+
+  await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;top:0;left:0;z-index:9999";
+
+    // Determinate: publishes a value, so it is a progress display, not a wait.
+    const bar = document.createElement("div");
+    bar.style.cssText = "width:120px;height:8px";
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    bar.setAttribute("aria-valuenow", "42");
+
+    // Positive control: an indeterminate spinner that never resolves. If this
+    // stops being reported, the fix has broken the detector instead of
+    // narrowing it. `animate-spin` is what makes the watchdog watch it at all
+    // (`data-sh` alone does not — the selector wants `data-sh="spinner"`); the
+    // data-sh value is only how the event names it.
+    const spinner = document.createElement("div");
+    spinner.className = "animate-spin";
+    spinner.style.cssText = "width:16px;height:16px";
+    spinner.setAttribute("data-sh", "test-stuck-spinner");
+
+    host.append(bar, spinner);
+    document.body.appendChild(host);
+  });
+
+  // Threshold is 12s, polled every 3s.
+  await page.waitForTimeout(18_000);
+  await flushTelemetry(page);
+
+  const events = batches.flatMap((b) => (b.events ?? []) as Record<string, unknown>[]);
+  const stuck = events.filter((e) => e.kind === "spinner_stuck");
+  const described = stuck.map((e) => String((e.payload as Record<string, unknown>)?.element));
+
+  expect(described, "the indeterminate spinner must still be caught")
+    .toContain("test-stuck-spinner");
+  // No progress bar — neither the injected one nor the app's own timer and
+  // daily-goal bars, which are on screen for this entire test.
+  expect(described.filter((d) => d.includes("progressbar")),
+    `progress bars reported as stuck loading states: ${described.join(", ")}`).toHaveLength(0);
+});
+
+test("a request that fails during an offline blip is not an incident", async ({ page }) => {
+  // navigator.onLine is updated by the browser AFTER the request has already
+  // failed, so sampling it at failure time blamed us for the user's tunnel:
+  // a token refresh reported online:true and opened a high-severity incident
+  // while the next request 17ms later reported online:false.
+  const batches = await captureTelemetry(page);
+  await page.route("**/probe-*", (route) => route.abort("failed"));
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+
+  // Control: a failure with no connectivity evidence is still ours to fix.
+  await page.evaluate(() => { void fetch("/probe-backend").catch(() => {}); });
+  // Past the 2s grace, so the offline signal below cannot retro-excuse it.
+  await page.waitForTimeout(3000);
+
+  // The race: the browser has noticed it is offline, but navigator.onLine has
+  // not caught up — exactly the state the real incident was reported in.
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("offline"));
+    void fetch("/probe-offline").catch(() => {});
+  });
+  await page.waitForTimeout(3000);
+  await flushTelemetry(page);
+
+  const events = batches.flatMap((b) => (b.events ?? []) as Record<string, unknown>[]);
+  const failuresFor = (needle: string) => events.filter((e) =>
+    e.kind === "network_error" &&
+    String((e.payload as Record<string, unknown>)?.url ?? "").includes(needle));
+
+  // High severity is never sampled away, so both assertions are deterministic.
+  const backend = failuresFor("probe-backend");
+  expect(backend.length, "a genuine network failure must still be reported").toBeGreaterThan(0);
+  expect(backend.some((e) => e.severity === "high")).toBe(true);
+
+  expect(failuresFor("probe-offline").filter((e) => e.severity === "high" || e.severity === "critical"),
+    "an offline blip must not open an incident").toHaveLength(0);
+});
+
 test("telemetry failures never surface to the user", async ({ page }) => {
   // Every ingest attempt fails. The app must be completely unaffected — this
   // is the "monitoring outage must not become a product outage" guarantee.

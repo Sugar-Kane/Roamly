@@ -10,7 +10,7 @@ import type { EventKind, Severity } from "./types";
 import { enqueueEvent } from "./transport";
 import { currentRoute } from "./session";
 import { describeElement, elementPath, isSensitiveField, redactText, redactUrl } from "./redact";
-import { installNetworkMonitor, onNetwork } from "./net";
+import { inflightRequests, installNetworkMonitor, onNetwork, type NetObservation } from "./net";
 import { recordFrame } from "./replay";
 
 let installed = false;
@@ -200,16 +200,42 @@ function installRageClickDetector(): void {
 
 const SPINNER_THRESHOLD_MS = 12_000;
 
-function installSpinnerWatchdog(): void {
-  let inflight = 0;
-  onNetwork(() => { inflight = Math.max(0, inflight - 1); });
-  const originalFetch = window.fetch;
-  window.fetch = ((...args: Parameters<typeof fetch>) => {
-    inflight += 1;
-    return originalFetch(...args);
-  }) as typeof fetch;
+/**
+ * A progress DISPLAY is not a loading indicator, and confusing the two is how
+ * this detector spent its first week reporting the timer.
+ *
+ * `[role=progressbar]` covers both meanings in ARIA, separated by exactly one
+ * attribute: a determinate bar publishes `aria-valuenow`, an indeterminate one
+ * ("working, no idea how long") omits it. Every progressbar in Roamly is
+ * determinate — the focus-phase bar, the daily-goal bar, the task-completion
+ * bar — and each is *supposed* to sit on screen for the whole session with no
+ * network traffic behind it. That is the detector's firing condition exactly,
+ * so each one reported itself as a stuck loading state on a timer: two
+ * incidents, one of which was "patched" against a bug that never existed.
+ *
+ * Keying on `aria-valuenow` rather than on a route or selector allowlist keeps
+ * the rule honest — a genuinely indeterminate spinner is still watched, and a
+ * new determinate bar is exempt the day it is written, without anyone having
+ * to remember to add it here.
+ */
+function isProgressDisplay(el: Element): boolean {
+  return el.hasAttribute("aria-valuenow");
+}
 
-  const seen = new WeakMap<Element, number>();
+/** Rendered and taking up space. */
+function isVisible(el: Element): boolean {
+  // getClientRects() over offsetParent: offsetParent is null for any
+  // `position: fixed` element, which silently exempted every full-screen
+  // loading overlay — the single most important thing this detector watches.
+  return el.isConnected && el.getClientRects().length > 0;
+}
+
+function installSpinnerWatchdog(): void {
+  // When the spinner first became visible. Cleared the moment it stops being
+  // visible, so the threshold measures ONE continuous loading state: without
+  // the reset a spinner shown for a second, hidden for twenty, then shown
+  // again reads as twenty-two seconds stuck.
+  const visibleSince = new WeakMap<Element, number>();
   const reported = new WeakSet<Element>();
 
   window.setInterval(() => {
@@ -218,9 +244,13 @@ function installSpinnerWatchdog(): void {
     );
     const now = Date.now();
     spinners.forEach((el) => {
-      if (!el.isConnected || el.offsetParent === null) return;
-      const since = seen.get(el);
-      if (since === undefined) { seen.set(el, now); return; }
+      if (isProgressDisplay(el)) return;
+      if (!isVisible(el)) { visibleSince.delete(el); reported.delete(el); return; }
+
+      const since = visibleSince.get(el);
+      if (since === undefined) { visibleSince.set(el, now); return; }
+
+      const inflight = inflightRequests();
       if (now - since > SPINNER_THRESHOLD_MS && !reported.has(el) && inflight === 0) {
         reported.add(el);
         emit("spinner_stuck", "high", {
@@ -316,6 +346,92 @@ function expectedNon2xx(url: string): boolean {
   return EXPECTED_NON_2XX.some((e) => e.pattern.test(url));
 }
 
+// --- Connectivity: deciding whether a failed request was our fault ----------
+//
+// A status-0 failure ("Failed to fetch") is either a real backend problem or
+// the user's train going into a tunnel, and only the first is worth an
+// engineer. The existing rule — trust `navigator.onLine` at the instant we
+// emit — gets the tunnel case wrong, because that flag is updated by the
+// browser AFTER the request has already failed.
+//
+// This is not hypothetical: a token refresh failed at .933 and reported
+// `online: true`, opening a high-severity incident, while the very next
+// request 17ms later reported `online: false`. Same tunnel, two verdicts,
+// decided by which side of the flag update each request landed on.
+//
+// So the verdict waits for the browser to catch up.
+
+/** How long to let the browser notice it is offline before we blame ourselves. */
+const CONNECTIVITY_GRACE_MS = 2000;
+/** Slack for an offline transition observed just before the request started. */
+const OFFLINE_LOOKBACK_MS = 1000;
+
+let lastOfflineAt = 0;
+let unloading = false;
+
+/**
+ * Why a failure is not our bug, or null if it is.
+ *
+ * `startedAt` matters more than the failure time: a request issued while the
+ * connection was already dropping is explained by that drop even though the
+ * browser had not yet flipped the flag.
+ *
+ * `wasUnloading` is sampled when the failure is OBSERVED, not when it is
+ * judged. The abort case is "request in flight → page goes away → request
+ * fails", so only a failure that arrives after pagehide was caused by the
+ * navigation; one that had already failed before it is unrelated and keeps its
+ * severity.
+ */
+function connectivityExcuse(startedAt: number, wasUnloading: boolean): string | null {
+  if (!navigator.onLine) return "offline";
+  if (lastOfflineAt >= startedAt - OFFLINE_LOOKBACK_MS) return "offline_during_request";
+  // The browser aborts in-flight requests when the page goes away, and reports
+  // them as generic network failures indistinguishable from a real outage.
+  if (wasUnloading) return "page_unloading";
+  return null;
+}
+
+/** Failures whose verdict is still waiting on the grace period. */
+const pendingFailures = new Set<() => void>();
+
+function reportNetworkFailure(obs: NetObservation): void {
+  const startedAt = obs.ts - obs.durationMs;
+  const wasUnloading = unloading;
+  let timer = 0;
+
+  const decide = () => {
+    // Whichever of the timer and the pagehide sweep gets here first wins.
+    if (!pendingFailures.delete(decide)) return;
+    window.clearTimeout(timer);
+    const excuse = connectivityExcuse(startedAt, wasUnloading);
+    emit("network_error", excuse ? "low" : "high", {
+      url: obs.url, method: obs.method, error: obs.error,
+      online: navigator.onLine, durationMs: obs.durationMs,
+      // Recorded rather than dropped: triage should be able to see that a
+      // failure was judged environmental, and on what grounds.
+      ...(excuse ? { connectivity: excuse } : {}),
+    });
+  };
+
+  pendingFailures.add(decide);
+  timer = window.setTimeout(decide, CONNECTIVITY_GRACE_MS);
+}
+
+function installConnectivityTracking(): void {
+  window.addEventListener("offline", () => { lastOfflineAt = Date.now(); });
+  // pagehide fires for bfcache suspends too (a mobile tab switch), so pageshow
+  // has to clear the flag — otherwise one backgrounded tab downgrades every
+  // network error for the rest of the session.
+  window.addEventListener("pageshow", () => { unloading = false; });
+  window.addEventListener("pagehide", () => {
+    unloading = true;
+    // Decide everything still waiting, so the final beacon carries it. This
+    // listener is registered during installSensors(), which runs before the
+    // pagehide flush in initSelfHealing() — the events land in that batch.
+    for (const decide of Array.from(pendingFailures)) decide();
+  });
+}
+
 function installNetworkSensors(): void {
   onNetwork((obs) => {
     recordFrame("d", { u: obs.url, s: obs.status, ms: obs.durationMs });
@@ -323,10 +439,8 @@ function installNetworkSensors(): void {
     // be diagnostic context — but never raised as a problem on its own.
     if (!obs.ok && expectedNon2xx(obs.rawUrl)) return;
     if (obs.status === 0) {
-      emit("network_error", navigator.onLine ? "high" : "low", {
-        url: obs.url, method: obs.method, error: obs.error,
-        online: navigator.onLine, durationMs: obs.durationMs,
-      });
+      // Deferred by CONNECTIVITY_GRACE_MS: see connectivityExcuse().
+      reportNetworkFailure(obs);
       return;
     }
     if (obs.status >= 500) {
@@ -503,6 +617,9 @@ export function installSensors(): void {
   installed = true;
   installNetworkMonitor();
   installErrorSensors();
+  // Before installNetworkSensors: a failure in the first milliseconds must be
+  // judged with the offline/unload listeners already attached.
+  installConnectivityTracking();
   installNetworkSensors();
   installDeadClickDetector();
   installRageClickDetector();

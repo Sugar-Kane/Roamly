@@ -214,12 +214,20 @@ export function SelfHealingPage({ state }: { state: AdminFilterState }) {
               {trend.length > 1 && (
                 <div className="mt-4 rounded-2xl border border-border bg-card/70 p-4">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Incidents over time</h3>
-                  <Suspense fallback={<div className="h-40 animate-pulse rounded-xl bg-border/40" />}>
-                    <AdminTrendChart data={trend} series={[
-                      { key: "Opened", label: "Opened", color: "hsl(var(--destructive))" },
-                      { key: "Resolved", label: "Resolved", color: "hsl(var(--primary))" },
-                    ]} />
-                  </Suspense>
+                  {/* AdminTrendChart is h-full over a ResponsiveContainer at
+                      height="100%", so it needs an ancestor with a real height
+                      or it collapses to zero and renders an empty card — its
+                      only other output, ChartTable, is sr-only. Every other
+                      call site gets this from ChartCard's h-44; this one is a
+                      hand-rolled card, so it has to supply the height itself. */}
+                  <div className="mt-3 h-44">
+                    <Suspense fallback={<div className="h-full w-full animate-pulse rounded-xl bg-border/40" />}>
+                      <AdminTrendChart data={trend} series={[
+                        { key: "Opened", label: "Opened", color: "hsl(var(--destructive))" },
+                        { key: "Resolved", label: "Resolved", color: "hsl(var(--primary))" },
+                      ]} />
+                    </Suspense>
+                  </div>
                 </div>
               )}
 

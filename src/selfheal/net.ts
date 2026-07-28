@@ -28,6 +28,27 @@ type Listener = (obs: NetObservation) => void;
 const listeners = new Set<Listener>();
 let installed = false;
 
+/**
+ * Requests started but not yet settled, counted here because this is the only
+ * place that sees BOTH transports.
+ *
+ * The spinner watchdog's whole argument — "a spinner with nothing in flight is
+ * an infinite loading state, not a slow one" — rests on this number, so it has
+ * to be exact in both directions. It previously lived in the watchdog, which
+ * wrapped `window.fetch` a second time and decremented on every observation.
+ * That was wrong twice over: XHR settles emit an observation without ever
+ * having incremented, dragging the count to 0 while fetches were genuinely in
+ * flight (false positives), while the SDK's own ingest POST incremented and
+ * then never emitted, leaking the count upward forever (silent suppression).
+ * Incrementing and decrementing in the same wrapper is what makes it balance.
+ */
+let inflight = 0;
+
+/** How many requests are in flight right now, across fetch and XHR. */
+export function inflightRequests(): number {
+  return inflight;
+}
+
 export function onNetwork(fn: Listener): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);
@@ -49,10 +70,15 @@ export function installNetworkMonitor(): void {
     const rawUrl = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     // Never observe our own ingest calls — that is an infinite loop generator.
+    // They are excluded from the in-flight count too: telemetry is our traffic,
+    // not the app's, and letting a flush count as "something is loading" would
+    // suppress the very detectors it exists to feed.
     const isSelf = rawUrl.includes("/api/selfheal");
+    if (!isSelf) inflight += 1;
     try {
       const res = await originalFetch(input as RequestInfo, init);
       if (!isSelf) {
+        inflight = Math.max(0, inflight - 1);
         emit({
           method, url: redactUrl(rawUrl), rawUrl, status: res.status, ok: res.ok,
           durationMs: Math.round(performance.now() - started), ts: Date.now(),
@@ -61,6 +87,7 @@ export function installNetworkMonitor(): void {
       return res;
     } catch (err) {
       if (!isSelf) {
+        inflight = Math.max(0, inflight - 1);
         emit({
           method, url: redactUrl(rawUrl), rawUrl, status: 0, ok: false,
           durationMs: Math.round(performance.now() - started),
@@ -85,9 +112,10 @@ export function installNetworkMonitor(): void {
 
   XhrProto.send = function (this: Tracked, ...args: unknown[]) {
     this.__shStart = performance.now();
+    const rawUrl = this.__shUrl || "";
+    const isSelf = rawUrl.includes("/api/selfheal");
     const finish = (status: number, error?: string) => {
-      const rawUrl = this.__shUrl || "";
-      if (rawUrl.includes("/api/selfheal")) return;
+      if (isSelf) return;
       emit({
         method: this.__shMethod || "GET", url: redactUrl(rawUrl), rawUrl, status,
         ok: status >= 200 && status < 400,
@@ -98,6 +126,26 @@ export function installNetworkMonitor(): void {
     this.addEventListener("load", () => finish(this.status));
     this.addEventListener("error", () => finish(0, "xhr error"));
     this.addEventListener("timeout", () => finish(0, "xhr timeout"));
+
+    // Decrement on `loadend`, which fires for every terminal outcome including
+    // `abort` — the one an aborted upload takes, and the one that would
+    // otherwise leak the count upward and silence the spinner watchdog.
+    if (!isSelf) {
+      inflight += 1;
+      let settled = false;
+      this.addEventListener("loadend", () => {
+        if (settled) return;
+        settled = true;
+        inflight = Math.max(0, inflight - 1);
+      });
+      try {
+        return (originalSend as (...a: unknown[]) => void).apply(this, args);
+      } catch (err) {
+        // send() can throw synchronously, in which case no event ever fires.
+        if (!settled) { settled = true; inflight = Math.max(0, inflight - 1); }
+        throw err;
+      }
+    }
     return (originalSend as (...a: unknown[]) => void).apply(this, args);
   } as typeof XhrProto.send;
 }
