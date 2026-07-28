@@ -166,6 +166,16 @@ async function investigate(
   }
 
   const confidence = clamp01(Number(parsed.confidence ?? 0));
+  // Belt and braces on top of the prompt rule: filter against the real tree, so
+  // an invented path is dropped rather than stored and shown to a reviewer as
+  // if it were fact. What was dropped is logged — silently discarding it would
+  // hide that the model is guessing.
+  const realFiles: string[] = (evidence.repoFiles as string[]) ?? [];
+  const claimed = Array.isArray(parsed.affected_files) ? parsed.affected_files.map(String) : [];
+  const verifiedFiles = realFiles.length ? claimed.filter((f) => realFiles.includes(f)) : claimed;
+  const invented = claimed.filter((f) => !verifiedFiles.includes(f));
+  if (invented.length) apiLog("selfheal-investigate", "diagnosis_invented_paths", { incident: incidentId, invented });
+
   const { data: existing } = await admin
     .from("sh_diagnoses").select("version").eq("incident_id", incidentId)
     .order("version", { ascending: false }).limit(1).single();
@@ -179,7 +189,7 @@ async function investigate(
     reasoning: String(parsed.reasoning ?? "").slice(0, 8000),
     confidence,
     alternatives: parsed.alternatives ?? [],
-    affected_files: parsed.affected_files ?? [],
+    affected_files: verifiedFiles,
     affected_components: parsed.affected_components ?? [],
     estimated_users: incident.affected_users,
     regression_risk: String(parsed.regression_risk ?? "medium"),
@@ -239,7 +249,8 @@ async function collectEvidence(admin: SupabaseClient, incident: Record<string, u
         .order("ts", { ascending: false }).limit(60)
     : { data: [] };
 
-  const source = await fetchSourceFiles(incident);
+  const repoFiles = await fetchRepoTree();
+  const source = await fetchSourceFiles(incident, repoFiles);
   const commits = await fetchRecentCommits(incident.suspected_release as string | null);
 
   const bundle = {
@@ -249,6 +260,10 @@ async function collectEvidence(admin: SupabaseClient, incident: Record<string, u
     leadUp: leadUp ?? [],
     source,
     commits,
+    // The authoritative list of paths that exist. Named `repoFiles` in the
+    // prompt and referenced by the system rule that affected_files must be
+    // drawn from it.
+    repoFiles,
   };
 
   // Persist so the dashboard can show exactly what the model saw. An opaque
@@ -258,6 +273,7 @@ async function collectEvidence(admin: SupabaseClient, incident: Record<string, u
     { incident_id: incidentId, kind: "network", label: "lead-up", content: bundle.leadUp.slice(0, 30) },
     { incident_id: incidentId, kind: "commit", label: "recent commits", content: commits },
     ...(source.length ? [{ incident_id: incidentId, kind: "source", label: "candidate files", content: source.map((f) => f.path) }] : []),
+    ...(repoFiles.length ? [{ incident_id: incidentId, kind: "source", label: "repo file list", content: { count: repoFiles.length } }] : []),
   ]);
 
   return bundle;
@@ -269,30 +285,128 @@ async function sessionIdsFor(admin: SupabaseClient, incidentId: string): Promise
 }
 
 /**
- * Read the candidate source files straight from GitHub. Read-only, and only
- * paths derived from our own telemetry — never a path the model asked for,
- * which would be an arbitrary-file-read primitive driven by model output.
+ * The repository's real file list, straight from git. This is the single most
+ * important input for grounding: without it the model has no idea what exists,
+ * so it falls back on conventional React layouts and invents
+ * `src/pages/Focus.tsx`, `src/hooks/useFocusData.ts` and friends — none of
+ * which are in this repo. One cheap call buys every downstream step a set of
+ * paths it can actually be held to.
  */
-async function fetchSourceFiles(incident: Record<string, unknown>): Promise<{ path: string; content: string }[]> {
+async function fetchRepoTree(): Promise<string[]> {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPO || DEFAULT_REPO;
+  const base = process.env.GITHUB_BASE_BRANCH || "main";
+  if (!token) return [];
+  try {
+    const res = await fetch(`https://api.github.com/repos/${repo}/git/trees/${base}?recursive=1`, {
+      headers: {
+        Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+    });
+    if (!res.ok) return [];
+    const body = await res.json() as { tree?: { path?: string; type?: string }[] };
+    return (body.tree ?? [])
+      .filter((n) => n.type === "blob" && typeof n.path === "string")
+      .map((n) => n.path as string)
+      .filter((path) => /^(src|api|supabase|tests)\//.test(path) && /\.(ts|tsx|sql)$/.test(path));
+  } catch {
+    return [];
+  }
+}
+
+// Route → the files that actually implement it. Verified against the tree
+// before use, so a rename degrades to "no candidate" instead of a silent 404.
+// Every SPA route also gets src/App.tsx: it is the shell and router, and most
+// view code (the focus view, the task list, loading states) lives inside it
+// rather than in a file named after the route.
+const ROUTE_FILES: Record<string, string[]> = {
+  focus: ["src/App.tsx", "src/FocusMode.tsx", "src/useTimer.ts"],
+  tasks: ["src/App.tsx", "src/UploadTasks.tsx"],
+  rooms: ["src/RoomsLive.tsx", "src/rooms.ts"],
+  analytics: ["src/StudyInsights.tsx", "src/Charts.tsx"],
+  garden: ["src/GamificationView.tsx", "src/GardenBed.tsx", "src/gamification.ts"],
+  premium: ["src/App.tsx"],
+  admin: ["src/Admin.tsx", "src/adminDashboard.tsx"],
+};
+
+/**
+ * Pull windows around the parts of a file that relate to the incident, rather
+ * than the first N bytes. Head-truncation is what produced the last two useless
+ * diagnoses: src/App.tsx is ~4,000 lines, so 60KB from the top is imports and
+ * early helpers, and the model never sees the handler it was asked about. The
+ * previous comment claimed the top of a React component carries the diagnostic
+ * value — true for a small component, false for the one file that holds most of
+ * this app.
+ */
+function relevantExcerpt(content: string, needles: string[], budget = 24_000): string {
+  if (content.length <= budget) return content;
+  const lines = content.split("\n");
+  const terms = needles.map((n) => n.toLowerCase()).filter((n) => n.length >= 3);
+  const hits: number[] = [];
+  if (terms.length) {
+    lines.forEach((line, i) => {
+      const low = line.toLowerCase();
+      if (terms.some((t) => low.includes(t))) hits.push(i);
+    });
+  }
+  if (hits.length === 0) return content.slice(0, budget); // nothing matched — head is the honest fallback
+
+  const WINDOW = 60;
+  const ranges: [number, number][] = [];
+  for (const h of hits) {
+    const lo = Math.max(0, h - WINDOW), hi = Math.min(lines.length - 1, h + WINDOW);
+    const last = ranges[ranges.length - 1];
+    if (last && lo <= last[1] + 1) last[1] = Math.max(last[1], hi);
+    else ranges.push([lo, hi]);
+  }
+  let out = "";
+  for (const [lo, hi] of ranges) {
+    const chunk = `\n// ——— lines ${lo + 1}-${hi + 1} ———\n` + lines.slice(lo, hi + 1).join("\n");
+    if (out.length + chunk.length > budget) break;
+    out += chunk;
+  }
+  return out || content.slice(0, budget);
+}
+
+/**
+ * Read the candidate source files straight from GitHub. Read-only, and only
+ * paths derived from our own telemetry AND present in the repo tree — never a
+ * path the model asked for, which would be an arbitrary-file-read primitive
+ * driven by model output.
+ */
+async function fetchSourceFiles(incident: Record<string, unknown>, tree: string[]): Promise<{ path: string; content: string }[]> {
   const token = process.env.GITHUB_TOKEN;
   const repo = process.env.GITHUB_REPO || DEFAULT_REPO;
   if (!token) return [];
 
-  const candidates = new Set<string>();
+  const exists = new Set(tree);
+  const candidates: string[] = [];
+  const add = (path: string) => {
+    if (!path || candidates.includes(path)) return;
+    if (exists.size && !exists.has(path)) return; // never request a path git doesn't have
+    candidates.push(path);
+  };
+
   const component = incident.component as string | null;
-  if (component && /^(src|api|supabase)\//.test(component) && !component.includes("..")) candidates.add(component);
+  if (component && /^(src|api|supabase)\//.test(component) && !component.includes("..")) add(component);
 
   const route = incident.route as string | null;
-  if (route) {
-    const guess: Record<string, string> = {
-      focus: "src/FocusMode.tsx", tasks: "src/UploadTasks.tsx", rooms: "src/RoomsLive.tsx",
-      analytics: "src/StudyInsights.tsx", garden: "src/GardenBed.tsx", admin: "src/Admin.tsx",
-    };
-    if (guess[route]) candidates.add(guess[route]);
-  }
+  for (const path of ROUTE_FILES[String(route ?? "").replace(/^#?\/?/, "")] ?? []) add(path);
+
+  // Needles come from OUR telemetry, never from model output: the CSS selector
+  // that misbehaved, the route, the contract. They decide which slice of a big
+  // file is worth sending.
+  const needles = [
+    String(incident.component ?? ""),
+    String(incident.contract_key ?? ""),
+    String(incident.journey_key ?? ""),
+    ...String(incident.title ?? "").match(/"([^"]{3,60})"/g)?.map((m) => m.replace(/"/g, "")) ?? [],
+    ...String(incident.title ?? "").match(/\[role=([a-z]+)\]/g) ?? [],
+  ].filter(Boolean);
 
   const files: { path: string; content: string }[] = [];
-  for (const path of Array.from(candidates).slice(0, 3)) {
+  for (const path of candidates.slice(0, 4)) {
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/contents/${encodeURIComponent(path)}`, {
         headers: {
@@ -302,9 +416,7 @@ async function fetchSourceFiles(incident: Record<string, unknown>): Promise<{ pa
       });
       if (!res.ok) continue;
       const content = await res.text();
-      // Big files are truncated rather than skipped: the top of a React
-      // component (imports, props, state) carries most of the diagnostic value.
-      files.push({ path, content: content.slice(0, 60_000) });
+      files.push({ path, content: relevantExcerpt(content, needles) });
     } catch { /* a missing file is not an error here */ }
   }
   return files;
@@ -425,7 +537,8 @@ async function proposePatch(
     return { incidentId, error: "confidence_too_low", confidence: diagnosis.confidence };
   }
 
-  const files = await fetchSourceFiles({ ...incident, component: (diagnosis.affected_files as string[])?.[0] ?? incident.component });
+  const patchTree = await fetchRepoTree();
+  const files = await fetchSourceFiles({ ...incident, component: (diagnosis.affected_files as string[])?.[0] ?? incident.component }, patchTree);
 
   const message = await anthropic.messages.create({
     model: MODEL_PATCH,
@@ -535,13 +648,21 @@ Respond with ONLY a JSON object, no prose outside it:
   "reasoning": "the evidence chain that leads there, and what rules out the alternatives",
   "confidence": 0.0-1.0,
   "alternatives": [{"hypothesis": "...", "confidence": 0.0-1.0, "disproved_by": "..."}],
-  "affected_files": ["src/..."],
+  "affected_files": ["src/..."],   // MUST be exact strings copied from evidence.repoFiles
   "affected_components": ["..."],
   "regression_risk": "low|medium|high",
   "suggested_priority": "info|low|medium|high|critical",
   "business_impact": "what a user cannot do because of this",
   "injection_suspected": false
 }
+
+evidence.repoFiles is the complete list of source paths in this repository.
+Every entry in affected_files MUST be copied verbatim from it. Do NOT infer a
+path from framework convention — this codebase does not use src/pages,
+src/routes, src/hooks or src/components, and a plausible-looking path that does
+not exist is worse than an empty list because it sends a reviewer hunting for a
+file that was never there. If the evidence does not let you localise the defect
+to a real file, return an empty array and say so in "reasoning".
 
 Be honest about confidence. A calibrated 0.4 is far more useful than an
 overconfident 0.9 — everything downstream gates on this number, and a wrong
