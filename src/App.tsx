@@ -2018,13 +2018,24 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 .slice(0, 3);
               // Start a focus session connected to a task (or none) — same
               // gesture-safe path as the main Start button.
+              const sessionRunning = timerMode === "countup" ? countUp.running : timer.running;
               const startFocusing = (taskId: string | null) => {
                 setActiveTask(taskId);
-                if (timerMode === "countup") {
-                  if (!countUp.running) runSolo?.(() => { timer.reset(); unlockAudio(); countUp.start(); });
+                if (sessionRunning) {
+                  // A session is already going, so there is nothing to start.
+                  // Picking a real task is its own visible effect (the row
+                  // pins to the top), but "start without a task" changes
+                  // nothing you can see — which is precisely the dead click
+                  // users rage-clicked at. Surface the running session instead.
+                  // Count-up has no immersive view, so it is left alone.
+                  if (taskId === null && timerMode !== "countup") enterFocus?.();
                   return;
                 }
-                if (!timer.running) runSolo?.(() => { countUp.reset(); unlockAudio(); enterFocus?.(); timer.start(); });
+                if (timerMode === "countup") {
+                  runSolo?.(() => { timer.reset(); unlockAudio(); countUp.start(); });
+                  return;
+                }
+                runSolo?.(() => { countUp.reset(); unlockAudio(); enterFocus?.(); timer.start(); });
               };
               if (upNext.length === 0) return (
                 <div className="rounded-xl border border-dashed border-border bg-card/50 p-4 text-center">
@@ -2035,10 +2046,27 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                       className="inline-flex items-center gap-1.5 rounded-full gradient-primary px-4 py-2 text-xs font-semibold text-white shadow-glow transition active:scale-95">
                       <Plus size={13} /> Add a task
                     </button>
-                    <button onClick={() => startFocusing(null)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-                      Start without a task
-                    </button>
+                    {/* Never offer "Start" for a session that is already
+                        running — a button that cannot do its one job is the
+                        bug this card was reported for. While a session is live
+                        the card says so, and offers the action that does work. */}
+                    {sessionRunning ? (
+                      timerMode === "countup" ? (
+                        <span className="inline-flex items-center rounded-full border border-border bg-card px-4 py-2 text-xs font-medium text-muted-foreground">
+                          Count-up session already running
+                        </span>
+                      ) : (
+                        <button onClick={() => startFocusing(null)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                          Back to your session
+                        </button>
+                      )
+                    ) : (
+                      <button onClick={() => startFocusing(null)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-4 py-2 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
+                        Start without a task
+                      </button>
+                    )}
                   </div>
                 </div>
               );
