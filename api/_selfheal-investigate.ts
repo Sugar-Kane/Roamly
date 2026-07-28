@@ -699,10 +699,14 @@ Key architectural facts, which are often the answer:
   usually webhook or timing bugs, not UI bugs.
 - Room timers are derived from wall-clock math against started_at, not ticks.
 - The app is PATH-routed, not hash-routed: view state comes from
-  window.location.pathname via viewFromPath(), with history.pushState and
-  vercel.json rewrites (/focus, /tasks, /rooms, /analytics, /garden, /admin all
-  serve index.html). An unrecognised path falls back to the focus view, so a
-  wrong URL does not 404 — it silently renders the wrong screen.
+  window.location.pathname via viewFromPath(), with history.pushState. Exactly
+  six paths are rewritten to index.html in vercel.json — /focus, /tasks,
+  /rooms, /analytics, /garden, /admin — and there is NO catch-all. A hard
+  request to any other path returns a real 404 from the edge and the SPA never
+  boots, so do not rule out a server-side 404 on an unexpected URL. The
+  fallback-to-focus behaviour in viewFromPath() applies only once the shell is
+  already running (client-side navigation, or one of those six paths), where an
+  unrecognised value renders the focus view silently instead of erroring.
 - A deploy replaces hashed chunk files, so "Loading chunk failed"/MIME-type
   errors in an old tab are expected and self-heal on reload.
 
@@ -744,9 +748,11 @@ Rules:
   routing, NOT hash routing).
 - The test MUST FAIL while the bug exists and pass once it is fixed. A test that
   passes today proves nothing.
-- The app is PATH-routed (page.goto("/focus"), never "/#/focus"). An
-  unrecognised path silently falls back to the focus view rather than failing,
-  so a wrong URL produces a test that passes against the wrong screen.
+- The app is PATH-routed (page.goto("/focus"), never "/#/focus"). Only six
+  paths serve the app — /focus, /tasks, /rooms, /analytics, /garden, /admin —
+  and anything else 404s at the edge. Once the shell is running, an
+  unrecognised route falls back to the focus view rather than failing, so a
+  wrong in-app route can produce a test that passes against the wrong screen.
 - It runs against a preview build with placeholder Supabase env vars, so the
   real backend is NOT available. Prefer asserting on
   DOM/behaviour, and use page.route() to stub network responses when the bug
