@@ -307,12 +307,23 @@ async function disableFlag(admin: SupabaseClient, actor: string, flagKey?: strin
 
 async function ignore(admin: SupabaseClient, actor: string, incidentId?: string, reason?: string): Promise<Response> {
   if (!incidentId) return json({ error: "Missing incidentId" }, 400);
-  await admin.from("sh_incidents").update({
+  // supabase-js resolves with { error } rather than throwing, so an unchecked
+  // update reports success for a write that never happened. The dashboard now
+  // dismisses its dialog on an error-free result, which turned that silence
+  // into "ignored" appearing to work while the incident stayed active.
+  const { error } = await admin.from("sh_incidents").update({
     status: "ignored", resolution: "not_a_bug", resolved_at: new Date().toISOString(),
   }).eq("id", incidentId);
-  await admin.from("sh_audit_log").insert({
+  if (error) {
+    apiLog("selfheal-action", "ignore_failed", { incident: incidentId, message: error.message });
+    return json({ error: "Could not ignore this incident." }, 500);
+  }
+  // The audit row is bookkeeping: worth logging if it fails, never worth
+  // failing the action the user actually asked for.
+  const { error: auditError } = await admin.from("sh_audit_log").insert({
     actor, actor_user: actor, action: "incident_ignored", incident_id: incidentId, detail: { reason },
   });
+  if (auditError) apiLog("selfheal-action", "ignore_audit_failed", { incident: incidentId });
   return json({ ok: true }, 200);
 }
 

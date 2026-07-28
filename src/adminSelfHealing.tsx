@@ -10,7 +10,7 @@
 // AdminView before this component ever mounts, but that is defence in depth,
 // not the control — the control is server-side.
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, CheckCircle2, XCircle, GitPullRequest, Sparkles, Play, RotateCcw,
   ShieldAlert, Clock, Users, Activity, ChevronRight, ExternalLink, Power, Search,
@@ -322,6 +322,11 @@ function IncidentDetail({ id, onClose, onChanged }: { id: string; onClose: () =>
   const similar = (detail?.similar ?? []) as Record<string, unknown>[];
   const patch = patches[0];
 
+  // Tracks whether this dialog is still on screen, so a request that outlives
+  // it cannot act on the one that replaced it.
+  const aliveRef = useRef(true);
+  useEffect(() => () => { aliveRef.current = false; }, []);
+
   // `closeOnDone` marks the actions that END this incident — resolving it or
   // ignoring it. Everything else (investigate, repro, propose, reject a patch,
   // roll back) leaves the incident open and its result is meant to be read
@@ -335,6 +340,11 @@ function IncidentDetail({ id, onClose, onChanged }: { id: string; onClose: () =>
   ) => {
     setBusy(label); setMessage(null);
     const result = await fn();
+    // The dialog may already be gone — dismissed with Escape or the backdrop
+    // while this request was in flight. onClose() is the parent's unconditional
+    // "close whatever is open", so calling it now would shut a DIFFERENT
+    // incident the operator has since opened. Refresh the list and stop.
+    if (!aliveRef.current) { onChanged(); return; }
     setBusy(null);
     if (!result.error && opts?.closeOnDone) {
       onChanged();  // refresh the list behind us; skip reload(), this is unmounting
