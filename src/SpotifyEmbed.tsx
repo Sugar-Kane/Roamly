@@ -14,7 +14,6 @@ import { useEffect, useRef, useState } from "react";
 
 export type SpotifyController = {
   destroy: () => void;
-  play: () => void;
   pause: () => void;
   resume: () => void;
   togglePlay: () => void;
@@ -46,21 +45,10 @@ function loadIFrameApi(): Promise<SpotifyIFrameApi | null> {
   return apiPromise;
 }
 
-export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, onController, onPausedChange, autoplay = false, playSignal = 0 }: {
+export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, onController, onPausedChange }: {
   uri: string;
   fallbackSrc: string; // plain embed URL used if the API script can't load
   height: number;
-  // Start playing as soon as the player is ready, instead of loading paused.
-  // Set only when the user actively picked this station (never for the dock's
-  // preloaded default), so nothing starts making noise on its own. This covers
-  // a FRESH mount; `playSignal` covers the rest.
-  autoplay?: boolean;
-  // Bumped once per explicit pick. A boolean alone can't express "play this
-  // again": picking the station that is already mounted (the dock preloads a
-  // default, and that default is also a preset) leaves `uri` unchanged, so the
-  // component never remounts and the mount-time autoplay never runs. Picking a
-  // station you just paused has the same shape. A counter fires every time.
-  playSignal?: number;
   // Bumped by App whenever a focus sound starts; the player pauses in response.
   pauseSignal: number;
   // Fired when playback actually starts inside the player.
@@ -81,14 +69,6 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, on
   onControllerRef.current = onController;
   const onPausedRef = useRef(onPausedChange);
   onPausedRef.current = onPausedChange;
-  // Read through a ref so toggling autoplay never re-runs the mount effect —
-  // that would tear down and rebuild a happily playing controller.
-  const autoplayRef = useRef(autoplay);
-  autoplayRef.current = autoplay;
-  // play() before the embed reports `ready` is silently dropped, so a request
-  // that lands early is parked here and replayed by the ready handler.
-  const readyRef = useRef(false);
-  const wantPlayRef = useRef(false);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -107,16 +87,6 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, on
         controller = c;
         controllerRef.current = c;
         onControllerRef.current?.(c);
-        // `ready` fires once the embed can accept commands — calling play() in
-        // this callback instead is too early and is silently dropped. Always
-        // registered (not just when autoplay is set at mount) so a pick that
-        // arrives while the embed is still loading is not lost.
-        c.addListener("ready", () => {
-          readyRef.current = true;
-          if (!autoplayRef.current && !wantPlayRef.current) return;
-          wantPlayRef.current = false;
-          try { c.play(); } catch { /* autoplay refused — the player still shows */ }
-        });
         let wasPaused = true;
         c.addListener("playback_update", (e) => {
           const paused = e.data?.isPaused !== false;
@@ -128,7 +98,6 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, on
     });
     return () => {
       cancelled = true;
-      readyRef.current = false;
       controllerRef.current = null;
       onControllerRef.current?.(null);
       onPausedRef.current?.(true);
@@ -137,21 +106,6 @@ export function SpotifyEmbed({ uri, fallbackSrc, height, pauseSignal, onPlay, on
     };
   }, [uri, height]);
 
-  // An explicit pick lands here. Note this deliberately does NOT use a
-  // "skip the first run" ref: this component's effects run TWICE on mount
-  // (StrictMode), so such a guard is spent by the duplicate run and the next
-  // real signal sails through — which autoplayed the preloaded station on page
-  // load. Comparing against the value seen when THIS instance mounted is immune
-  // to that: a remount re-baselines to the current value, so only a genuine
-  // change after mount plays. A pick that does remount the player (a different
-  // station) is handled by the autoplay path in the `ready` listener instead.
-  const baselineSignal = useRef(playSignal);
-  useEffect(() => {
-    if (playSignal === baselineSignal.current) return;
-    baselineSignal.current = playSignal;
-    if (!readyRef.current || !controllerRef.current) { wantPlayRef.current = true; return; }
-    try { controllerRef.current.play(); } catch { /* not ready after all */ }
-  }, [playSignal]);
 
   // Pause when the app's own audio starts. Skip the mount-time value so a
   // fresh player isn't immediately paused.
