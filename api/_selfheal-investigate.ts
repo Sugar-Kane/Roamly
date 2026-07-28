@@ -698,7 +698,11 @@ Key architectural facts, which are often the answer:
 - profiles.is_premium is written ONLY by the Stripe webhook. Premium bugs are
   usually webhook or timing bugs, not UI bugs.
 - Room timers are derived from wall-clock math against started_at, not ticks.
-- The app is hash-routed; "route" is the hash segment.
+- The app is PATH-routed, not hash-routed: view state comes from
+  window.location.pathname via viewFromPath(), with history.pushState and
+  vercel.json rewrites (/focus, /tasks, /rooms, /analytics, /garden, /admin all
+  serve index.html). An unrecognised path falls back to the focus view, so a
+  wrong URL does not 404 — it silently renders the wrong screen.
 - A deploy replaces hashed chunk files, so "Loading chunk failed"/MIME-type
   errors in an old tab are expected and self-heal on reload.
 
@@ -736,11 +740,15 @@ ${UNTRUSTED_PREAMBLE}
 Rules:
 - Output ONE TypeScript code block, nothing else.
 - Use @playwright/test, matching the existing suite in tests/ (baseURL is set in
-  playwright.config.ts; use relative paths like page.goto("/#/focus")).
+  playwright.config.ts; use relative paths like page.goto("/focus") — path
+  routing, NOT hash routing).
 - The test MUST FAIL while the bug exists and pass once it is fixed. A test that
   passes today proves nothing.
-- The app is hash-routed and runs against a preview build with placeholder
-  Supabase env vars, so the real backend is NOT available. Prefer asserting on
+- The app is PATH-routed (page.goto("/focus"), never "/#/focus"). An
+  unrecognised path silently falls back to the focus view rather than failing,
+  so a wrong URL produces a test that passes against the wrong screen.
+- It runs against a preview build with placeholder Supabase env vars, so the
+  real backend is NOT available. Prefer asserting on
   DOM/behaviour, and use page.route() to stub network responses when the bug
   depends on a specific server reply.
 - Never use real credentials, real user data, or production URLs.
