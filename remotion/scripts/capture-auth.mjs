@@ -65,17 +65,35 @@ const run = async () => {
     }
   }
 
-  // Selectors match src/Auth.tsx: a placeholder-labelled email and password
-  // input inside the modal, then the submit button.
-  const email = page.getByPlaceholder("Email");
+  // Everything is scoped to the auth dialog (src/Modal.tsx renders
+  // role="dialog"). The header's "Sign in" button and the modal's submit button
+  // share an accessible name, so an unscoped lookup would re-click the header.
+  const dialog = page.getByRole("dialog");
+  const email = dialog.getByPlaceholder("Email");
   await email.waitFor({ state: "visible", timeout: 15_000 });
   await email.fill(EMAIL);
-  await page.getByPlaceholder(/^Password$/).fill(PASSWORD);
-  await page.getByRole("button", { name: /^(sign in|log in|continue)$/i }).first().click();
+  await dialog.getByPlaceholder(/^Password$/).fill(PASSWORD);
+
+  // A Turnstile widget renders only when VITE_TURNSTILE_SITE_KEY is set. If it
+  // is present, an automated sign-in will stall on it — say so plainly rather
+  // than timing out with a misleading message.
+  const hasCaptcha = await dialog
+    .locator('iframe[src*="challenges.cloudflare.com"]')
+    .count()
+    .catch(() => 0);
+  if (hasCaptcha > 0) {
+    console.warn(
+      "  A CAPTCHA is present on the sign-in form. If this run stalls, re-run " +
+        "with ROAMLY_HEADED=1 and solve it by hand — the saved session is then " +
+        "reused for every capture.",
+    );
+  }
+
+  await dialog.getByRole("button", { name: /^Sign in$/i }).click();
 
   // Signed-in state is confirmed by the auth modal closing AND a profile
   // affordance appearing — not by a timeout, so a failed login fails loudly.
-  await page
+  await dialog
     .getByPlaceholder("Email")
     .waitFor({ state: "detached", timeout: 20_000 })
     .catch(() => {

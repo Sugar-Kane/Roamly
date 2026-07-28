@@ -32,8 +32,22 @@ So the honest path is the only path that produces an `.mp4`.
 
 ## Capture pipeline
 
-Run this before any render. It needs a **dedicated demo account** — these
-captures become public marketing material, so do not use a personal account.
+Run this before any render. It needs a demo account whose data you are happy to
+publish — these captures become public marketing material, so prefer an account
+created for the purpose over a personal one, and check the contact sheet for any
+name, email, or avatar that should be blurred.
+
+> **Run this on your own machine, not in a Claude Code web session.** Those
+> containers apply a network egress allowlist that does not include
+> `roamlyflow.com`, its Vercel previews, or `supabase.co`, so the browser
+> cannot reach the app or its database. Everything else in this project — the
+> Studio, placeholder development, rendering — works fine there.
+
+```bash
+cd remotion
+npm install
+npx playwright install chromium   # once, if you have never run Playwright here
+```
 
 ### 1. Seed the account
 
@@ -59,6 +73,11 @@ messages.
 
 Useful flags: `ROAMLY_HEADED=1` to watch it happen, `ROAMLY_URL` to point at a
 preview deployment instead of production.
+
+If the deployment has `VITE_TURNSTILE_SITE_KEY` set, a CAPTCHA sits on the
+sign-in form and headless automation will stall on it. The script detects the
+widget and says so; re-run with `ROAMLY_HEADED=1` and solve it by hand. The
+saved session is then reused for every capture, so this is a one-time cost.
 
 ### 3. Capture
 

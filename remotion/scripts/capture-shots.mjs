@@ -135,7 +135,12 @@ const run = async () => {
   if (wanted("01")) {
     console.log("01 — focus timer");
     await gotoView(page, "/", "01");
-    await assertNotEmpty(page, "01", page.getByRole("checkbox"), 4);
+    await assertNotEmpty(
+      page,
+      "01",
+      page.getByRole("button", { name: /^Mark complete:/ }),
+      4,
+    );
     // Start a block so the timer is genuinely mid-countdown, then let it run
     // far enough in that the digits are not a round number.
     const start = page.getByRole("button", { name: /^start$/i }).first();
@@ -148,7 +153,7 @@ const run = async () => {
   if (wanted("02")) {
     console.log("02 — method picker");
     await gotoView(page, "/", "02");
-    const picker = page.getByRole("button", { name: /method|classic 25/i }).first();
+    const picker = page.getByRole("button", { name: /Select timer/i }).first();
     await picker.click();
     await page.waitForTimeout(900);
     await assertNotEmpty(page, "02", page.getByText(/PANCE Drill|Deep Work|Anatomy 45/), 3);
@@ -166,9 +171,7 @@ const run = async () => {
     }
     await clip(browser, "03-upload.mp4", 11, async (p) => {
       await gotoView(p, "/tasks", "03");
-      await p.getByRole("button", { name: /upload|notes|generate/i }).first().click();
-      await p.waitForTimeout(800);
-      await p.locator('input[type="file"]').setInputFiles(SAMPLE_NOTES);
+      await p.getByLabel("Choose study material").setInputFiles(SAMPLE_NOTES);
       // The generation round-trip is the point of the shot; let it complete.
       await p.waitForTimeout(1200);
     });
@@ -179,7 +182,7 @@ const run = async () => {
     console.log("04 — live study room");
     await clip(browser, "04-room.mp4", 11, async (p) => {
       await gotoView(p, "/rooms", "04");
-      await p.getByRole("button", { name: /join/i }).first().click();
+      await p.getByRole("button", { name: /^Join$/ }).first().click();
       await p.waitForTimeout(1500);
     });
   }
@@ -205,7 +208,7 @@ const run = async () => {
     console.log("07 — picture-in-picture");
     await clip(browser, "07-pip.mp4", 6, async (p) => {
       await gotoView(p, "/", "07");
-      const pip = p.getByRole("button", { name: /pop ?out|picture/i }).first();
+      const pip = p.getByRole("button", { name: /Pop out timer/i }).first();
       if (!(await pip.isVisible().catch(() => false))) {
         throw new Error(
           "[07] No pop-out control found. Document PiP may be unsupported in " +
@@ -222,11 +225,14 @@ const run = async () => {
     console.log("08 — theme switching");
     await clip(browser, "08-themes.mp4", 6, async (p) => {
       await gotoView(p, "/", "08");
-      for (const theme of [/library night/i, /sage calm/i, /coffee shop/i]) {
+      for (const theme of [/^Library Night$/i, /^Sage Calm$/i, /^Coffee Shop$/i]) {
+        // The picker closes on selection, so it is reopened for each theme.
+        await p.getByRole("button", { name: /Change theme/i }).first().click();
+        await p.waitForTimeout(400);
         const t = p.getByRole("button", { name: theme }).first();
         if (await t.isVisible().catch(() => false)) {
           await t.click();
-          await p.waitForTimeout(1400);
+          await p.waitForTimeout(1300);
         }
       }
     });
@@ -249,7 +255,7 @@ const run = async () => {
     }
     if (wanted("10")) {
       await gotoView(mp, "/rooms", "10");
-      await mp.getByRole("button", { name: /join/i }).first().click();
+      await mp.getByRole("button", { name: /^Join$/ }).first().click();
       await mp.waitForTimeout(2000);
       await mp.screenshot({ path: join(OUT, "10-mobile-room.png"), scale: "device" });
       console.log("  ✓ 10-mobile-room.png");
