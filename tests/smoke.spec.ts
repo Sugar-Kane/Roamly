@@ -722,3 +722,52 @@ test("the garden toggle lives only in Customize Session", async ({ page }) => {
   await expect(page.getByTestId("customize-session").getByRole("switch", { name: "Show garden during focus" }))
     .toBeVisible();
 });
+
+test("a flung task can't be stranded off-screen and always lands", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+  // Seed guest tasks directly — the add form needs a subject picked per task.
+  await page.evaluate(() => {
+    localStorage.setItem("roamly-guest-tasks-v1", JSON.stringify([
+      { id: "d1", title: "Alpha", tag: "Pharm", done: false, poms: 0, est: 1, sort_order: 1 },
+      { id: "d2", title: "Beta", tag: "Pharm", done: false, poms: 0, est: 1, sort_order: 2 },
+      { id: "d3", title: "Gamma", tag: "Pharm", done: false, poms: 0, est: 1, sort_order: 3 },
+    ]));
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  const handle = page.locator("[data-drag-handle]").first();
+  await expect(handle).toBeVisible();
+
+  // Fling the row far above the viewport, then never deliver the release —
+  // the exact shape of the bug: the row used to keep a huge translate and sit
+  // stranded off-screen while still counting as lifted.
+  const stranded = await page.evaluate(() => {
+    const h = document.querySelector("[data-drag-handle]") as HTMLElement;
+    const row = h.closest('div[class*="rounded-xl"]') as HTMLElement;
+    const top = row.getBoundingClientRect().top + 5;
+    const fire = (t: string, y: number, el?: EventTarget) =>
+      (el ?? window).dispatchEvent(new PointerEvent(t, { clientY: y, clientX: 100, bubbles: true, cancelable: true, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+    fire("pointerdown", top, h);
+    return new Promise<{ visibleWhileFlung: boolean; recovered: boolean }>((resolve) => {
+      setTimeout(() => {
+        fire("pointermove", -5000);
+        setTimeout(() => {
+          const b = row.getBoundingClientRect();
+          const visibleWhileFlung = b.bottom > 0 && b.top < window.innerHeight;
+          window.dispatchEvent(new Event("blur")); // the release never arrives
+          setTimeout(() => {
+            const a = row.getBoundingClientRect();
+            resolve({ visibleWhileFlung, recovered: !row.getAttribute("style")!.includes("translateY") && a.bottom > 0 });
+          }, 400);
+        }, 150);
+      }, 200);
+    });
+  });
+  expect(stranded.visibleWhileFlung, "a flung row must stay on screen").toBe(true);
+  expect(stranded.recovered, "a drag with no release must still end").toBe(true);
+  // Order is untouched: losing the pointer aborts rather than silently reordering.
+  expect(await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("roamly-guest-tasks-v1")!).map((t: { title: string }) => t.title)
+  )).toEqual(["Alpha", "Beta", "Gamma"]);
+});
