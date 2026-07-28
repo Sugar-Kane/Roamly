@@ -173,6 +173,32 @@ A spinner visible >12s **with zero requests in flight**. The in-flight check is
 what separates "the upload is genuinely slow" from "the promise never
 resolved" — the second is always a bug, the first never is.
 
+Two corrections, both from incidents this detector opened against itself:
+
+- **A progress display is not a loading state.** `[role=progressbar]` covers
+  both meanings in ARIA, separated by one attribute: a determinate bar
+  publishes `aria-valuenow`, an indeterminate one omits it. Every progressbar
+  in Roamly is determinate — the focus-phase bar, the daily-goal bar, the
+  task-completion bar — and each is *meant* to sit on screen for a whole
+  session with no network behind it, which is the firing condition exactly. Two
+  incidents were opened this way and one was "patched" against a bug that never
+  existed. Elements carrying `aria-valuenow` are therefore never watched.
+  Keying on the attribute rather than a route or selector allowlist means a new
+  determinate bar is exempt the day it is written.
+- **The in-flight count must be exact in both directions.** It is maintained in
+  `net.ts`, the only place that wraps both `fetch` and XHR. When it lived in the
+  watchdog it decremented on every observation while incrementing only for
+  fetch, so XHR traffic dragged it to zero while real requests were pending
+  (false positives), and the SDK's own ingest POST incremented without ever
+  emitting, leaking it upward forever (silent suppression).
+
+Visibility is measured as one *continuous* interval — the clock resets when the
+element goes off screen, so a spinner shown briefly, hidden, and shown again no
+longer accumulates its way past the threshold. Visibility itself is
+`getClientRects()`, not `offsetParent`, which is null for every
+`position: fixed` element and had been exempting full-screen loading overlays —
+the most important thing the detector watches.
+
 ### Form submit with no request
 
 A `submit` event with no network activity within 2.5s. This catches the
@@ -193,8 +219,22 @@ self-heals them with a one-shot reload.
 
 500s → `critical`. 401/403 → `high`, tagged `permission` (usually RLS or a
 premium gate, always Level 3 to fix). 429 → `medium`, tagged `rate_limited`.
-Failures with `navigator.onLine === false` are downgraded to `low` — the user's
-train went into a tunnel; that is not our bug.
+Failures explained by the user's connection are downgraded to `low` — the
+user's train went into a tunnel; that is not our bug.
+
+Deciding that took one more step than it looks. `navigator.onLine` is updated
+by the browser *after* the request has already failed, so sampling it at
+failure time splits one tunnel into two verdicts: a token refresh failed
+reporting `online: true` and opened a high-severity incident, while the very
+next request 17ms later reported `online: false`. Connection failures
+(`status === 0`) therefore hold their verdict for 2s and are downgraded when
+any of three things is true — the browser is offline now, it reported going
+offline any time from just before the request started, or the request failed
+after `pagehide`, since a navigation aborts everything in flight and the
+failures are indistinguishable from an outage. The reason is recorded on the
+event as `connectivity`, so triage can see the grounds rather than just a
+missing incident. A `pagehide` resolves every held verdict immediately, so the
+last batch still carries them.
 
 ### Performance and layout
 
@@ -240,7 +280,8 @@ land. These are the backend equivalent of an unmet frontend expectation.
 | Journey completion | n≥15, below floor | Journeys are lower-volume than actions | Same |
 | Dead click | 1.2s, structural mutations only | Async handlers need time to respond | >2s and real dead clicks blur into slow ones |
 | Rage click | 4 clicks / 2s / 40px | 3 is normal impatience | 5+ and users have already given up |
-| Stuck spinner | 12s, 0 in flight | Real uploads exceed 8s | Users abandon around 15s |
+| Stuck spinner | 12s continuous, 0 in flight, no `aria-valuenow` | Real uploads exceed 8s | Users abandon around 15s |
+| Offline downgrade | offline within request window ±grace | Tighter re-blames us for tunnels | Wider hides real backend outages |
 | Slow request | 8s | p99 of AI generation is legitimately long | Beyond 8s it is a failed interaction |
 | CLS | 0.25 session total | Below this is imperceptible | Above 0.5 is already broken |
 | Sustained jank | 20 tasks + 5s / min | One long task is normal | Beyond this the tab is frozen |
