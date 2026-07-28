@@ -4,7 +4,8 @@
 // call. The banner and per-tile tooltips say so; Stripe remains the source of
 // truth for net revenue and is intentionally out of scope pending approval.
 
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazyChunk } from "./lazyChunk";
 import { Info } from "lucide-react";
 import {
   adminRevenueSummary, adminRevenueSeries, adminConversionFunnel, adminStripeRevenue,
@@ -13,7 +14,7 @@ import {
 import { FilterBar, KpiCard, csvDownload, type AdminFilterState } from "./adminDashboard";
 import { fmtCents } from "./adminMetrics";
 
-const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
+const AdminTrendChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (

@@ -7,7 +7,8 @@
 // Signed-in users get authoritative state from the server and can pick which
 // pet/plant is active; guests see a live local computation of their progress.
 
-import { lazy, Suspense } from "react";
+import { Suspense } from "react";
+import { lazyChunk } from "./lazyChunk";
 import { Sprout, PawPrint, Trophy, Lock, Check, Star, Sparkles, Flower2 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
@@ -15,7 +16,7 @@ import { GardenBed } from "./GardenBed";
 import { stageProps, isGrowable, type Gamification, type GamSyncResult } from "./gamification";
 import { ACHIEVEMENT_CATALOG, ACHIEVEMENT_CATEGORY_LABEL, ACHIEVEMENT_CATEGORY_ORDER, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, MAX_ACTIVE_PETS, SLOT_HINT, growthStage, type AchievementCategory, type PetSpecies } from "./petCatalog";
 
-const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
+const PetStage = lazyChunk(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 
 const KIND_LABEL: Record<string, string> = { plant: "Plant", tree: "Tree", accessory: "Accessory", theme: "Theme" };
 

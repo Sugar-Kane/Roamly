@@ -3,14 +3,15 @@
 // global plan/device filters, then chart + table + export. Read-only, backed
 // by the is_admin()-gated admin_explore_metric RPC.
 
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazyChunk } from "./lazyChunk";
 import { adminExploreMetric, type AdminExplorePoint } from "./db";
 import { FilterBar, csvDownload, type AdminFilterState } from "./adminDashboard";
 import { EXPLORE_METRICS, exploreMetric, type ExploreGrain } from "./adminMetrics";
 import { ThemedSelect } from "./ThemedSelect";
 
-const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
-const AdminStackedBars = lazy(() => import("./Charts").then((m) => ({ default: m.AdminStackedBars })));
+const AdminTrendChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
+const AdminStackedBars = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminStackedBars })));
 
 const GRAINS: { value: ExploreGrain; label: string }[] = [
   { value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" },

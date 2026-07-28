@@ -10,7 +10,8 @@
 // AdminView before this component ever mounts, but that is defence in depth,
 // not the control — the control is server-side.
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazyChunk } from "./lazyChunk";
 import {
   AlertTriangle, CheckCircle2, XCircle, GitPullRequest, Sparkles, Play, RotateCcw,
   ShieldAlert, Clock, Users, Activity, ChevronRight, ExternalLink, Power, Search,
@@ -25,7 +26,7 @@ import { FilterBar, KpiCard, csvDownload, type AdminFilterState } from "./adminD
 import { Modal } from "./Modal";
 import { ThemedSelect } from "./ThemedSelect";
 
-const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
+const AdminTrendChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
 
 const SEVERITY_STYLE: Record<ShSeverity, string> = {
   critical: "bg-destructive/15 text-destructive",

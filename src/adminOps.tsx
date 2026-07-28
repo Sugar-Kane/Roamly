@@ -4,7 +4,8 @@
 // on top of the existing raw log. Feedback and Ads keep their working inboxes
 // (rendered elsewhere in Admin.tsx).
 
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazyChunk } from "./lazyChunk";
 import {
   adminInviteSummary, adminInviteSeries, adminErrorGroups, adminErrorSeries, adminListErrors, adminSetErrorTriage,
   type AdminInviteSummary, type AdminInviteDay, type AdminErrorGroup, type AdminErrorDay, type ErrorRow,
@@ -29,7 +30,7 @@ const SEVERITY_STYLE: Record<ErrorSeverity, string> = {
   critical: "bg-destructive/15 text-destructive",
 };
 
-const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
+const AdminTrendChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
 
 function relTime(iso: string | null): string {
   if (!iso) return "never";
