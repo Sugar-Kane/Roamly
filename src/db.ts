@@ -1297,6 +1297,19 @@ export type ShOverview = {
   sessions: number; error_sessions: number;
 };
 
+/**
+ * A user who hit at least one incident in the window.
+ *
+ * Signed-out telemetry carries no identity by design, so this can only ever
+ * describe identified users — never treat an empty list as "nobody affected".
+ */
+export type ShAffectedUser = {
+  user_id: string; email: string | null; display_name: string | null;
+  incidents: number; events: number;
+  first_seen_at: string; last_seen_at: string;
+  worst_severity: ShSeverity; last_route: string | null; open_incidents: number;
+};
+
 export type ShIncident = {
   id: string; title: string; kind: string; status: string; severity: ShSeverity;
   approval_level: ShApprovalLevel; source: string; route: string | null;
@@ -1366,6 +1379,26 @@ export async function shIncidents(params: {
     preview_url: r.preview_url ? String(r.preview_url) : null,
     ai_confidence: r.ai_confidence == null ? null : num(r.ai_confidence),
     total_count: num(r.total_count),
+  }));
+}
+
+export async function shAffectedUsers(
+  startISO: string, endISO: string, limit = 50,
+): Promise<ShAffectedUser[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase.rpc("admin_sh_affected_users", {
+    p_start: startISO, p_end: endISO, p_limit: limit,
+  });
+  if (error) { console.warn("[Roamly] shAffectedUsers failed", error.message); return []; }
+  return (data ?? []).map((r: Record<string, unknown>) => ({
+    user_id: String(r.user_id),
+    email: r.email == null ? null : String(r.email),
+    display_name: r.display_name == null ? null : String(r.display_name),
+    incidents: num(r.incidents), events: num(r.events),
+    first_seen_at: String(r.first_seen_at), last_seen_at: String(r.last_seen_at),
+    worst_severity: String(r.worst_severity) as ShSeverity,
+    last_route: r.last_route == null ? null : String(r.last_route),
+    open_incidents: num(r.open_incidents),
   }));
 }
 
