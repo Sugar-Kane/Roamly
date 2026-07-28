@@ -45,6 +45,50 @@ function json(body: unknown, status: number): Response {
   });
 }
 
+// Hard monthly ceiling on what this platform may spend on AI. Every Anthropic
+// call in the platform writes to sh_ai_spend, and the loop below refuses to
+// start another incident once the month's total reaches the cap. Deliberately a
+// pre-flight check rather than a post-hoc alert: an alert tells you that you
+// already spent the money.
+//
+// Overshoot is bounded by one call, because the check happens between
+// incidents and a call in flight cannot be un-spent. With diagnosis at
+// fractions of a cent and patching around two cents, that is immaterial
+// against a $4 ceiling.
+const MONTHLY_BUDGET_USD = Number(process.env.SELFHEAL_MONTHLY_BUDGET_USD ?? 4);
+
+function monthStartIso(): string {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)).toISOString();
+}
+
+async function monthSpendUsd(admin: SupabaseClient): Promise<number> {
+  const { data, error } = await admin.from("sh_ai_spend")
+    .select("cost_usd").gte("created_at", monthStartIso());
+  // Fail CLOSED. If spend can't be read we don't know what has been spent, and
+  // guessing "probably fine" is how a budget control becomes decorative.
+  if (error) return Number.POSITIVE_INFINITY;
+  return (data ?? []).reduce((sum: number, r: Record<string, unknown>) => sum + Number(r.cost_usd ?? 0), 0);
+}
+
+/**
+ * Append one row per AI call. Single source of truth for spend: per-feature
+ * cost columns drift (the reproduce stage never recorded its cost at all, so
+ * any budget built on those columns would have silently undercounted).
+ */
+async function recordSpend(
+  admin: SupabaseClient, stage: string, model: string,
+  usage: { input_tokens: number; output_tokens: number }, incidentId: string | null,
+): Promise<void> {
+  try {
+    await admin.from("sh_ai_spend").insert({
+      stage, model, incident_id: incidentId,
+      input_tokens: usage.input_tokens, output_tokens: usage.output_tokens,
+      cost_usd: estimateCost(model, usage.input_tokens, usage.output_tokens),
+    });
+  } catch { /* never fail a stage because bookkeeping failed */ }
+}
+
 export async function handleInvestigate(request: Request): Promise<Response> {
   const supabaseUrl = process.env.VITE_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -70,7 +114,15 @@ export async function handleInvestigate(request: Request): Promise<Response> {
   const anthropic = new Anthropic({ apiKey: anthropicKey, timeout: 90_000, maxRetries: 1 });
   const results: Record<string, unknown>[] = [];
 
+  let budgetStopped: { spent: number; budget: number } | null = null;
+
   for (const id of incidentIds.slice(0, MAX_INCIDENTS_PER_RUN)) {
+    const spent = await monthSpendUsd(admin);
+    if (spent >= MONTHLY_BUDGET_USD) {
+      budgetStopped = { spent: Number.isFinite(spent) ? Number(spent.toFixed(4)) : -1, budget: MONTHLY_BUDGET_USD };
+      apiLog("selfheal-investigate", "budget_exhausted", { stage, spent: budgetStopped.spent, budget: MONTHLY_BUDGET_USD });
+      break;
+    }
     try {
       if (stage === "investigate") results.push(await investigate(admin, anthropic, id));
       else if (stage === "reproduce") results.push(await reproduce(admin, anthropic, id));
@@ -84,7 +136,12 @@ export async function handleInvestigate(request: Request): Promise<Response> {
     }
   }
 
-  return json({ ok: true, stage, processed: results.length, results }, 200);
+  // Surfaced rather than silent: a sweep that quietly stopped working looks
+  // identical to a sweep with nothing to do.
+  return json({
+    ok: true, stage, processed: results.length, results,
+    ...(budgetStopped ? { budgetStopped } : {}),
+  }, 200);
 }
 
 /**
@@ -157,6 +214,7 @@ async function investigate(
     system: DIAGNOSIS_SYSTEM,
     messages: [{ role: "user", content: prompt }],
   });
+  await recordSpend(admin, "diagnose", MODEL_DIAGNOSE, message.usage, incidentId);
 
   const text = message.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "";
   const parsed = parseJson(text);
@@ -490,6 +548,7 @@ async function reproduce(
       }, null, 2)),
     }],
   });
+  await recordSpend(admin, "reproduce", MODEL_PATCH, message.usage, incidentId);
 
   const text = message.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "";
   const testSource = extractCode(text);
@@ -556,6 +615,7 @@ async function proposePatch(
       }, null, 2)),
     }],
   });
+  await recordSpend(admin, "patch", MODEL_PATCH, message.usage, incidentId);
 
   const text = message.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "";
   const parsed = parseJson(text);
