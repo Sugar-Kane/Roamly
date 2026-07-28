@@ -771,3 +771,32 @@ test("a flung task can't be stranded off-screen and always lands", async ({ page
     JSON.parse(localStorage.getItem("roamly-guest-tasks-v1")!).map((t: { title: string }) => t.title)
   )).toEqual(["Alpha", "Beta", "Gamma"]);
 });
+
+test("the empty Up-next card never offers a Start that cannot start", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+  // No tasks → the "What are you focusing on today?" card is what renders.
+  await page.evaluate(() => {
+    localStorage.removeItem("roamly-guest-tasks-v1");
+    localStorage.setItem("roamly-timer-mode", "pomodoro");
+  });
+  await page.reload();
+
+  // Idle: starting is possible, so the button is offered.
+  await expect(page.getByRole("button", { name: "Start without a task" })).toBeVisible();
+
+  // Start a session and leave focus mode — the state users rage-clicked in.
+  await page.getByRole("button", { name: "Start", exact: true }).click();
+  await page.getByTestId("focus-overlay").getByRole("button", { name: "Exit focus mode" }).click();
+  await expect(page.getByTestId("focus-overlay")).toHaveCount(0);
+
+  // The dead button is gone: with a session already running it could not start
+  // anything, and clicking it changed nothing at all.
+  await expect(page.getByRole("button", { name: "Start without a task" })).toHaveCount(0);
+
+  // What replaces it must actually do something.
+  const back = page.getByRole("button", { name: "Back to your session" });
+  await expect(back).toBeVisible();
+  await back.click();
+  await expect(page.getByTestId("focus-overlay")).toBeVisible();
+});
