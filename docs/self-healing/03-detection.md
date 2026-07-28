@@ -215,6 +215,24 @@ Chunk-load failures are classified separately at `medium`, because a deploy
 replacing hashed chunks makes them *expected* in an old tab, and the app already
 self-heals them with a one-shot reload.
 
+**Resource failures are not exceptions.** An `error` event whose `target` is an
+Element is a resource that failed to load; a thrown exception targets `window`,
+which is not an Element, so the two separate cleanly. This used to be tested as
+`"src" in target`, which missed every `<link rel=stylesheet>` — those carry
+`href` — so a failed stylesheet was reported as a `js_error` at **high** with an
+empty message. The empty message then matched no chunk pattern either, so it
+also escaped the `medium` classification above, and each one opened an
+incident.
+
+That mattered more than it sounds, because `index.css` opens with an `@import`
+of Google Fonts and **a failed cross-origin `@import` fires its error on the
+owning `<link>`** — the app's own stylesheet. Any font-CDN blip therefore
+produced high-severity "js_error: window.error" incidents with an empty stack.
+Classification now keys on the URL, not the tag: a same-origin script or
+stylesheet under `/assets/` is hashed build output (`chunk_load_failed`,
+`medium`), and anything else — third-party sheets, images, media — is an
+ordinary `network_error` at `low`.
+
 ### Network
 
 500s → `critical`. 401/403 → `high`, tagged `permission` (usually RLS or a
