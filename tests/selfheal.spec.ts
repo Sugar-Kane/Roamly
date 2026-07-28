@@ -230,6 +230,50 @@ test("a request that fails during an offline blip is not an incident", async ({ 
     "an offline blip must not open an incident").toHaveLength(0);
 });
 
+test("a failed stylesheet is chunk churn, not a high-severity JS error", async ({ page }) => {
+  // The resource branch used to test `"src" in target`, so <link> — which
+  // carries href — fell through to the exception path and was reported as a
+  // js_error at high severity with an empty message, which also dodged the
+  // chunk classification. One deploy swapping hashed assets under an open tab
+  // opened three incidents that way.
+  const batches = await captureTelemetry(page);
+  await page.route("**/assets/broken-asset.css", (route) => route.abort("failed"));
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+
+  // Under /assets/ so it is classified as hashed build output rather than a
+  // third-party sheet — the deploy-churn path.
+  await page.evaluate(() => {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "/assets/broken-asset.css";
+    document.head.appendChild(link);
+  });
+
+  await page.waitForTimeout(1500);
+  await flushTelemetry(page);
+
+  const events = batches.flatMap((b) => (b.events ?? []) as Record<string, unknown>[]);
+  const payloadOf = (e: Record<string, unknown>) => (e.payload ?? {}) as Record<string, unknown>;
+
+  // Match our own asset specifically: the app's real stylesheet can also fail
+  // here, because index.css @imports Google Fonts and this sandbox blocks it.
+  const chunk = events.filter((e) =>
+    e.kind === "chunk_load_failed" &&
+    String(payloadOf(e).resource).includes("broken-asset.css"));
+  // Reaching this at all means the href was read — the exact miss being fixed.
+  expect(chunk.length, "a failed stylesheet must register as chunk churn").toBeGreaterThan(0);
+  // medium is never sampled away, so this is deterministic.
+  expect(chunk[0].severity).toBe("medium");
+
+  // The old signature: an empty-message js_error at high, which opens an incident.
+  expect(
+    events.filter((e) => e.kind === "js_error" && payloadOf(e).message === "window.error"),
+    "a resource failure must not be reported as a JS error",
+  ).toHaveLength(0);
+});
+
 test("telemetry failures never surface to the user", async ({ page }) => {
   // Every ingest attempt fails. The app must be completely unaffected — this
   // is the "monitoring outage must not become a product outage" guarantee.

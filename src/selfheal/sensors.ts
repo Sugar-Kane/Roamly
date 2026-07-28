@@ -270,13 +270,40 @@ function installSpinnerWatchdog(): void {
 
 function installErrorSensors(): void {
   window.addEventListener("error", (event) => {
-    // Resource load failures (img/script/link) surface as error events with a
-    // target but no message; they are a different (usually less severe) bug.
-    const target = event.target as HTMLElement | null;
-    if (target && target !== (window as unknown as HTMLElement) && "src" in (target as HTMLImageElement)) {
-      emit("network_error", "low", {
-        resource: redactUrl((target as HTMLImageElement).src || ""),
-        tag: target.tagName?.toLowerCase(),
+    // Resource load failures (img/script/link) surface as error events whose
+    // target is the ELEMENT that failed; a thrown exception targets `window`,
+    // which is not an Element, so this test separates the two cleanly.
+    //
+    // It used to test `"src" in target`, which silently missed every
+    // <link rel=stylesheet> — those carry `href`, not `src`. A failed
+    // stylesheet therefore fell through to the exception path and was reported
+    // as a js_error at HIGH severity with an empty message. Worse, the empty
+    // message matched no chunk pattern below, so it also dodged the
+    // chunk_load_failed classification that exists precisely so a deploy
+    // swapping hashed assets under an open tab does not page anyone. One
+    // deploy opened three high-severity incidents this way.
+    const target = event.target;
+    if (target instanceof Element) {
+      const tag = target.tagName.toLowerCase();
+      const raw = (target as HTMLImageElement).src || (target as HTMLLinkElement).href || "";
+      // A same-origin script or stylesheet under /assets/ is hashed build
+      // output — the thing a deploy replaces, and the churn the app already
+      // self-heals with a one-shot reload. Anything else (a third-party font
+      // sheet, an image, a media file) is an ordinary fetch failure and stays
+      // low. Checking the path rather than just the tag keeps the two apart:
+      // index.css opens with an @import of Google Fonts, and a failure of that
+      // cross-origin import surfaces as an error on the OWNING link, so tag
+      // alone would file every font-CDN blip as a deploy problem.
+      let isBuildAsset = false;
+      try {
+        const u = new URL(raw, location.href);
+        isBuildAsset = u.origin === location.origin && u.pathname.startsWith("/assets/");
+      } catch { /* unparseable href: treat as an ordinary resource */ }
+
+      emit(isBuildAsset ? "chunk_load_failed" : "network_error", isBuildAsset ? "medium" : "low", {
+        resource: redactUrl(raw),
+        tag,
+        signal: "resource_load_failed",
       });
       return;
     }
