@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { lazyChunk } from "./lazyChunk";
 import { createPortal } from "react-dom";
 import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, Pencil, Trash2, Sprout, Moon, Settings2, PictureInPicture2, CircleCheck } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, readableTextOn, type Task } from "./data";
@@ -7,8 +8,8 @@ import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSou
 import { SPOTIFY_PRESETS, parseSpotifyUrl, toEmbedSrc as toSpotifyEmbedSrc, embedHeight, embedSrcToUri, type SpotifyEmbedType } from "./spotify";
 import { SpotifyEmbed, type SpotifyController } from "./SpotifyEmbed";
 import { APPLE_MUSIC_PRESETS, parseAppleMusicUrl, toEmbedSrc as toAppleEmbedSrc, embedHeight as appleEmbedHeight, type AppleMusicEmbedType } from "./appleMusic";
-const WeekChart = lazy(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
-const SubjectDonut = lazy(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
+const WeekChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.WeekChart })));
+const SubjectDonut = lazyChunk(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, saveThemePreference, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
@@ -29,7 +30,7 @@ import { useCountUpTimer } from "./useCountUpTimer";
 import { Tutorial } from "./Tutorial";
 // Admin-only, and large (the whole BI dashboard). Lazy so it never ships in
 // the initial bundle for the public/focus route — only admins fetch it.
-const AdminView = lazy(() => import("./Admin").then((m) => ({ default: m.AdminView })));
+const AdminView = lazyChunk(() => import("./Admin").then((m) => ({ default: m.AdminView })));
 import { Modal } from "./Modal";
 import LockedFeaturePreview from "./LockedFeaturePreview";
 import { HelpLegal } from "./HelpLegal";
@@ -45,7 +46,7 @@ import { GardenBed } from "./GardenBed";
 import { GamificationView, UnlockToast } from "./GamificationView";
 import { ThemedSelect } from "./ThemedSelect";
 import { usePetSleep } from "./usePetSleep";
-const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
+const PetStage = lazyChunk(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 import { HealthyBreakActivities, useBreakActivityPicks, type Activity } from "./HealthyBreakActivities";
 import { useFocusMotivation, buildMotivationContext, MotivationLine } from "./useFocusMotivation";
 import { ConfettiBurst } from "./Confetti";

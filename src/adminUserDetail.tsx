@@ -5,7 +5,8 @@
 // mapped to human-readable labels via adminLabels). Every data call is an
 // is_admin()-gated RPC. Account actions stay on the roster row, not here.
 
-import { lazy, Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { lazyChunk } from "./lazyChunk";
 import { Crown, Shield } from "lucide-react";
 import {
   adminUserDetail, adminUserEvents, adminUserDaily,
@@ -15,7 +16,7 @@ import { Drawer } from "./Drawer";
 import { featureLabel } from "./adminLabels";
 import { fmtMinutes } from "./adminMetrics";
 
-const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
+const AdminTrendChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
 
 // Compact relative time (kept local, matching the other admin views).
 function relTime(iso: string | null): string {

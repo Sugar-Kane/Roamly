@@ -9,7 +9,8 @@
 // Admin.tsx wires the existing Users/Feedback/Errors/Ads views into the shell
 // without a circular import.
 
-import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { lazyChunk } from "./lazyChunk";
 import {
   LayoutDashboard, Users, Activity, BarChart3, DollarSign, MessageSquare,
   AlertTriangle, HeartPulse, Megaphone, Mail, Table2, Music, Download, RefreshCw, ChevronRight,
@@ -23,8 +24,8 @@ import {
 import { ThemedSelect } from "./ThemedSelect";
 import { resolveRange, pctChange, fmtMinutes, buildInsights, type AdminFilters } from "./adminMetrics";
 
-const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
-const AdminStackedBars = lazy(() => import("./Charts").then((m) => ({ default: m.AdminStackedBars })));
+const AdminTrendChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
+const AdminStackedBars = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminStackedBars })));
 
 // ---------------------------------------------------------------------------
 // Sections (order = nav order). Consumers supply the node for each.

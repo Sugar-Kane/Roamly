@@ -3,7 +3,8 @@
 // event names come from adminLabels; raw names only appear in the technical
 // detail drawer.
 
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { lazyChunk } from "./lazyChunk";
 import { Search, ArrowUpDown, SlidersHorizontal } from "lucide-react";
 import {
   adminFeatureStats, adminFeatureTrend, adminActivityHeatmap, adminRetentionCohorts, adminKpiSummary,
@@ -15,7 +16,7 @@ import { fmtMinutes } from "./adminMetrics";
 import { ThemedSelect } from "./ThemedSelect";
 import { Drawer } from "./Drawer";
 
-const AdminTrendChart = lazy(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
+const AdminTrendChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.AdminTrendChart })));
 
 // ===========================================================================
 // FEATURES
