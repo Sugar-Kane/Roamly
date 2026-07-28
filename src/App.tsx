@@ -2676,6 +2676,19 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
     setEditingId(null);
   };
 
+  // Bound a drag's travel to the span of the list it belongs to, plus one
+  // item's worth of slack at each end so the first and last slots still feel
+  // reachable. Anything beyond that is wasted motion — the drop index is
+  // already pinned to the nearest item — and letting it run unbounded is how a
+  // flung row ends up hundreds of pixels off-screen.
+  const clampToList = (mids: number[], startMid: number, size: number, rawDy: number): number => {
+    if (mids.length === 0) return rawDy;
+    const slack = Math.max(size, 24);
+    const lo = Math.min(...mids) - slack - startMid;
+    const hi = Math.max(...mids) + slack - startMid;
+    return Math.max(lo, Math.min(hi, rawDy));
+  };
+
   // --- Drag reordering (grip handle, or press-and-hold anywhere on the row) ---
   // Grab the ⋮⋮ handle (instant with a mouse, ~0.1s on touch) or hold the row
   // ~0.3s to lift it, drag to a new spot in its subject group, release to
@@ -2696,6 +2709,39 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
   const [dropTag, setDropTag] = useState<string | null>(null);
   const dropTagRef = useRef<string | null>(null);
   const setDropTarget = (next: string | null) => { dropTagRef.current = next; setDropTag(next); };
+
+  // The whole drag lifecycle lives on `window`, attached the moment a press
+  // starts. It used to live on the row element and lean on setPointerCapture to
+  // keep events coming once the finger left it — but that call is best-effort
+  // (it is wrapped in a catch), and a release outside the window never reached
+  // the row at all. Miss the pointerup and `drag` stays set forever: the row
+  // keeps its translate and, if you flung it past the top of the screen, it is
+  // stuck out of sight while still counting as lifted. Window listeners cannot
+  // be missed, so every press has a guaranteed end.
+  const rowDetach = useRef<(() => void) | null>(null);
+  const endRowDragRef = useRef<(commit: boolean) => void>(() => {});
+  const moveRowDragRef = useRef<(clientY: number) => void>(() => {});
+
+  const attachRowWindow = () => {
+    rowDetach.current?.();
+    const move = (ev: PointerEvent) => moveRowDragRef.current(ev.clientY);
+    const up = () => endRowDragRef.current(true);
+    const cancel = () => endRowDragRef.current(false);
+    const key = (ev: KeyboardEvent) => { if (ev.key === "Escape") endRowDragRef.current(false); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", key);
+    rowDetach.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", key);
+      rowDetach.current = null;
+    };
+  };
 
   const onRowPointerDown = (e: React.PointerEvent<HTMLDivElement>, id: string, group: string, groupIds: string[], index: number) => {
     if ((e.target as HTMLElement).closest("[data-nodrag]")) return;
@@ -2719,20 +2765,32 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
       setDrag({ id: p.id, group: p.group, from: p.index, over: p.index, dy: 0, height: p.el.getBoundingClientRect().height });
     }, holdMs);
     press.current = { id, group, groupIds, index, y: e.clientY, el, pointerId, timer, fromHandle };
+    // Attached now, not when the drag starts: a press that is released off-row
+    // before the hold completes would otherwise leave its timer armed and fire
+    // a phantom lift with no finger down.
+    attachRowWindow();
   };
 
-  const onRowPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const moveRowDrag = (clientY: number) => {
     const p = press.current;
     if (!p) return;
     const d = dragRef.current;
     if (!d) {
       // Moved before the hold completed → it's a scroll, not a drag. Presses
       // that started on the grip handle can't be scrolls, so they never cancel.
-      if (!p.fromHandle && Math.abs(e.clientY - p.y) > 12) { clearTimeout(p.timer); press.current = null; }
+      if (!p.fromHandle && Math.abs(clientY - p.y) > 12) { clearTimeout(p.timer); press.current = null; rowDetach.current?.(); }
       return;
     }
-    const dy = e.clientY - p.y;
-    const center = rects.current[d.from]?.mid + dy;
+    const startMid = rects.current[d.from]?.mid ?? 0;
+    // Clamp the lift to the bounds of its own list (plus a row of slack), so a
+    // fling can't hurl the row hundreds of pixels off into nowhere. Deliberately
+    // NOT clamped to the viewport: rows below the fold are still valid drop
+    // targets — the page can't scroll mid-drag — and a viewport clamp computes a
+    // negative ceiling for any row sitting near the bottom edge, which silently
+    // forbids dragging downward at all. Cross-subject dropping is unaffected
+    // either way: that hit-tests the POINTER against each section, not the row.
+    const dy = clampToList(rects.current.map((r) => r.mid), startMid, d.height, clientY - p.y);
+    const center = startMid + dy;
     let over = d.from, best = Infinity;
     rects.current.forEach((r, i) => {
       const dist = Math.abs(center - r.mid);
@@ -2744,34 +2802,41 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
     let target: string | null = null;
     for (const [name, el] of groupRefs.current) {
       const r = el.getBoundingClientRect();
-      if (e.clientY >= r.top && e.clientY <= r.bottom) { target = name; break; }
+      if (clientY >= r.top && clientY <= r.bottom) { target = name; break; }
     }
     setDropTarget(target && target !== d.group ? target : null);
   };
+  moveRowDragRef.current = moveRowDrag;
 
-  const onRowPointerUp = () => {
+  // Single exit for every way a drag can end — release, cancel, lost pointer,
+  // tab blur, Escape. `commit` is false for the abort paths, so a drag that
+  // ended because the window lost focus puts the row back instead of silently
+  // reordering. Clearing dragRef synchronously (rather than waiting for the
+  // state effect) makes a second call in the same tick a no-op, so overlapping
+  // end events can't apply the reorder twice.
+  const endRowDrag = (commit: boolean) => {
     const p = press.current;
     const d = dragRef.current;
     if (p) clearTimeout(p.timer);
     press.current = null;
-    if (d) {
+    rowDetach.current?.();
+    if (!d) { setDropTarget(null); return; }
+    dragRef.current = null;
+    if (commit) {
       const target = dropTagRef.current;
       // Dropped over another subject → reassign; otherwise reorder in place.
       if (target && target !== d.group) setTaskTag(d.id, target);
       else if (d.over !== d.from) reorderTask(d.id, d.over);
       justDragged.current = true;
       window.setTimeout(() => { justDragged.current = false; }, 80);
-      setDrag(null);
-      setDropTarget(null);
     }
+    setDrag(null);
+    setDropTarget(null);
   };
+  endRowDragRef.current = endRowDrag;
 
-  const onRowPointerCancel = () => {
-    const p = press.current;
-    if (p) clearTimeout(p.timer);
-    press.current = null;
-    if (dragRef.current) { setDrag(null); setDropTarget(null); }
-  };
+  // Belt and braces: if this list ever unmounts mid-drag, drop the listeners.
+  useEffect(() => () => rowDetach.current?.(), []);
 
   // While a drag is live, stop the page from scrolling under the finger.
   useEffect(() => {
@@ -2855,6 +2920,33 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
   const groupPress = useRef<{ g: string; index: number; y: number; el: HTMLElement; pointerId: number; timer: number } | null>(null);
   const groupRects = useRef<{ g: string; mid: number }[]>([]);
 
+  // Same window-level lifecycle and viewport clamp as the row drag above — a
+  // section handle flung off-screen used to strand itself identically.
+  const groupDetach = useRef<(() => void) | null>(null);
+  const endGroupDragRef = useRef<(commit: boolean) => void>(() => {});
+  const moveGroupDragRef = useRef<(clientY: number) => void>(() => {});
+
+  const attachGroupWindow = () => {
+    groupDetach.current?.();
+    const move = (ev: PointerEvent) => moveGroupDragRef.current(ev.clientY);
+    const up = () => endGroupDragRef.current(true);
+    const cancel = () => endGroupDragRef.current(false);
+    const key = (ev: KeyboardEvent) => { if (ev.key === "Escape") endGroupDragRef.current(false); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", key);
+    groupDetach.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", key);
+      groupDetach.current = null;
+    };
+  };
+
   const onGroupHandleDown = (e: React.PointerEvent<HTMLButtonElement>, g: string, index: number) => {
     if (groupPress.current) return;
     const el = e.currentTarget;
@@ -2873,14 +2965,16 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
       setGroupDrag({ g, from: p.index, over: p.index, dy: 0, height });
     }, holdMs);
     groupPress.current = { g, index, y: e.clientY, el, pointerId, timer };
+    attachGroupWindow();
   };
 
-  const onGroupHandleMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+  const moveGroupDrag = (clientY: number) => {
     const p = groupPress.current;
     const d = groupDragRef.current;
     if (!p || !d) return;
-    const dy = e.clientY - p.y;
-    const center = groupRects.current[d.from]?.mid + dy;
+    const startMid = groupRects.current[d.from]?.mid ?? 0;
+    const dy = clampToList(groupRects.current.map((r) => r.mid), startMid, d.height, clientY - p.y);
+    const center = startMid + dy;
     let over = d.from, best = Infinity;
     groupRects.current.forEach((r, i) => {
       const dist = Math.abs(center - r.mid);
@@ -2888,29 +2982,27 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
     });
     setGroupDrag({ ...d, dy, over });
   };
+  moveGroupDragRef.current = moveGroupDrag;
 
-  const onGroupHandleUp = () => {
+  const endGroupDrag = (commit: boolean) => {
     const p = groupPress.current;
     const d = groupDragRef.current;
     if (p) clearTimeout(p.timer);
     groupPress.current = null;
-    if (d) {
-      if (d.over !== d.from) {
-        const next = orderedGroupNames.slice();
-        next.splice(d.from, 1);
-        next.splice(d.over, 0, d.g);
-        applyGroupOrder(next);
-      }
-      setGroupDrag(null);
+    groupDetach.current?.();
+    if (!d) return;
+    groupDragRef.current = null;
+    if (commit && d.over !== d.from) {
+      const next = orderedGroupNames.slice();
+      next.splice(d.from, 1);
+      next.splice(d.over, 0, d.g);
+      applyGroupOrder(next);
     }
-  };
-
-  const onGroupHandleCancel = () => {
-    const p = groupPress.current;
-    if (p) clearTimeout(p.timer);
-    groupPress.current = null;
     setGroupDrag(null);
   };
+  endGroupDragRef.current = endGroupDrag;
+
+  useEffect(() => () => groupDetach.current?.(), []);
 
   // While a section drag is live, stop the page from scrolling under the finger.
   useEffect(() => {
@@ -3062,8 +3154,7 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
             ref={(el) => { if (el) groupRefs.current.set(g, el); else groupRefs.current.delete(g); }}
             style={groupDragStyle(g, gi)}>
             <div className="flex items-center gap-1">
-              <button data-group-handle onPointerDown={(e) => onGroupHandleDown(e, g, gi)} onPointerMove={onGroupHandleMove}
-                onPointerUp={onGroupHandleUp} onPointerCancel={onGroupHandleCancel}
+              <button data-group-handle onPointerDown={(e) => onGroupHandleDown(e, g, gi)}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowUp") { e.preventDefault(); moveGroup(g, -1); }
                   if (e.key === "ArrowDown") { e.preventDefault(); moveGroup(g, 1); }
@@ -3093,9 +3184,6 @@ function TasksView({ tasks, activeTask, addTask, editTask, setTaskTag, setTaskEs
                   <div key={t.id}
                     ref={(el) => { if (el) rowRefs.current.set(t.id, el); else rowRefs.current.delete(t.id); }}
                     onPointerDown={(e) => onRowPointerDown(e, t.id, g, groupIds, i)}
-                    onPointerMove={onRowPointerMove}
-                    onPointerUp={onRowPointerUp}
-                    onPointerCancel={onRowPointerCancel}
                     onContextMenu={(e) => { if (press.current || dragRef.current) e.preventDefault(); }}
                     style={{ WebkitTouchCallout: "none", touchAction: "pan-y", ...dragStyleFor(g, t.id, i) }}
                     className={`select-none rounded-xl border p-3 transition ${beingDragged ? "border-primary bg-card" : active ? "border-primary bg-primary/5" : "border-border bg-card/70"}`}>
