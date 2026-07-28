@@ -1,6 +1,5 @@
 import React from "react";
 import { AbsoluteFill, interpolate, useVideoConfig } from "remotion";
-import { COLORS } from "../brand";
 import {
   BrowserFrame,
   Capture,
