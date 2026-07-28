@@ -510,6 +510,10 @@ export default function App() {
   // still plays from this tab while the user works elsewhere).
   const spotifyController = useRef<SpotifyController | null>(null);
   const [embedPaused, setEmbedPaused] = useState(true);
+  // Bumped on every explicit pick so the player starts even when the pick does
+  // not remount it — choosing the station already preloaded in the dock, or
+  // re-choosing one you just paused.
+  const [embedPlaySignal, setEmbedPlaySignal] = useState(0);
   const toggleEmbedPlayback = useCallback(() => {
     try { spotifyController.current?.togglePlay(); } catch { /* not ready yet */ }
   }, []);
@@ -529,6 +533,7 @@ export default function App() {
     setFocusSound(null);
     savePref("roamly-focus-sound", "off");
     setEmbed(t);
+    setEmbedPlaySignal((n) => n + 1);
     // Picking music IS the intentional activation — surface the mini-player
     // (it stays completely closed until this moment on a fresh device).
     setDockClosed(false);
@@ -721,13 +726,16 @@ export default function App() {
   const onToggleCompanion = useCallback(async (kind: "pet" | "reward", id: string, active: boolean) => {
     if (!session?.user.id) return;
     if (kind === "pet") {
-      // The pen holds MAX_ACTIVE_PETS; adding another retires the one that has
-      // been out longest, so the switch always works instead of silently
-      // refusing once you're at the cap.
+      // The pen holds MAX_ACTIVE_PETS, and that is a hard cap: picking a third
+      // is refused rather than silently retiring someone else's companion.
+      // NOTE this reads a client snapshot and setPetActive is a plain row
+      // update, so it is not atomic — two activations racing from separate
+      // tabs can still both see room. The disabled buttons make that hard to
+      // hit in practice; closing it properly needs the cap enforced in the
+      // database, which is tracked separately.
       if (active) {
         const actives = (serverGam?.pets ?? []).filter((p) => p.is_active && p.id !== id);
-        const evict = actives.slice(0, Math.max(0, actives.length - (MAX_ACTIVE_PETS - 1)));
-        await Promise.all(evict.map((p) => setPetActive(p.id, false)));
+        if (actives.length >= MAX_ACTIVE_PETS) return;
       }
       await setPetActive(id, active);
     } else {
@@ -1186,7 +1194,11 @@ export default function App() {
           hidden={view !== "focus" || dockClosed} immersive={immersive}
           stopSignal={embedStopSignal} onPlaying={onEmbedPlaying}
           onController={(c: SpotifyController | null) => { spotifyController.current = c; }}
-          onPausedChange={setEmbedPaused} />
+          onPausedChange={setEmbedPaused}
+          // `embed` is non-null only once the user has actively picked a
+          // station, so this starts playback on a pick but never for the
+          // default station the dock preloads before anyone asks for music.
+          autoplay={embed !== null} playSignal={embedPlaySignal} />
       )}
       <FocusMode open={immersive} phase={timer.phase}
         phaseLabel={timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break"}
@@ -1206,19 +1218,15 @@ export default function App() {
               <SkipForward size={18} />
             </button>
             {/* Pets-sleep chip, always visible so pets can be brought back; the
-                rest of the settings (auto-flow, pets, confetti, pop-out,
-                sound, notifications) live in the shared Customize Session
-                drawer — same button and UI as the non-immersive timer. */}
+                rest of the settings (auto-flow, pets, garden, confetti,
+                pop-out, sound, notifications) live in the shared Customize
+                Session drawer — same button and UI as the non-immersive timer.
+                The garden toggle is deliberately drawer-only: it belongs with
+                the other session settings, not in the timer's control row. */}
             {showCompanions && (
               <button onClick={toggleSleep} aria-pressed={petSleep.asleep}
                 className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${petSleep.asleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
                 <Moon size={14} /> {petSleep.asleep ? "Wake pets" : "Too distracting"}
-              </button>
-            )}
-            {companionStage.plants.length > 0 && (
-              <button onClick={toggleGarden} aria-pressed={gardenOn}
-                className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${gardenOn ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-                <Sprout size={14} /> {gardenOn ? "Hide garden" : "Show garden"}
               </button>
             )}
             {pipSupported && (
@@ -2485,12 +2493,12 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
 // app can pause it and detect its play button; Apple Music has no such API, so
 // it stays a plain iframe that stopSignal remounts (a reload is the only way
 // to silence an uncontrolled embed).
-function EmbedPlayer({ shown, height, stopSignal, onPlaying, onController, onPausedChange }: any) {
+function EmbedPlayer({ shown, height, stopSignal, onPlaying, onController, onPausedChange, autoplay = false, playSignal = 0 }: any) {
   const spotifyUri = shown.service === "spotify" ? embedSrcToUri(shown.src) : null;
   if (spotifyUri) {
     return <SpotifyEmbed key={shown.src} uri={spotifyUri} fallbackSrc={shown.src} height={height}
       pauseSignal={stopSignal ?? 0} onPlay={onPlaying ?? (() => {})}
-      onController={onController} onPausedChange={onPausedChange} />;
+      onController={onController} onPausedChange={onPausedChange} autoplay={autoplay} playSignal={playSignal} />;
   }
   return (
     <iframe key={`${stopSignal ?? 0}-${shown.src}`} src={shown.src} width="100%" height={height}
@@ -2529,7 +2537,7 @@ function PipNowPlaying({ shown, paused, onToggle }: {
   );
 }
 
-function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidden = false, immersive = false, stopSignal, onPlaying, onController, onPausedChange }: any) {
+function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidden = false, immersive = false, stopSignal, onPlaying, onController, onPausedChange, autoplay = false, playSignal = 0 }: any) {
   return (
     // z-[45]: above the bottom nav (z-40), below every modal (z-50+) — a
     // permanent fixture must never eat taps meant for an open dialog.
@@ -2568,7 +2576,7 @@ function MusicDock({ shown, minimized, onToggleMin, onPickService, onClose, hidd
           ))}
         </div>
         <EmbedPlayer shown={shown} height={Math.min(shown.height, 152)} stopSignal={stopSignal} onPlaying={onPlaying}
-          onController={onController} onPausedChange={onPausedChange} />
+          onController={onController} onPausedChange={onPausedChange} autoplay={autoplay} playSignal={playSignal} />
       </div>
     </div>
   );

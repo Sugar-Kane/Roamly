@@ -13,7 +13,7 @@ import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
 import { GardenBed } from "./GardenBed";
 import { stageProps, isGrowable, type Gamification, type GamSyncResult } from "./gamification";
-import { ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, MAX_ACTIVE_PETS, SLOT_HINT, growthStage, type PetSpecies } from "./petCatalog";
+import { ACHIEVEMENT_CATALOG, ACHIEVEMENT_CATEGORY_LABEL, ACHIEVEMENT_CATEGORY_ORDER, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, MAX_ACTIVE_PETS, SLOT_HINT, growthStage, type AchievementCategory, type PetSpecies } from "./petCatalog";
 
 const PetStage = lazy(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 
@@ -28,6 +28,20 @@ function Switch({ on, label, onToggle }: { on: boolean; label: string; onToggle:
     </button>
   );
 }
+
+// Signed-in achievement rows come from get_my_gamification() without a category,
+// so it is resolved from the local catalog by id. An id this build doesn't know
+// (server catalog ahead of the client) lands in the last section instead of
+// disappearing from the page.
+const ACH_CATEGORY = new Map(ACHIEVEMENT_CATALOG.map((a) => [a.id, a.category] as const));
+// Unknown ids get their own trailing bucket rather than being filed under the
+// last real category — landing a new focus tier under "Group study" would both
+// mislabel it and skew that section's count.
+const OTHER_SECTION = "other" as const;
+type AchievementSection = AchievementCategory | typeof OTHER_SECTION;
+const SECTION_ORDER: AchievementSection[] = [...ACHIEVEMENT_CATEGORY_ORDER, OTHER_SECTION];
+const SECTION_LABEL: Record<AchievementSection, string> = { ...ACHIEVEMENT_CATEGORY_LABEL, [OTHER_SECTION]: "More" };
+const achievementCategory = (id: string): AchievementSection => ACH_CATEGORY.get(id) ?? OTHER_SECTION;
 
 export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden }: {
   gamification: Gamification;
@@ -48,6 +62,9 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
   const earnedAch = g.achievements.filter((a) => a.earned).length;
   const ownedPets = g.pets.filter((p) => p.owned).length;
   const canCustomize = !!session;
+  // `owned &&` matches stageProps: a stale active-but-unowned row would
+  // otherwise eat a slot the user has no toggle to free.
+  const atPetCap = g.pets.filter((p) => p.owned && p.is_active).length >= MAX_ACTIVE_PETS;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -118,17 +135,40 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
           <h2 className="flex items-center gap-1.5 text-sm font-semibold"><Trophy size={15} className="text-roamly-coral" /> Achievements</h2>
           <span className="text-xs text-muted-foreground">{earnedAch}/{g.achievements.length} earned</span>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {g.achievements.map((a) => (
-            <div key={a.id} className={`rounded-xl border p-3 ${a.earned ? "border-primary/50 bg-primary/5" : "border-border bg-card/60 opacity-70"}`}>
-              <div className="flex items-center gap-1.5">
-                {a.earned ? <Check size={13} className="shrink-0 text-roamly-green" /> : <Lock size={12} className="shrink-0 text-muted-foreground" />}
-                <span className="truncate text-xs font-semibold">{a.name}</span>
+        {/* Grouped by category — the flat grid was unreadable once the catalog
+            passed ~20 entries. Categories come from the local catalog keyed by
+            id, so signed-in rows (which arrive without one) group the same way;
+            anything unrecognised falls into the last section rather than
+            vanishing. Each heading carries its own earned count so progress is
+            legible per area. */}
+        <div className="mt-3 space-y-4">
+          {SECTION_ORDER.map((cat) => {
+            const rows = g.achievements.filter((a) => achievementCategory(a.id) === cat);
+            if (rows.length === 0) return null;
+            const done = rows.filter((a) => a.earned).length;
+            return (
+              <div key={cat}>
+                <div className="flex items-baseline justify-between gap-2">
+                  <h3 className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                    {SECTION_LABEL[cat]}
+                  </h3>
+                  <span className="text-[10px] text-muted-foreground">{done}/{rows.length}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {rows.map((a) => (
+                    <div key={a.id} className={`rounded-xl border p-3 ${a.earned ? "border-primary/50 bg-primary/5" : "border-border bg-card/60 opacity-70"}`}>
+                      <div className="flex items-center gap-1.5">
+                        {a.earned ? <Check size={13} className="shrink-0 text-roamly-green" /> : <Lock size={12} className="shrink-0 text-muted-foreground" />}
+                        <span className="truncate text-xs font-semibold">{a.name}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{a.hint}</p>
+                      <p className="mt-1 text-[10px] font-medium text-primary">+{a.xp} XP</p>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{a.hint}</p>
-              <p className="mt-1 text-[10px] font-medium text-primary">+{a.xp} XP</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -140,7 +180,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
           Everyone starts with a dog and a cat. Finish more study sessions to adopt the rest.
-          {canCustomize && ` Up to ${MAX_ACTIVE_PETS} can share the timer — picking a third retires whichever has been out longest.`}
+          {canCustomize && ` Pick up to ${MAX_ACTIVE_PETS} to share the timer${atPetCap ? " — you're at the limit, so turn one off to swap." : "."}`}
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {g.pets.map((p) => {
@@ -153,9 +193,14 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
                   <p className="truncate text-xs font-semibold">{p.name}</p>
                   {p.owned ? (
                     canCustomize ? (
+                      // At the cap only the already-active pets stay clickable,
+                      // so turning one off is the only way to make room. The
+                      // disabled label says which, rather than failing silently.
                       <button onClick={() => onToggle("pet", p.id, !p.is_active)}
-                        className={`mt-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition ${p.is_active ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground hover:text-foreground"}`}>
-                        {p.is_active ? "On timer ✓" : "Show on timer"}
+                        disabled={atPetCap && !p.is_active}
+                        title={atPetCap && !p.is_active ? `Only ${MAX_ACTIVE_PETS} companions can be on the timer — turn one off first` : undefined}
+                        className={`mt-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition ${p.is_active ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground hover:text-foreground"} disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-muted-foreground`}>
+                        {p.is_active ? "On timer ✓" : atPetCap ? `Limit ${MAX_ACTIVE_PETS}` : "Show on timer"}
                       </button>
                     ) : (
                       <p className="mt-0.5 text-[10px] text-muted-foreground">{p.is_active ? "On your timer" : "Unlocked"}</p>
