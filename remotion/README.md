@@ -54,7 +54,9 @@ npx playwright install chromium   # once, if you have never run Playwright here
 Sign in as the demo user and make sure all of the following are populated. If
 any are empty, seed them and re-check — do not work around an empty view.
 
-- 6–10 tasks tagged Cardio / Pharm / Clinical / PANCE, a couple completed
+- 6–10 tasks tagged by subject, a couple completed. The run starts with a
+  seed check against `/tasks`; note that the home view caps its "Up next" list
+  at three rows, so three there is a full list, not a short one.
 - at least one exam countdown a few weeks out
 - a visible streak of 7+ days and a few weeks of analytics history
 - at least one unlocked study companion, and some garden growth

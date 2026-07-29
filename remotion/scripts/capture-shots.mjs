@@ -131,15 +131,33 @@ const run = async () => {
   const context = await browser.newContext(DESKTOP);
   const page = await context.newPage();
 
+  // ---- 00 seed check ------------------------------------------------------
+  // The home view caps its "Up next" list at three rows (src/App.tsx, the
+  // .slice(0, 3) on upNext), so counting rows there can never tell you whether
+  // the account is well seeded — three is what a full account looks like. The
+  // real check belongs on /tasks, which lists everything.
+  if (only.length === 0) {
+    console.log("00 — seed check");
+    await gotoView(page, "/tasks", "00");
+    await assertNotEmpty(
+      page,
+      "00",
+      page.getByRole("button", { name: /^Mark .+ (not )?done$/ }),
+      6,
+    );
+    console.log("  ✓ account looks seeded");
+  }
+
   // ---- 01 focus timer, mid block, task list visible -----------------------
   if (wanted("01")) {
     console.log("01 — focus timer");
     await gotoView(page, "/", "01");
+    // Three is the cap, not a threshold: fewer means the up-next list is short.
     await assertNotEmpty(
       page,
       "01",
       page.getByRole("button", { name: /^Mark complete:/ }),
-      4,
+      3,
     );
     // Start a block so the timer is genuinely mid-countdown, then let it run
     // far enough in that the digits are not a round number.
