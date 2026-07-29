@@ -41,7 +41,7 @@ if (existsSync(join(CAPTURES, ".placeholders"))) {
     "\nPreflight failed: public/captures/ holds generated placeholders.\n\n" +
       "  Run the real capture pipeline against a signed-in demo account:\n" +
       "    npm run placeholders:clean\n" +
-      "    node scripts/capture-auth.mjs   # sign in by hand\n" +
+      "    node scripts/import-session.mjs <exported-session.json>\n" +
       "    node scripts/capture-shots.mjs\n",
   );
   process.exit(1);

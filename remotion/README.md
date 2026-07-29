@@ -62,31 +62,52 @@ any are empty, seed them and re-check — do not work around an empty view.
 
 ### 2. Save a session
 
+**Production sits behind Cloudflare, which will not let a Playwright-driven
+browser near the sign-in form — headed or not, real Chrome or bundled
+Chromium.** Do not fight it. Sign in with your ordinary browser, where you are
+already a trusted human, and hand the session over.
+
+1. Sign in at the app in your normal browser and confirm you can see your tasks.
+2. Open DevTools → Console on that tab and run:
+
+   ```js
+   copy(JSON.stringify({
+     origin: location.origin,
+     localStorage: Object.entries(localStorage).map(([name, value]) => ({ name, value })),
+   }))
+   ```
+
+   `copy` is a DevTools helper — it prints `undefined` and puts the result on
+   your clipboard.
+
+3. Import it:
+
+   ```bash
+   pbpaste > /tmp/roamly-session.json      # macOS; on Linux use your clipboard tool
+   node scripts/import-session.mjs /tmp/roamly-session.json
+   rm /tmp/roamly-session.json             # it holds a live session token
+   ```
+
+The import refuses anything without a `sb-…-auth-token` key, or with an expired
+one, so a signed-out export cannot quietly become a run of logged-out captures.
+
+Only the sign-in is defended this way — the captures themselves run fine under
+Playwright once a session exists.
+
+#### If the sign-in is not behind a bot check
+
+Two older paths remain for deployments without Cloudflare in front:
+
 ```bash
-node scripts/capture-auth.mjs
+node scripts/capture-auth.mjs                 # opens a browser, sign in by hand
+ROAMLY_EMAIL=… ROAMLY_PASSWORD=… node scripts/capture-auth.mjs --auto
 ```
 
-Opens a real browser at the app. Sign in **by hand**, including any CAPTCHA,
-then press Enter in the terminal. The session is saved to `.auth/roamly.json`
-(Playwright `storageState`) and reused by every capture, so this is a one-time
-cost per run.
-
-Signing in by hand is the default because it is the mode that works. Cloudflare
-Turnstile — which production has in front of the sign-in form — exists to stop
-scripted form-fill, so *automating the login is the thing that trips it*. A
-person typing into a real browser is not what it is looking for.
-
-There is an automated mode for deployments with no bot check on the form:
-
-```bash
-ROAMLY_EMAIL='demo@…' ROAMLY_PASSWORD='…' node scripts/capture-auth.mjs --auto
-```
-
-It reads credentials from the environment, never writes or prints them, and
-refuses to run if it detects a Turnstile widget rather than failing obscurely.
+`--auto` reads credentials from the environment, never writes or prints them,
+and aborts with an explanation if it detects a Turnstile widget.
 
 `.auth/` is gitignored in both this project and the repo root. Set `ROAMLY_URL`
-to point either mode at a preview deployment instead of production.
+to point at a preview deployment instead of production.
 
 ### 3. Capture
 
