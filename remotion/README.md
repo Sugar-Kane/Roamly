@@ -63,21 +63,30 @@ any are empty, seed them and re-check — do not work around an empty view.
 ### 2. Save a session
 
 ```bash
-ROAMLY_EMAIL='demo@…' ROAMLY_PASSWORD='…' node scripts/capture-auth.mjs
+node scripts/capture-auth.mjs
 ```
 
-Writes `.auth/roamly.json` (Playwright `storageState`). `.auth/` is gitignored
-in both this project and the repo root; credentials are read from the
-environment and are never written to disk or printed, including in error
-messages.
+Opens a real browser at the app. Sign in **by hand**, including any CAPTCHA,
+then press Enter in the terminal. The session is saved to `.auth/roamly.json`
+(Playwright `storageState`) and reused by every capture, so this is a one-time
+cost per run.
 
-Useful flags: `ROAMLY_HEADED=1` to watch it happen, `ROAMLY_URL` to point at a
-preview deployment instead of production.
+Signing in by hand is the default because it is the mode that works. Cloudflare
+Turnstile — which production has in front of the sign-in form — exists to stop
+scripted form-fill, so *automating the login is the thing that trips it*. A
+person typing into a real browser is not what it is looking for.
 
-If the deployment has `VITE_TURNSTILE_SITE_KEY` set, a CAPTCHA sits on the
-sign-in form and headless automation will stall on it. The script detects the
-widget and says so; re-run with `ROAMLY_HEADED=1` and solve it by hand. The
-saved session is then reused for every capture, so this is a one-time cost.
+There is an automated mode for deployments with no bot check on the form:
+
+```bash
+ROAMLY_EMAIL='demo@…' ROAMLY_PASSWORD='…' node scripts/capture-auth.mjs --auto
+```
+
+It reads credentials from the environment, never writes or prints them, and
+refuses to run if it detects a Turnstile widget rather than failing obscurely.
+
+`.auth/` is gitignored in both this project and the repo root. Set `ROAMLY_URL`
+to point either mode at a preview deployment instead of production.
 
 ### 3. Capture
 

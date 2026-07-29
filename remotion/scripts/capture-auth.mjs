@@ -4,20 +4,32 @@
  * Writes .auth/roamly.json (Playwright storageState) so capture-shots.mjs can
  * reuse an authenticated context without ever handling the password again.
  *
- * Credentials come from the environment and are never written to disk, echoed,
- * or included in an error message. .auth/ is gitignored.
+ * Two modes:
  *
- *   ROAMLY_EMAIL=... ROAMLY_PASSWORD=... node scripts/capture-auth.mjs
+ *   MANUAL (default, and the one that works behind a bot-detection layer):
+ *     node scripts/capture-auth.mjs
+ *   Opens a real browser, you sign in by hand, press Enter, and the session is
+ *   saved. No credentials touch this script at all. Cloudflare Turnstile and
+ *   similar defences are designed to stop scripted form-fill, so automating
+ *   the login is the thing that trips them — a human signing in does not.
+ *
+ *   AUTOMATED (only where no bot check sits on the form):
+ *     ROAMLY_EMAIL=… ROAMLY_PASSWORD=… node scripts/capture-auth.mjs --auto
+ *   Credentials come from the environment and are never written to disk,
+ *   echoed, or included in an error message.
  *
  * Optional:
  *   ROAMLY_URL       target origin (default https://www.roamlyflow.com)
- *   ROAMLY_HEADED=1  watch the login happen, for debugging
+ *   ROAMLY_HEADED=1  show the browser in --auto mode (manual is always shown)
+ *
+ * .auth/ is gitignored in this project and at the repo root.
  */
 
 import { chromium } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createInterface } from "node:readline/promises";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -26,24 +38,72 @@ const AUTH_FILE = resolve(ROOT, ".auth/roamly.json");
 const BASE_URL = process.env.ROAMLY_URL ?? "https://www.roamlyflow.com";
 const EMAIL = process.env.ROAMLY_EMAIL;
 const PASSWORD = process.env.ROAMLY_PASSWORD;
+const AUTO = process.argv.includes("--auto");
 
-if (!EMAIL || !PASSWORD) {
-  console.error(
-    [
-      "Missing credentials.",
-      "",
-      "This script needs a dedicated RoamlyFlow demo account:",
-      "  ROAMLY_EMAIL=demo@example.com ROAMLY_PASSWORD='...' node scripts/capture-auth.mjs",
-      "",
-      "Use an account created for marketing captures only. Do not use a",
-      "personal account — the captures become public marketing material.",
-    ].join("\n"),
-  );
-  process.exit(1);
-}
+/**
+ * Launches a browser that looks like a browser. Real Chrome is preferred over
+ * bundled Chromium: bot-detection layers score the bundled build far more
+ * harshly, and in manual mode there is a person driving it anyway.
+ */
+const launch = async (headless) => {
+  for (const channel of ["chrome", "msedge"]) {
+    try {
+      return await chromium.launch({ headless, channel });
+    } catch {
+      // Channel not installed; fall through to the bundled build.
+    }
+  }
+  return chromium.launch({ headless });
+};
 
-const run = async () => {
-  const browser = await chromium.launch({ headless: !process.env.ROAMLY_HEADED });
+/** Confirms a Supabase session actually landed before writing anything. */
+const saveState = async (context) => {
+  const state = await context.storageState();
+  if (!JSON.stringify(state).includes("auth-token")) {
+    throw new Error(
+      "No Supabase auth token in storage — the sign-in did not complete. " +
+        "Refusing to write a session that would silently capture logged-out screens.",
+    );
+  }
+  await mkdir(dirname(AUTH_FILE), { recursive: true });
+  await writeFile(AUTH_FILE, JSON.stringify(state, null, 2));
+  console.log(`\nSession saved to ${AUTH_FILE.replace(ROOT, ".")}`);
+  console.log("Next: node scripts/capture-shots.mjs");
+};
+
+const runManual = async () => {
+  const browser = await launch(false);
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  await page.goto(BASE_URL, { waitUntil: "domcontentloaded" });
+
+  console.log(`
+A browser window is open at ${BASE_URL}.
+
+  1. Sign in there by hand — including any CAPTCHA.
+  2. Wait until you are back on the app and signed in.
+  3. Come back here and press Enter.
+
+Nothing is typed for you, so bot checks have no scripted input to catch.
+`);
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  await rl.question("Press Enter once you are signed in… ");
+  rl.close();
+
+  await saveState(context);
+  await browser.close();
+};
+
+const runAuto = async () => {
+  if (!EMAIL || !PASSWORD) {
+    throw new Error(
+      "--auto needs ROAMLY_EMAIL and ROAMLY_PASSWORD in the environment. " +
+        "Drop --auto to sign in by hand instead.",
+    );
+  }
+
+  const browser = await launch(!process.env.ROAMLY_HEADED);
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const page = await context.newPage();
 
@@ -53,12 +113,11 @@ const run = async () => {
   // The auth modal is opened from the header. The button label differs between
   // the signed-out header and the profile menu, so try the obvious entry points
   // in order rather than guessing one selector.
-  const entryPoints = [
+  for (const entry of [
     page.getByRole("button", { name: /sign in/i }),
     page.getByRole("button", { name: /log ?in/i }),
     page.getByRole("button", { name: /account/i }),
-  ];
-  for (const entry of entryPoints) {
+  ]) {
     if ((await entry.count()) > 0) {
       await entry.first().click();
       break;
@@ -74,55 +133,36 @@ const run = async () => {
   await email.fill(EMAIL);
   await dialog.getByPlaceholder(/^Password$/).fill(PASSWORD);
 
-  // A Turnstile widget renders only when VITE_TURNSTILE_SITE_KEY is set. If it
-  // is present, an automated sign-in will stall on it — say so plainly rather
-  // than timing out with a misleading message.
   const hasCaptcha = await dialog
     .locator('iframe[src*="challenges.cloudflare.com"]')
     .count()
     .catch(() => 0);
   if (hasCaptcha > 0) {
-    console.warn(
-      "  A CAPTCHA is present on the sign-in form. If this run stalls, re-run " +
-        "with ROAMLY_HEADED=1 and solve it by hand — the saved session is then " +
-        "reused for every capture.",
+    throw new Error(
+      "A CAPTCHA sits on the sign-in form, which scripted form-fill will not " +
+        "get past. Re-run without --auto and sign in by hand.",
     );
   }
 
   await dialog.getByRole("button", { name: /^Sign in$/i }).click();
 
-  // Signed-in state is confirmed by the auth modal closing AND a profile
-  // affordance appearing — not by a timeout, so a failed login fails loudly.
   await dialog
     .getByPlaceholder("Email")
     .waitFor({ state: "detached", timeout: 20_000 })
     .catch(() => {
       throw new Error(
-        "The sign-in form did not close. The credentials were rejected, or the " +
-          "login flow changed. Re-run with ROAMLY_HEADED=1 to watch it.",
+        "The sign-in form did not close. The credentials were rejected, a bot " +
+          "check blocked it, or the login flow changed. Re-run without --auto " +
+          "to sign in by hand.",
       );
     });
 
   await page.waitForTimeout(2500); // let the session settle into storage
-
-  const state = await context.storageState();
-  const hasSession = JSON.stringify(state).includes("auth-token");
-  if (!hasSession) {
-    throw new Error(
-      "Signed in, but no Supabase auth token landed in storage. Refusing to " +
-        "write a storage state that would silently capture logged-out screens.",
-    );
-  }
-
-  await mkdir(dirname(AUTH_FILE), { recursive: true });
-  await writeFile(AUTH_FILE, JSON.stringify(state, null, 2));
-  console.log(`Session saved to ${AUTH_FILE.replace(ROOT, ".")}`);
-  console.log("Next: node scripts/capture-shots.mjs");
-
+  await saveState(context);
   await browser.close();
 };
 
-run().catch((err) => {
+(AUTO ? runAuto() : runManual()).catch((err) => {
   // Print the message only — never the stack, which on Playwright errors can
   // include the filled value of an input.
   console.error(`\nFailed: ${err.message}`);
