@@ -77,7 +77,9 @@ export const Capture: React.FC<{
   style?: React.CSSProperties;
   /** Seconds into the clip to start, for videos. */
   startFrom?: number;
-}> = ({ which, style, startFrom }) => {
+  /** Playback rate for videos. >1 compresses dead time in a recording. */
+  speed?: number;
+}> = ({ which, style, startFrom, speed }) => {
   const spec = CAPTURES[which];
   const src = staticFile(`captures/${spec.file}`);
   const common: React.CSSProperties = {
@@ -89,7 +91,15 @@ export const Capture: React.FC<{
   };
 
   if (spec.kind === "video") {
-    return <OffthreadVideo src={src} style={common} startFrom={startFrom} muted />;
+    return (
+      <OffthreadVideo
+        src={src}
+        style={common}
+        startFrom={startFrom}
+        playbackRate={speed}
+        muted
+      />
+    );
   }
   return <Img src={src} style={common} />;
 };

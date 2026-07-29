@@ -189,11 +189,13 @@ const run = async () => {
           `ROAMLY_SAMPLE_NOTES. Use material you have the right to show on camera.`,
       );
     }
-    await clip(browser, "03-upload.webm", 11, async (p) => {
+    // Kept short on purpose. Most of the AI round-trip is a progress bar with
+    // nothing to look at, and Scene 4 speeds the clip up on top of this — see
+    // UPLOAD_SPEED in src/scenes/Upload.tsx.
+    await clip(browser, "03-upload.webm", 7, async (p) => {
       await gotoView(p, "/tasks", "03");
       await p.getByLabel("Choose study material").setInputFiles(SAMPLE_NOTES);
-      // The generation round-trip is the point of the shot; let it complete.
-      await p.waitForTimeout(1200);
+      await p.waitForTimeout(800);
     });
   }
 
@@ -223,36 +225,39 @@ const run = async () => {
     await shot(page, "06-garden.png");
   }
 
-  // ---- 07 picture-in-picture (clip) --------------------------------------
-  if (wanted("07")) {
-    console.log("07 — picture-in-picture");
-    await clip(browser, "07-pip.webm", 6, async (p) => {
-      await gotoView(p, "/", "07");
-      const pip = p.getByRole("button", { name: /Pop out timer/i }).first();
-      if (!(await pip.isVisible().catch(() => false))) {
-        throw new Error(
-          "[07] No pop-out control found. Document PiP may be unsupported in " +
-            "this Chromium build — capture this shot manually and note it in the shot list.",
-        );
-      }
-      await pip.click();
-      await p.waitForTimeout(1200);
-    });
-  }
+  // ---- 07 picture-in-picture — not capturable --------------------------
+  // Document Picture-in-Picture opens a separate OS-level window. Playwright
+  // records the page viewport only, so a recording of this flow shows the page
+  // the timer just left, never the floating timer itself. Rather than ship a
+  // clip that does not show its subject, the feature is left out of the video.
+  // See SHOTLIST.md.
 
   // ---- 08 theme switching (clip) -----------------------------------------
   if (wanted("08")) {
     console.log("08 — theme switching");
-    await clip(browser, "08-themes.webm", 6, async (p) => {
+    await clip(browser, "08-themes.webm", 9, async (p) => {
       await gotoView(p, "/", "08");
-      for (const theme of [/^Library Night$/i, /^Sage Calm$/i, /^Coffee Shop$/i]) {
+      // Six of the eight themes, ordered so consecutive changes are a big
+      // colour jump — warm, dark, cool, light — since the point of the shot is
+      // that the palette visibly changes, not which theme is which.
+      const cycle = [
+        /^Library Night$/i,
+        /^Sage Calm$/i,
+        /^Sunset Study$/i,
+        /^Deep Sea$/i,
+        /^White Coat$/i,
+        /^Coffee Shop$/i,
+      ];
+      for (const theme of cycle) {
         // The picker closes on selection, so it is reopened for each theme.
         await p.getByRole("button", { name: /Change theme/i }).first().click();
-        await p.waitForTimeout(400);
+        await p.waitForTimeout(280);
         const t = p.getByRole("button", { name: theme }).first();
         if (await t.isVisible().catch(() => false)) {
           await t.click();
-          await p.waitForTimeout(1300);
+          // Long enough to register as a new palette, short enough that a
+          // two-second beat in Scene 7 still shows two changes.
+          await p.waitForTimeout(900);
         }
       }
     });

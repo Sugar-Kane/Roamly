@@ -16,6 +16,14 @@ import { BrowserFrame, Capture, CaptionBlock, SceneWrap, useEntrance } from "../
  * cannot be derived until the clip exists.
  */
 
+/**
+ * How much faster than real time the recording plays. The AI round-trip is
+ * mostly a progress bar, and a ten-second scene spent watching one is a scene
+ * that loses the viewer. Speeding the footage up keeps the whole flow — file
+ * chosen, processing, list appears — without the dead air.
+ */
+const UPLOAD_SPEED = 1.6;
+
 /** Frame (within this scene) at which the generated list is on screen. */
 const LIST_APPEARS_AT = 150;
 
@@ -65,7 +73,7 @@ export const Upload: React.FC = () => {
       <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
         <div style={{ opacity: e, transform: `scale(${scale})` }}>
           <BrowserFrame width={frameW} height={frameH}>
-            <Capture which="upload" />
+            <Capture which="upload" speed={UPLOAD_SPEED} />
             {TASK_ROWS.map((y, i) => (
               <UnderlineSweep key={y} y={y} delay={LIST_APPEARS_AT + i * 14} />
             ))}

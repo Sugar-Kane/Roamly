@@ -61,19 +61,12 @@ export const CAPTURES = {
     scene: "7 — Progress you can see",
     intent: "Companions / garden with unlocked pets.",
   },
-  pip: {
-    file: "07-pip.webm",
-    kind: "video",
-    scene: "7 — Progress you can see",
-    intent: "Picture-in-picture timer floating over another window.",
-    seconds: [4, 6],
-  },
   themes: {
     file: "08-themes.webm",
     kind: "video",
-    scene: "Held in reserve (see shot list)",
-    intent: "Switching between two or three themes.",
-    seconds: [4, 6],
+    scene: "7 — Progress you can see",
+    intent: "Cycling through six themes, so the palette visibly changes.",
+    seconds: [6, 10],
   },
   mobileTimer: {
     file: "09-mobile-timer.png",

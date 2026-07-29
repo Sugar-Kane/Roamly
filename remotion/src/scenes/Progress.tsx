@@ -6,7 +6,7 @@ import { BrowserFrame, Capture, CaptionBlock, SceneWrap, useEntrance } from "../
 /**
  * SCENE 7 — Progress you can see (0:50–0:56)
  *
- * Three ~2s beats: analytics, garden, picture-in-picture. The caption spans
+ * Three ~2s beats: analytics, garden, theme cycling. The caption spans
  * all three rather than changing per beat, so it still clears the 2-second
  * minimum despite the faster cutting.
  *
@@ -79,7 +79,12 @@ const GardenBeat: React.FC<{ isVertical: boolean; width: number }> = ({
   );
 };
 
-const PipBeat: React.FC<{ isVertical: boolean; width: number }> = ({ isVertical, width }) => {
+/**
+ * Theme cycling closes the montage. This beat was originally the
+ * picture-in-picture timer, but Document PiP opens a separate OS window that
+ * Playwright cannot record — see SHOTLIST.md.
+ */
+const ThemesBeat: React.FC<{ isVertical: boolean; width: number }> = ({ isVertical, width }) => {
   const e = useEntrance(0, 22);
   const w = isVertical ? width - 80 : 1300;
   const h = isVertical ? Math.round((width - 80) * 0.5625) + 28 : Math.round(1300 * 0.5625) + 28;
@@ -88,7 +93,7 @@ const PipBeat: React.FC<{ isVertical: boolean; width: number }> = ({ isVertical,
     <AbsoluteFill style={{ justifyContent: "center", alignItems: "center" }}>
       <div style={{ opacity: e }}>
         <BrowserFrame width={w} height={h}>
-          <Capture which="pip" />
+          <Capture which="themes" />
         </BrowserFrame>
       </div>
     </AbsoluteFill>
@@ -109,7 +114,7 @@ export const Progress: React.FC = () => {
           <GardenBeat isVertical={isVertical} width={width} />
         </Series.Sequence>
         <Series.Sequence durationInFrames={BEAT}>
-          <PipBeat isVertical={isVertical} width={width} />
+          <ThemesBeat isVertical={isVertical} width={width} />
         </Series.Sequence>
       </Series>
 
