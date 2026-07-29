@@ -58,7 +58,11 @@ any are empty, seed them and re-check — do not work around an empty view.
   seed check against `/tasks`; note that the home view caps its "Up next" list
   at three rows, so three there is a full list, not a short one.
 - at least one exam countdown a few weeks out
-- a visible streak of 7+ days and a few weeks of analytics history
+- **focus sessions completed in the last 7 days.** Analytics is windowed to the
+  week, so an account with plenty of lifetime history still renders an empty
+  chart. The capture run now aborts on this rather than shooting it.
+- companions switched on ("Show companions on your focus timer"), or the garden
+  panel reads "Companions are hidden on your timer"
 - at least one unlocked study companion, and some garden growth
 - a study room to enter, with the shared timer already running
 
@@ -167,7 +171,7 @@ named constant at the top of its scene file.
 
 | Constant | File | What it controls |
 | --- | --- | --- |
-| `CLOCK_ORIGIN` | `src/scenes/Timer.tsx` | Where the live countdown sits over the timer ring |
+| `CLOCK_ORIGIN`, `CLOCK_MASK`, `CLOCK_SIZE_RATIO` | `src/scenes/Timer.tsx` | Where the live countdown replaces the frozen one (measured, not guessed) |
 | `LIST_APPEARS_AT` | `src/scenes/Upload.tsx` | Frame at which the generated task list is on screen |
 | `TASK_ROWS` | `src/scenes/Upload.tsx` | Vertical position of the three highlighted rows |
 | `CHART_REGION` | `src/scenes/Progress.tsx` | The chart area the bar-growth reveal uncovers |

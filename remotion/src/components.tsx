@@ -260,7 +260,10 @@ export const TickingClock: React.FC<{
   startSeconds: number;
   style?: React.CSSProperties;
   fontSize?: number;
-}> = ({ startSeconds, style, fontSize = 84 }) => {
+  /** Defaults to the mono face; pass the display face to match app chrome. */
+  fontFamily?: string;
+  color?: string;
+}> = ({ startSeconds, style, fontSize = 84, fontFamily, color }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const remaining = Math.max(0, startSeconds - Math.floor(frame / fps));
@@ -269,10 +272,10 @@ export const TickingClock: React.FC<{
   return (
     <div
       style={{
-        fontFamily: fonts.mono,
+        fontFamily: fontFamily ?? fonts.mono,
         fontWeight: 500,
         fontSize,
-        color: COLORS.coral,
+        color: color ?? COLORS.coral,
         letterSpacing: "-0.02em",
         fontVariantNumeric: "tabular-nums",
         ...style,

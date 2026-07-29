@@ -189,13 +189,24 @@ const run = async () => {
           `ROAMLY_SAMPLE_NOTES. Use material you have the right to show on camera.`,
       );
     }
-    // Kept short on purpose. Most of the AI round-trip is a progress bar with
-    // nothing to look at, and Scene 4 speeds the clip up on top of this — see
-    // UPLOAD_SPEED in src/scenes/Upload.tsx.
-    await clip(browser, "03-upload.webm", 7, async (p) => {
+    // The recording runs until the flow actually finishes, not for a guessed
+    // number of seconds. Generation is an AI round-trip whose length depends on
+    // the file; a fixed window produced a clip that ended mid-processing — all
+    // setup, no payoff. Scene 4 speeds the result up instead, see UPLOAD_SPEED
+    // in src/scenes/Upload.tsx.
+    await clip(browser, "03-upload.webm", 2.5, async (p) => {
       await gotoView(p, "/tasks", "03");
       await p.getByLabel("Choose study material").setInputFiles(SAMPLE_NOTES);
-      await p.waitForTimeout(800);
+      await p
+        .getByText(/Done: \d+ tasks? added/)
+        .waitFor({ state: "visible", timeout: 120_000 })
+        .catch(() => {
+          throw new Error(
+            "[03] The upload never reached its 'Done: N tasks added' state " +
+              "within two minutes. Without it the clip shows uploading and " +
+              "processing but never the generated list, which is the shot.",
+          );
+        });
     });
   }
 
@@ -214,6 +225,20 @@ const run = async () => {
     console.log("05 — analytics");
     await gotoView(page, "/analytics", "05");
     await page.waitForTimeout(1800); // charts animate in
+
+    // Analytics is windowed to the last 7 days, so an account with plenty of
+    // lifetime history can still render a completely empty view. The first
+    // capture run produced exactly that — 0h 0m, 0 days, "Complete your first
+    // focus session and your week appears here" — and nothing caught it.
+    if (await page.getByText(/Complete your first focus session/i).count()) {
+      throw new Error(
+        "[05] The analytics view is an empty state: no focus sessions in the " +
+          "last 7 days, so there is no chart to show. Complete a few focus " +
+          "blocks in the app and re-run. Do not backfill session rows in the " +
+          "database — that fabricates usage history for marketing.",
+      );
+    }
+
     await shot(page, "05-analytics.png");
   }
 
@@ -221,6 +246,19 @@ const run = async () => {
   if (wanted("06")) {
     console.log("06 — garden");
     await gotoView(page, "/garden", "06");
+
+    // The pets are the subject of this shot, and they are hidden whenever
+    // "Show companions on your focus timer" is off — the panel then reads
+    // "Companions are hidden on your timer", which is an empty state wearing a
+    // sentence. Switch it on before shooting.
+    const companions = page.getByRole("switch", { name: /Show companions/i }).first();
+    if (await companions.count()) {
+      if ((await companions.getAttribute("aria-checked").catch(() => null)) !== "true") {
+        await companions.click();
+        await page.waitForTimeout(1400);
+      }
+    }
+
     await page.waitForTimeout(1800);
     await shot(page, "06-garden.png");
   }
