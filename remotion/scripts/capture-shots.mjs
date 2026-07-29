@@ -14,6 +14,7 @@
 
 import { chromium, devices } from "playwright";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +41,25 @@ if (!existsSync(AUTH_FILE)) {
   );
   process.exit(1);
 }
+
+/**
+ * Remotion ships an ffmpeg binary with its platform compositor package, so the
+ * webm→mp4 transcode needs no system install. Falls back to ffmpeg on PATH.
+ */
+const ffmpegBin = (() => {
+  for (const pkg of [
+    "compositor-darwin-arm64",
+    "compositor-darwin-x64",
+    "compositor-linux-x64-gnu",
+    "compositor-linux-x64-musl",
+    "compositor-linux-arm64-gnu",
+    "compositor-win32-x64-msvc",
+  ]) {
+    const candidate = resolve(ROOT, "node_modules/@remotion", pkg, "ffmpeg");
+    if (existsSync(candidate)) return candidate;
+  }
+  return "ffmpeg";
+})();
 
 const DESKTOP = {
   viewport: { width: 1920, height: 1080 },
@@ -116,13 +136,33 @@ const clip = async (browser, file, seconds, body) => {
 
   const [written] = await readdir(TMP);
   if (!written) throw new Error(`No video written for ${file}`);
-  await rename(join(TMP, written), join(OUT, file.replace(/\.mp4$/, ".webm")));
+
+  const webm = join(OUT, file.replace(/\.mp4$/, ".webm"));
+  await rename(join(TMP, written), webm);
   await rm(TMP, { recursive: true, force: true });
-  console.log(
-    `  ✓ ${file.replace(/\.mp4$/, ".webm")} — transcode with:\n` +
-      `      ffmpeg -i public/captures/${file.replace(/\.mp4$/, ".webm")} ` +
-      `-c:v libx264 -crf 18 -pix_fmt yuv420p public/captures/${file}`,
-  );
+
+  // Transcode here rather than leaving it to the operator: the capture
+  // manifest, the contact sheet, and preflight all reference the .mp4, so a
+  // stray .webm reads downstream as "not captured" even though the shot is
+  // sitting right there on disk.
+  const target = join(OUT, file);
+  try {
+    execFileSync(
+      ffmpegBin,
+      ["-y", "-i", webm, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", target],
+      { stdio: "ignore" },
+    );
+    await rm(webm, { force: true });
+    const { size } = await stat(target);
+    console.log(`  ✓ ${file}  (${Math.round(size / 1024)} KB)`);
+  } catch {
+    console.error(
+      `  ! ${file.replace(/\.mp4$/, ".webm")} recorded, but transcoding failed.\n` +
+        `    ffmpeg was not usable at ${ffmpegBin}. Convert it by hand:\n` +
+        `      ffmpeg -i public/captures/${file.replace(/\.mp4$/, ".webm")} ` +
+        `-c:v libx264 -crf 18 -pix_fmt yuv420p public/captures/${file}`,
+    );
+  }
 };
 
 const run = async () => {
