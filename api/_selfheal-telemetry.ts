@@ -193,6 +193,73 @@ async function upsertSession(
   await admin.from("sh_sessions").upsert(patch, { onConflict: "id" });
 }
 
+// --- Connection failures: the same rule as the client, enforced again here --
+//
+// The client decides whether a `status === 0` failure was its own fault or the
+// user's connection (src/selfheal/sensors.ts), and downgrades the ones it can
+// explain. This backstop repeats the endpoint-correlation half of that
+// judgement at ingest, and exists because the client's version can be months
+// out of date: a browser that has had the tab open since before the fix, or a
+// service worker serving a stale bundle, keeps sending the old verdict. One
+// such client opened sixteen incidents in a week, one per endpoint, all from a
+// single phone losing its connection a handful of times.
+//
+// Deliberately only the correlation rule. The others depend on state that only
+// the page has — whether it was hidden, whether its timers were frozen — and
+// guessing at them from a batch would be inventing evidence.
+
+/** How far apart two failures can be and still be the same lost connection. */
+const BURST_WINDOW_MS = 2000;
+/** Distinct endpoints failing together before the connection is the suspect. */
+const BURST_ENDPOINTS = 4;
+
+/** A failure with no HTTP status: fetch threw, so nothing answered. */
+function isConnectionFailure(kind: string, payload: Record<string, unknown>): boolean {
+  if (kind !== "network_error") return false;
+  const status = Number(payload.status ?? 0);
+  return !Number.isFinite(status) || status === 0;
+}
+
+/** Path only — one endpoint is one suspect regardless of its query string. */
+function endpointOf(payload: Record<string, unknown>): string {
+  const url = String(payload.url ?? "");
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url.split("?")[0];
+  }
+}
+
+/**
+ * Connection failures in this batch that are part of a multi-endpoint burst.
+ *
+ * Unrelated endpoints failing in the same instant share a cause, and it is not
+ * any of them. Returned as the set of row objects to hold back, so a lone
+ * failure in the same batch still opens its incident.
+ */
+function correlatedFailures(
+  candidates: { row: Record<string, unknown>; message: string }[]
+): Set<Record<string, unknown>> {
+  const failures = candidates
+    .map((c) => ({
+      row: c.row,
+      at: Date.parse(String(c.row.ts)),
+      endpoint: endpointOf(c.row.payload as Record<string, unknown>),
+    }))
+    .filter((f) =>
+      Number.isFinite(f.at) &&
+      isConnectionFailure(String(f.row.kind), f.row.payload as Record<string, unknown>));
+
+  const correlated = new Set<Record<string, unknown>>();
+  for (const f of failures) {
+    const peers = new Set(
+      failures.filter((o) => Math.abs(o.at - f.at) <= BURST_WINDOW_MS).map((o) => o.endpoint)
+    );
+    if (peers.size >= BURST_ENDPOINTS) correlated.add(f.row);
+  }
+  return correlated;
+}
+
 /**
  * Insert events and open incidents for the ones that warrant it.
  *
@@ -238,9 +305,18 @@ async function insertEvents(
   if (!rows.length) return 0;
   const { data: inserted } = await admin.from("sh_events").insert(rows).select("id, kind, route, component, payload");
 
+  // Every event is stored either way — these are held back from opening an
+  // INCIDENT, not dropped, so the burst is still there for anyone looking.
+  const correlated = correlatedFailures(incidentCandidates);
+
   let opened = 0;
   for (const candidate of incidentCandidates) {
     const payload = candidate.row.payload as Record<string, unknown>;
+    // The client already judged this one environmental and said on what
+    // grounds. A high severity alongside those grounds is a client bug, not a
+    // backend one, and either way it is not an incident.
+    if (payload.connectivity) continue;
+    if (correlated.has(candidate.row)) continue;
 
     // Fingerprinting lives in the database so the normalisation rules exist in
     // exactly one place, and so two concurrent serverless instances handling
