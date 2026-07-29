@@ -9,3 +9,6 @@ test-results/
 playwright-report/
 .env*
 supabase-seed.sql
+
+# Playwright storage state for marketing captures (never commit)
+.auth/
