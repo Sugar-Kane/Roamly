@@ -58,8 +58,28 @@ try {
   process.exit(1);
 }
 
-const entries = parsed.localStorage ?? [];
-const origin = parsed.origin ?? "https://www.roamlyflow.com";
+/**
+ * Two export shapes are accepted, because Chrome makes pasting a long snippet
+ * into the console deliberately awkward:
+ *
+ *   copy(JSON.stringify(localStorage))
+ *     → {"sb-…-auth-token": "…", "theme": "…"}      short enough to type
+ *
+ *   copy(JSON.stringify({origin: …, localStorage: […]}))
+ *     → {origin, localStorage: [{name, value}]}     explicit about the origin
+ *
+ * The short form carries no origin, so it falls back to ROAMLY_URL or
+ * production — which is right in every case where you typed it into a tab open
+ * on the app.
+ */
+const entries = Array.isArray(parsed.localStorage)
+  ? parsed.localStorage
+  : Object.entries(parsed)
+      .filter(([, value]) => typeof value === "string")
+      .map(([name, value]) => ({ name, value }));
+
+const origin =
+  parsed.origin ?? process.env.ROAMLY_URL ?? "https://www.roamlyflow.com";
 
 // Supabase writes its session under sb-<project-ref>-auth-token. Without that
 // key the export is of a signed-out page, and every capture would silently come

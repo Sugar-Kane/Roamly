@@ -71,14 +71,12 @@ already a trusted human, and hand the session over.
 2. Open DevTools → Console on that tab and run:
 
    ```js
-   copy(JSON.stringify({
-     origin: location.origin,
-     localStorage: Object.entries(localStorage).map(([name, value]) => ({ name, value })),
-   }))
+   copy(JSON.stringify(localStorage))
    ```
 
    `copy` is a DevTools helper — it prints `undefined` and puts the result on
-   your clipboard.
+   your clipboard. Chrome blocks pasting into the console until you type
+   `allow pasting` once, so this snippet is deliberately short enough to type.
 
 3. Import it:
 
