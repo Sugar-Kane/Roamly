@@ -230,6 +230,73 @@ test("a request that fails during an offline blip is not an incident", async ({ 
     "an offline blip must not open an incident").toHaveLength(0);
 });
 
+test("a request that fails in the background is not an incident", async ({ page }) => {
+  // The shape of the first production flood: sixteen incidents, every one a
+  // status-0 failure against a different Supabase endpoint, from one user on a
+  // phone. Roamly polls (room occupancy, notifications, stale rooms) on timers
+  // that keep firing after the screen locks, and the OS takes the connection
+  // away underneath them — hidden page, navigator.onLine still true, nothing
+  // unloading, so every one of them read as a backend defect.
+  const batches = await captureTelemetry(page);
+  await page.route("**/probe-*", (route) => route.abort("failed"));
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+
+  // A poll that fires while the page is in the background and dies there.
+  // visibilityState is overridden because a synthetic event does not change it,
+  // and the SDK reads the state rather than trusting the event.
+  await page.evaluate(async () => {
+    Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await fetch("/probe-hidden").catch(() => {});
+  });
+  // Back in the foreground, online and visible, exactly as the page would be
+  // when a held verdict is finally decided after a resume.
+  await page.evaluate(() => {
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.waitForTimeout(3000);
+  await flushTelemetry(page);
+
+  const events = batches.flatMap((b) => (b.events ?? []) as Record<string, unknown>[]);
+  const hidden = events.filter((e) =>
+    e.kind === "network_error" &&
+    String((e.payload as Record<string, unknown>)?.url ?? "").includes("probe-hidden"));
+
+  expect(hidden.filter((e) => e.severity === "high" || e.severity === "critical"),
+    "a backgrounded page's failed poll must not open an incident").toHaveLength(0);
+});
+
+test("many endpoints failing at once is one lost connection, not many bugs", async ({ page }) => {
+  // The second half of the same flood. A dropped connection on a moving phone
+  // does not always announce itself: navigator.onLine stays true for a Wi-Fi
+  // association that has no route, the page is visible, and nothing is
+  // unloading — so the only trace left is that everything in flight died
+  // together. Fourteen unrelated endpoints do not break in the same instant.
+  const batches = await captureTelemetry(page);
+  await page.route("**/probe-*", (route) => route.abort("failed"));
+
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Select timer" })).toBeVisible();
+
+  await page.evaluate(() => Promise.all(
+    ["tasks", "rooms", "notifications", "friendships", "profiles"]
+      .map((name) => fetch(`/probe-burst-${name}`).catch(() => {}))
+  ));
+  await page.waitForTimeout(3000);
+  await flushTelemetry(page);
+
+  const events = batches.flatMap((b) => (b.events ?? []) as Record<string, unknown>[]);
+  const burst = events.filter((e) =>
+    e.kind === "network_error" &&
+    String((e.payload as Record<string, unknown>)?.url ?? "").includes("probe-burst-"));
+
+  expect(burst.filter((e) => e.severity === "high" || e.severity === "critical"),
+    "simultaneous failures across endpoints must open no incidents").toHaveLength(0);
+});
+
 test("a failed stylesheet is chunk churn, not a high-severity JS error", async ({ page }) => {
   // The resource branch used to test `"src" in target`, so <link> — which
   // carries href — fell through to the exception path and was reported as a

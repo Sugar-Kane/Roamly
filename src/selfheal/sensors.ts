@@ -387,14 +387,135 @@ function expectedNon2xx(url: string): boolean {
 // decided by which side of the flag update each request landed on.
 //
 // So the verdict waits for the browser to catch up.
+//
+// Waiting is necessary but not sufficient, and the first week of production
+// proved it: sixteen open incidents, every one "network on <supabase url>"
+// with no status, spread across fourteen different endpoints — music_tracks,
+// room_occupancy, notifications, friendships, profiles, the token refresh —
+// each seen once or twice by a single user, in bursts hours apart. Fourteen
+// endpoints do not break at the same instant and then work again; one
+// connection does. Three things below make that verdict reachable:
+//
+//   * the page being BACKGROUNDED. Roamly polls (room occupancy, notifications,
+//     stale-room reaping) on intervals that keep firing after a phone is
+//     locked, and a mobile OS tears the connection down under them. The tab is
+//     hidden, `navigator.onLine` stays true, and nothing is unloading.
+//   * the page being FROZEN. Even when the evidence is there, the 2s verdict
+//     runs on a timer, and a suspended page does not run timers — it resumes
+//     minutes later, online and visible, with every trace of the drop gone.
+//     A grace timer that fires wildly late is itself the proof.
+//   * CORRELATED failures. A defect lives at one endpoint; a connection takes
+//     out whichever handful happened to be in flight.
 
 /** How long to let the browser notice it is offline before we blame ourselves. */
 const CONNECTIVITY_GRACE_MS = 2000;
 /** Slack for an offline transition observed just before the request started. */
 const OFFLINE_LOOKBACK_MS = 1000;
+/**
+ * A grace timer later than this did not run late — the page was not running.
+ *
+ * Well clear of ordinary scheduling jitter: a foreground page 10s behind on a
+ * 2s timer has a freeze the long-task detector is already reporting.
+ */
+const FROZEN_TIMER_MS = 10_000;
+/**
+ * How far apart two failures can be and still be the same lost connection.
+ *
+ * Simultaneity is the whole signal: a connection that goes away fails
+ * everything in flight at once. A window wide enough to span an app's ordinary
+ * comings and goings would let three unrelated failures alibi each other, and
+ * the one real bug among them would be the one that got excused.
+ */
+const BURST_WINDOW_MS = 2000;
+/**
+ * Distinct endpoints failing together — counting this one — before the
+ * connection becomes the suspect rather than any of them.
+ *
+ * Three is a plausible fan-out for one screen's own requests; four unrelated
+ * endpoints dying in the same two seconds is not something a backend does
+ * selectively. The burst that prompted this rule was fourteen.
+ */
+const BURST_ENDPOINTS = 4;
+/**
+ * A hide this soon after a failure is the same teardown, not a coincidence.
+ *
+ * Kept tight on purpose. Beyond a second, "the request failed and then the
+ * user left" is the more likely reading — and that user left *because* of the
+ * failure, which is the last thing to excuse.
+ */
+const HIDE_AFTER_FAILURE_MS = 1000;
 
 let lastOfflineAt = 0;
+let lastHiddenAt = 0;
 let unloading = false;
+
+/**
+ * How long a correlated run of failures may last and still be a blip.
+ *
+ * The escape hatch on the correlated-failure rule, and the reason that rule is
+ * safe. A tunnel ends; a bad CORS header, an expired certificate or a wrong
+ * Supabase URL does not — those break every endpoint at once too, and are
+ * exactly the deploy-breaks-everything bugs this platform exists to catch.
+ * Once failures have been arriving continuously for a minute, "the connection
+ * dropped" has stopped being the simpler explanation.
+ */
+const SUSTAINED_OUTAGE_MS = 60_000;
+/**
+ * Quiet time that ends a run of failures.
+ *
+ * Wider than the correlation window, because this measures something else: not
+ * "did these fail together" but "has the app been able to reach anything since".
+ * Roamly's slowest poll is well inside 30s, so a connection that came back
+ * proves it within one, and two tunnels in one commute stay two blips.
+ */
+const RUN_IDLE_MS = 30_000;
+
+/** Recent status-0 failures: when, and which endpoint. */
+const recentFailures: { at: number; endpoint: string }[] = [];
+/** Start of the current unbroken run of failures, and the latest of them. */
+let burstStartedAt = 0;
+let lastFailureAt = 0;
+
+/** Path only — one endpoint is one suspect regardless of its query string. */
+function endpointOf(url: string): string {
+  try {
+    return new URL(url, location.href).pathname;
+  } catch {
+    return url.split("?")[0];
+  }
+}
+
+function recordFailure(url: string, at: number): void {
+  // A quiet gap starts a new run: two separate tunnels an hour apart are two
+  // blips, not one hour-long outage.
+  if (at - lastFailureAt > RUN_IDLE_MS) burstStartedAt = at;
+  lastFailureAt = at;
+
+  recentFailures.push({ at, endpoint: endpointOf(url) });
+  // Bounded by the window it is asked about, so this never grows.
+  while (recentFailures.length && recentFailures[0].at < at - BURST_WINDOW_MS * 2) {
+    recentFailures.shift();
+  }
+}
+
+/** How many distinct endpoints failed around the same moment as this one. */
+function peerEndpoints(at: number): number {
+  const near = recentFailures.filter((f) => Math.abs(f.at - at) <= BURST_WINDOW_MS);
+  return new Set(near.map((f) => f.endpoint)).size;
+}
+
+type FailureContext = {
+  /** When the request was issued. */
+  startedAt: number;
+  /** When it failed. */
+  failedAt: number;
+  /** Sampled when the failure was OBSERVED, not when it is judged. */
+  wasUnloading: boolean;
+  /** Likewise: was the page in the background when the request died? */
+  wasHidden: boolean;
+  /** How late the verdict itself ran, in ms. */
+  timerLag: number;
+};
 
 /**
  * Why a failure is not our bug, or null if it is.
@@ -403,18 +524,46 @@ let unloading = false;
  * connection was already dropping is explained by that drop even though the
  * browser had not yet flipped the flag.
  *
- * `wasUnloading` is sampled when the failure is OBSERVED, not when it is
- * judged. The abort case is "request in flight → page goes away → request
- * fails", so only a failure that arrives after pagehide was caused by the
- * navigation; one that had already failed before it is unrelated and keeps its
- * severity.
+ * `wasUnloading` and `wasHidden` are sampled when the failure is OBSERVED, not
+ * when it is judged, and for the same reason in both cases. The abort case is
+ * "request in flight → page goes away → request fails", so only a failure that
+ * arrives after the page went away was caused by it; one that had already
+ * failed before it is unrelated and keeps its severity. Sampling at judgement
+ * time would also lose the verdict entirely whenever the user comes back
+ * before the grace period is served.
  */
-function connectivityExcuse(startedAt: number, wasUnloading: boolean): string | null {
+function connectivityExcuse(ctx: FailureContext): string | null {
   if (!navigator.onLine) return "offline";
-  if (lastOfflineAt >= startedAt - OFFLINE_LOOKBACK_MS) return "offline_during_request";
+  if (lastOfflineAt >= ctx.startedAt - OFFLINE_LOOKBACK_MS) return "offline_during_request";
   // The browser aborts in-flight requests when the page goes away, and reports
   // them as generic network failures indistinguishable from a real outage.
-  if (wasUnloading) return "page_unloading";
+  if (ctx.wasUnloading) return "page_unloading";
+  // A backgrounded page is not a page a user is waiting on, and on mobile it is
+  // a page whose connection the OS is entitled to take away. Roamly's polling
+  // intervals keep issuing requests into exactly that state.
+  if (ctx.wasHidden) return "backgrounded";
+  // The other order: the connection is torn down a moment before the browser
+  // reports the page hidden, so the failure lands while still nominally
+  // visible. Same event, observed from the wrong side.
+  if (lastHiddenAt >= ctx.failedAt && lastHiddenAt - ctx.failedAt <= HIDE_AFTER_FAILURE_MS) {
+    return "backgrounded";
+  }
+  // The verdict was supposed to run 2s after the failure and ran much later:
+  // the page was suspended in between, which is also what killed the request.
+  // Everything `connectivityExcuse` reads has been reset by the resume, so
+  // without this the suspension is invisible and the tab blames the backend.
+  if (ctx.timerLag >= FROZEN_TIMER_MS) return "page_frozen";
+  // Unrelated endpoints failing at the same instant share a cause, and it is
+  // not any of them. This is the shape a dropped connection leaves behind when
+  // every other trace of it has been erased by a resume.
+  //
+  // A real outage looks the same from inside one tab, so the excuse expires:
+  // past SUSTAINED_OUTAGE_MS of unbroken failures this stops applying and the
+  // incidents open.
+  if (
+    peerEndpoints(ctx.failedAt) >= BURST_ENDPOINTS &&
+    ctx.failedAt - burstStartedAt <= SUSTAINED_OUTAGE_MS
+  ) return "correlated_failures";
   return null;
 }
 
@@ -424,19 +573,26 @@ const pendingFailures = new Set<() => void>();
 function reportNetworkFailure(obs: NetObservation): void {
   const startedAt = obs.ts - obs.durationMs;
   const wasUnloading = unloading;
+  const wasHidden = document.visibilityState === "hidden";
+  const deadline = Date.now() + CONNECTIVITY_GRACE_MS;
+  recordFailure(obs.url, obs.ts);
   let timer = 0;
 
   const decide = () => {
     // Whichever of the timer and the pagehide sweep gets here first wins.
     if (!pendingFailures.delete(decide)) return;
     window.clearTimeout(timer);
-    const excuse = connectivityExcuse(startedAt, wasUnloading);
+    const peers = peerEndpoints(obs.ts);
+    const excuse = connectivityExcuse({
+      startedAt, failedAt: obs.ts, wasUnloading, wasHidden,
+      timerLag: Date.now() - deadline,
+    });
     emit("network_error", excuse ? "low" : "high", {
       url: obs.url, method: obs.method, error: obs.error,
       online: navigator.onLine, durationMs: obs.durationMs,
       // Recorded rather than dropped: triage should be able to see that a
       // failure was judged environmental, and on what grounds.
-      ...(excuse ? { connectivity: excuse } : {}),
+      ...(excuse ? { connectivity: excuse, peerEndpoints: peers } : {}),
     });
   };
 
@@ -446,6 +602,19 @@ function reportNetworkFailure(obs: NetObservation): void {
 
 function installConnectivityTracking(): void {
   window.addEventListener("offline", () => { lastOfflineAt = Date.now(); });
+
+  // Going into the background is the mobile equivalent of pagehide, and on iOS
+  // it is frequently the ONLY signal: an app switch or a screen lock hides the
+  // page, kills its connections, and freezes it without ever firing pagehide.
+  // Held verdicts are decided here for the same reason they are decided there —
+  // a frozen page runs no timers, and by the time it resumes the browser is
+  // online, visible, and has nothing left to say about what happened.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") return;
+    lastHiddenAt = Date.now();
+    for (const decide of Array.from(pendingFailures)) decide();
+  });
+
   // pagehide fires for bfcache suspends too (a mobile tab switch), so pageshow
   // has to clear the flag — otherwise one backgrounded tab downgrades every
   // network error for the rest of the session.
