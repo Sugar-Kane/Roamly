@@ -287,6 +287,18 @@ one tab and is quiet for its first minute. That is uptime monitoring's job — i
 watches from a machine that is definitely online — and an incident per
 unreachable endpoint is a dashboard nobody reads.
 
+**The correlation rule is enforced a second time at ingest**
+(`api/_selfheal-telemetry.ts`), because the client's copy of it can be months
+out of date: a tab open since before the fix, or a service worker serving a
+stale bundle, keeps sending the old verdict, and there is no deploy that
+reaches it. A batch carrying status-0 failures for four or more distinct
+endpoints inside 2s opens no incidents for them, and neither does any event the
+client already tagged with `connectivity` grounds. Both are held back from
+opening an incident, not dropped — the events are stored, so the burst is still
+there for anyone looking. Only the correlation rule is repeated: `backgrounded`
+and `page_frozen` depend on state that only the page has, and inferring them
+from a batch would be inventing evidence.
+
 ### Performance and layout
 
 - CLS reported once at unload, only above 0.25 (Google's "poor" threshold).
