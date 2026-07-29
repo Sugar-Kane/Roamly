@@ -109,14 +109,20 @@ for (const [index, e] of entries.entries()) {
       [
         "-y", "-loop", "1", "-i", still,
         "-t", "12", "-r", "30",
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        // libvpx rejects the RGB input a PNG decodes to, so the pixel format is
+        // explicit rather than left to ffmpeg to guess.
+        "-c:v", "libvpx", "-b:v", "1M", "-pix_fmt", "yuv420p", "-an",
         target,
       ],
-      { stdio: "ignore" },
+      // stderr is surfaced deliberately: a swallowed ffmpeg failure leaves a
+      // zero-byte file that looks like a success to everything downstream.
+      { stdio: ["ignore", "ignore", "pipe"] },
     );
     madeVideo++;
-  } catch {
-    console.error(`  could not encode ${e.file} — ffmpeg unavailable at ${ffmpegBin}`);
+  } catch (err) {
+    const detail = err.stderr?.toString().trim().split("\n").slice(-2).join(" ") ?? err.message;
+    console.error(`  could not encode ${e.file}: ${detail}`);
+    await rm(target, { force: true });
   }
   await rm(still, { force: true });
 }

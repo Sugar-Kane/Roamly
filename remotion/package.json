@@ -15,8 +15,7 @@
     "placeholders:clean": "node scripts/make-placeholders.mjs --clean",
     "srt": "node scripts/make-srt.mjs",
     "preflight": "node scripts/preflight.mjs && node scripts/verify-qr.mjs",
-    "contact-sheet": "node scripts/contact-sheet.mjs",
-    "transcode": "node scripts/transcode.mjs"
+    "contact-sheet": "node scripts/contact-sheet.mjs"
   },
   "dependencies": {
     "@remotion/cli": "4.0.500",

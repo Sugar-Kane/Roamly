@@ -14,7 +14,6 @@
 
 import { chromium, devices } from "playwright";
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
-import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,25 +40,6 @@ if (!existsSync(AUTH_FILE)) {
   );
   process.exit(1);
 }
-
-/**
- * Remotion ships an ffmpeg binary with its platform compositor package, so the
- * webm→mp4 transcode needs no system install. Falls back to ffmpeg on PATH.
- */
-const ffmpegBin = (() => {
-  for (const pkg of [
-    "compositor-darwin-arm64",
-    "compositor-darwin-x64",
-    "compositor-linux-x64-gnu",
-    "compositor-linux-x64-musl",
-    "compositor-linux-arm64-gnu",
-    "compositor-win32-x64-msvc",
-  ]) {
-    const candidate = resolve(ROOT, "node_modules/@remotion", pkg, "ffmpeg");
-    if (existsSync(candidate)) return candidate;
-  }
-  return "ffmpeg";
-})();
 
 const DESKTOP = {
   viewport: { width: 1920, height: 1080 },
@@ -114,8 +94,12 @@ const shot = async (page, file) => {
 
 /**
  * Records a clip by running `body` inside a context that has video capture on,
- * then moves the resulting webm-derived mp4 into place. Playwright writes video
- * per-context, so each clip gets its own context.
+ * then moves the recorded file into place. Playwright writes video per-context,
+ * so each clip gets its own context.
+ *
+ * The .webm Playwright produces is kept as-is: Remotion's OffthreadVideo decodes
+ * it directly, so transcoding to mp4 bought nothing and added a dependency on an
+ * ffmpeg build that is not reliably present.
  */
 const clip = async (browser, file, seconds, body) => {
   await rm(TMP, { recursive: true, force: true });
@@ -137,32 +121,10 @@ const clip = async (browser, file, seconds, body) => {
   const [written] = await readdir(TMP);
   if (!written) throw new Error(`No video written for ${file}`);
 
-  const webm = join(OUT, file.replace(/\.mp4$/, ".webm"));
-  await rename(join(TMP, written), webm);
+  await rename(join(TMP, written), join(OUT, file));
   await rm(TMP, { recursive: true, force: true });
-
-  // Transcode here rather than leaving it to the operator: the capture
-  // manifest, the contact sheet, and preflight all reference the .mp4, so a
-  // stray .webm reads downstream as "not captured" even though the shot is
-  // sitting right there on disk.
-  const target = join(OUT, file);
-  try {
-    execFileSync(
-      ffmpegBin,
-      ["-y", "-i", webm, "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", target],
-      { stdio: "ignore" },
-    );
-    await rm(webm, { force: true });
-    const { size } = await stat(target);
-    console.log(`  ✓ ${file}  (${Math.round(size / 1024)} KB)`);
-  } catch {
-    console.error(
-      `  ! ${file.replace(/\.mp4$/, ".webm")} recorded, but transcoding failed.\n` +
-        `    ffmpeg was not usable at ${ffmpegBin}. Convert it by hand:\n` +
-        `      ffmpeg -i public/captures/${file.replace(/\.mp4$/, ".webm")} ` +
-        `-c:v libx264 -crf 18 -pix_fmt yuv420p public/captures/${file}`,
-    );
-  }
+  const { size } = await stat(join(OUT, file));
+  console.log(`  ✓ ${file}  (${Math.round(size / 1024)} KB)`);
 };
 
 const run = async () => {
@@ -227,7 +189,7 @@ const run = async () => {
           `ROAMLY_SAMPLE_NOTES. Use material you have the right to show on camera.`,
       );
     }
-    await clip(browser, "03-upload.mp4", 11, async (p) => {
+    await clip(browser, "03-upload.webm", 11, async (p) => {
       await gotoView(p, "/tasks", "03");
       await p.getByLabel("Choose study material").setInputFiles(SAMPLE_NOTES);
       // The generation round-trip is the point of the shot; let it complete.
@@ -238,7 +200,7 @@ const run = async () => {
   // ---- 04 live study room (clip) -----------------------------------------
   if (wanted("04")) {
     console.log("04 — live study room");
-    await clip(browser, "04-room.mp4", 11, async (p) => {
+    await clip(browser, "04-room.webm", 11, async (p) => {
       await gotoView(p, "/rooms", "04");
       await p.getByRole("button", { name: /^Join$/ }).first().click();
       await p.waitForTimeout(1500);
@@ -264,7 +226,7 @@ const run = async () => {
   // ---- 07 picture-in-picture (clip) --------------------------------------
   if (wanted("07")) {
     console.log("07 — picture-in-picture");
-    await clip(browser, "07-pip.mp4", 6, async (p) => {
+    await clip(browser, "07-pip.webm", 6, async (p) => {
       await gotoView(p, "/", "07");
       const pip = p.getByRole("button", { name: /Pop out timer/i }).first();
       if (!(await pip.isVisible().catch(() => false))) {
@@ -281,7 +243,7 @@ const run = async () => {
   // ---- 08 theme switching (clip) -----------------------------------------
   if (wanted("08")) {
     console.log("08 — theme switching");
-    await clip(browser, "08-themes.mp4", 6, async (p) => {
+    await clip(browser, "08-themes.webm", 6, async (p) => {
       await gotoView(p, "/", "08");
       for (const theme of [/^Library Night$/i, /^Sage Calm$/i, /^Coffee Shop$/i]) {
         // The picker closes on selection, so it is reopened for each theme.

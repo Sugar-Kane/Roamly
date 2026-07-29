@@ -121,8 +121,9 @@ iPhone 14 device profile at 390x844. Shot 03 needs a sample lecture file —
 put one at `fixtures/sample-lecture.pdf` or set `ROAMLY_SAMPLE_NOTES`, and use
 material you have the right to show on camera.
 
-Playwright records video as `.webm`. The script prints the exact `ffmpeg`
-command to transcode each clip to the `.mp4` the compositions expect.
+Clips stay in the `.webm` Playwright records. Remotion's `OffthreadVideo`
+decodes it directly, so there is no transcode step and no dependency on an
+ffmpeg build being present.
 
 ### 4. Review and sign off
 

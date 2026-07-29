@@ -36,14 +36,14 @@ export const CAPTURES = {
     intent: "Method picker open, showing the PA presets.",
   },
   upload: {
-    file: "03-upload.mp4",
+    file: "03-upload.webm",
     kind: "video",
     scene: "4 — AI from your notes",
     intent: "AI note upload: choose file, processing, generated task list appears.",
     seconds: [8, 12],
   },
   room: {
-    file: "04-room.mp4",
+    file: "04-room.webm",
     kind: "video",
     scene: "5 — You're not studying alone",
     intent: "Live study room with the shared countdown ticking and participants visible.",
@@ -62,14 +62,14 @@ export const CAPTURES = {
     intent: "Companions / garden with unlocked pets.",
   },
   pip: {
-    file: "07-pip.mp4",
+    file: "07-pip.webm",
     kind: "video",
     scene: "7 — Progress you can see",
     intent: "Picture-in-picture timer floating over another window.",
     seconds: [4, 6],
   },
   themes: {
-    file: "08-themes.mp4",
+    file: "08-themes.webm",
     kind: "video",
     scene: "Held in reserve (see shot list)",
     intent: "Switching between two or three themes.",
