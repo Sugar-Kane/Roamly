@@ -10,3 +10,7 @@ public/captures/*
 
 # Generated: node scripts/make-qr.mjs
 public/qr.png
+
+# Lecture material used for the AI upload shot — local only, never committed.
+fixtures/*
+!fixtures/README.md
