@@ -266,7 +266,7 @@ async function insertEvents(
       p_release: release,
       p_user_id: userId,
       p_session_id: sessionId,
-      p_approval_level: approvalFor(String(candidate.row.kind), candidate.row.route as string | null),
+      p_approval_level: approvalFor(String(candidate.row.kind), candidate.row.route as string | null, payload),
       p_first_seen: null,
     });
 
@@ -305,7 +305,13 @@ function incidentTitle(kind: string, payload: Record<string, unknown>): string {
     case "rage_click": return `Rage clicks: ${payload.element ?? "unknown element"}`;
     case "spinner_stuck": return `Stuck loading state: ${payload.element ?? "spinner"}`;
     case "nav_failed": return `Route renders empty: ${payload.route ?? "unknown"}`;
-    case "network_error": return `${payload.status ?? "network"} on ${payload.url ?? "request"}`;
+    case "network_error":
+      // "network on <url>" read as "some network thing happened" and threw
+      // away the one distinction that matters to triage: whether a response
+      // came back at all. Name it.
+      return payload.transport === "no_response"
+        ? `no response from ${payload.url ?? "request"}`
+        : `${payload.status ?? "network"} on ${payload.url ?? "request"}`;
     case "outcome_failed": return `${payload.contract ?? "feature"} did not complete (${payload.status ?? "failed"})`;
     case "react_error": return `React crash: ${message}`;
     case "chunk_load_failed": return `Chunk failed to load: ${message}`;
@@ -318,10 +324,22 @@ function incidentTitle(kind: string, payload: Record<string, unknown>): string {
  * sh_classify_approval() in the database has the final say when a patch is
  * actually written, and it can only escalate.
  */
-function approvalFor(kind: string, route: string | null): "auto" | "pr_only" | "manual" {
+function approvalFor(
+  kind: string, route: string | null, payload?: Record<string, unknown>
+): "auto" | "pr_only" | "manual" {
   const sensitive = /auth|login|signup|billing|checkout|premium|account|admin/i;
   if (route && sensitive.test(route)) return "manual";
-  if (kind === "network_error") return "manual";  // could be RLS, could be Stripe
+  if (kind === "network_error") {
+    // Blanket-manual here was too blunt. A permission failure genuinely can be
+    // RLS or a Stripe gate, so those still stop for a human. A transport
+    // failure produced no response at all and implicates nothing sensitive —
+    // sending those to manual buried real bugs under transient gateway blips.
+    // sh_classify_approval() still has the final say on any actual patch and
+    // can only escalate, so opening lower here cannot loosen a risky change.
+    const status = Number(payload?.status ?? 0);
+    if (payload?.kind === "permission" || status === 401 || status === 403) return "manual";
+    return "pr_only";
+  }
   return "pr_only";
 }
 

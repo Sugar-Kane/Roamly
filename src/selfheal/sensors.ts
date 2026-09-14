@@ -434,6 +434,12 @@ function reportNetworkFailure(obs: NetObservation): void {
     emit("network_error", excuse ? "low" : "high", {
       url: obs.url, method: obs.method, error: obs.error,
       online: navigator.onLine, durationMs: obs.durationMs,
+      // The request produced NO response object at all, so there is no status
+      // to record — obs.status is 0. Saying that explicitly matters: a gateway
+      // 5xx whose error response omits CORS headers is unreadable to the page
+      // and arrives here looking identical to a dropped connection. Without
+      // this marker triage sees only "Failed to fetch" and guesses.
+      status: obs.status, transport: "no_response",
       // Recorded rather than dropped: triage should be able to see that a
       // failure was judged environmental, and on what grounds.
       ...(excuse ? { connectivity: excuse } : {}),
