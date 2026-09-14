@@ -254,6 +254,51 @@ event as `connectivity`, so triage can see the grounds rather than just a
 missing incident. A `pagehide` resolves every held verdict immediately, so the
 last batch still carries them.
 
+Waiting was necessary and not sufficient. The first week in production opened
+**sixteen incidents, every one a status-0 failure against a different Supabase
+endpoint** — `music_tracks`, `room_occupancy`, `notifications`, `friendships`,
+`profiles`, the token refresh — each seen once or twice by one user on a phone,
+in bursts hours apart. Fourteen endpoints do not break in the same instant and
+then recover; one connection does. Three more grounds make that verdict
+reachable, all of them things the original rule could not see:
+
+- **`backgrounded`** — the page was hidden when the request died. Roamly polls
+  room occupancy, notifications and stale-room reaping on intervals that keep
+  firing after a phone locks, and a mobile OS is entitled to take the
+  connection away underneath them. The tab is hidden, `navigator.onLine` is
+  still true, nothing is unloading. `visibilitychange` is also the mobile
+  equivalent of `pagehide` — an app switch frequently fires nothing else — so
+  it resolves held verdicts too, and a hide within 1s *after* a failure counts
+  as the same teardown observed from the wrong side.
+- **`page_frozen`** — the 2s verdict runs on a timer, and a suspended page runs
+  no timers. It resumes minutes later, online and visible, with every trace of
+  the drop erased, and blames the backend. A grace timer that fires 10s+ late
+  did not run late; the page was not running, which is also what killed the
+  request.
+- **`correlated_failures`** — four or more distinct endpoints failing inside the
+  same 2s. Simultaneity is the signal: a defect lives at one endpoint, a lost
+  connection takes whatever was in flight. This one has a deliberate expiry —
+  after 60s of unbroken failures the excuse stops applying and the incidents
+  open, because a bad CORS header or an expired certificate breaks every
+  endpoint at once too and never recovers on its own.
+
+The accepted cost is that a total backend outage looks identical from inside
+one tab and is quiet for its first minute. That is uptime monitoring's job — it
+watches from a machine that is definitely online — and an incident per
+unreachable endpoint is a dashboard nobody reads.
+
+**The correlation rule is enforced a second time at ingest**
+(`api/_selfheal-telemetry.ts`), because the client's copy of it can be months
+out of date: a tab open since before the fix, or a service worker serving a
+stale bundle, keeps sending the old verdict, and there is no deploy that
+reaches it. A batch carrying status-0 failures for four or more distinct
+endpoints inside 2s opens no incidents for them, and neither does any event the
+client already tagged with `connectivity` grounds. Both are held back from
+opening an incident, not dropped — the events are stored, so the burst is still
+there for anyone looking. Only the correlation rule is repeated: `backgrounded`
+and `page_frozen` depend on state that only the page has, and inferring them
+from a batch would be inventing evidence.
+
 ### Performance and layout
 
 - CLS reported once at unload, only above 0.25 (Google's "poor" threshold).
@@ -300,6 +345,9 @@ land. These are the backend equivalent of an unmet frontend expectation.
 | Rage click | 4 clicks / 2s / 40px | 3 is normal impatience | 5+ and users have already given up |
 | Stuck spinner | 12s continuous, 0 in flight, no `aria-valuenow` | Real uploads exceed 8s | Users abandon around 15s |
 | Offline downgrade | offline within request window ±grace | Tighter re-blames us for tunnels | Wider hides real backend outages |
+| Backgrounded downgrade | hidden when the request died, or hidden ≤1s after | Tighter re-blames us for locked phones | Wider excuses the user who left *because* it broke |
+| Frozen-page downgrade | grace timer ≥10s late | Tighter mistakes jank for suspension | Wider lets a resume erase the evidence |
+| Correlated downgrade | ≥4 endpoints / 2s, first 60s only | Tighter is one screen's own fan-out | Wider excuses a real outage indefinitely |
 | Slow request | 8s | p99 of AI generation is legitimately long | Beyond 8s it is a failed interaction |
 | CLS | 0.25 session total | Below this is imperceptible | Above 0.5 is already broken |
 | Sustained jank | 20 tasks + 5s / min | One long task is normal | Beyond this the tab is frozen |
