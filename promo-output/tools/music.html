@@ -1,0 +1,139 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Roamly Flow promo — original score (Tone.js, offline)</title>
+<script src="../node_modules/tone/build/Tone.js"></script>
+<script>
+/* Original music bed, scored to picture.
+   96 BPM, 4/4, one bar = 2.5 s; bars land on 10.0, 12.5 … 57.5 s so every act change is a downbeat.
+   0–10 s: no music (the chaos is all SFX).  10.0–10.625: silence beat.
+   10.625: pickup arpeggio follows the hand-drawn line → 12.5 logo chord bloom.
+   17.5: groove enters (product).  30–35: drums drop out for the break.  35: groove returns.
+   40–50: warm full groove under the payoff VO.  50–52.5: lift.  52.5: resolve.  57.5: final chord. */
+const SR = 48000, DUR = 60;
+const BAR = 2.5, BEAT = BAR / 4, E8 = BEAT / 2, S16 = BEAT / 4;
+const bar = n => 10 + n * BAR; // bar index 0 = 10.0 s
+
+async function renderScore() {
+  const buf = await Tone.Offline(async ({ transport }) => {
+    const master = new Tone.Gain(0.9).toDestination();
+    const comp = new Tone.Compressor({ threshold: -18, ratio: 3, attack: 0.01, release: 0.2 }).connect(master);
+    const verb = new Tone.Reverb({ decay: 3.2, preDelay: 0.02, wet: 1 }); await verb.generate();
+    const verbSend = new Tone.Gain(0.28).connect(verb); verb.connect(comp);
+    const bus = new Tone.Gain(1).connect(comp); bus.connect(verbSend);
+
+    // warm electric piano (FM), a bit of chorus
+    const epChorus = new Tone.Chorus({ frequency: 0.6, delayTime: 3.5, depth: 0.35, wet: 0.35 }).start().connect(bus);
+    const ep = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 3.01, modulationIndex: 2.2, oscillator: { type: 'sine' }, modulation: { type: 'sine' },
+      envelope: { attack: 0.005, decay: 1.6, sustain: 0.18, release: 1.4 }, modulationEnvelope: { attack: 0.002, decay: 0.5, sustain: 0.1, release: 0.8 }, volume: -17 }).connect(epChorus);
+    ep.maxPolyphony = 24;
+    // soft pad
+    const padF = new Tone.Filter(1400, 'lowpass').connect(bus);
+    const pad = new Tone.PolySynth(Tone.AMSynth, { harmonicity: 1.5, oscillator: { type: 'fattriangle', spread: 18, count: 3 }, envelope: { attack: 1.2, decay: 0.5, sustain: 0.8, release: 2.5 }, volume: -27 }).connect(padF);
+    pad.maxPolyphony = 16;
+    // glockenspiel / celesta pluck for the whimsical motif
+    const dly = new Tone.FeedbackDelay({ delayTime: E8 * 3 / 2, feedback: 0.22, wet: 0.18 }).connect(bus);
+    const bell = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 5.07, modulationIndex: 7, oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.9, sustain: 0, release: 0.9 },
+      modulationEnvelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.2 }, volume: -23 }).connect(dly);
+    bell.maxPolyphony = 16;
+    // marimba-ish pluck
+    const mar = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' }, envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.25 }, volume: -16 }).connect(bus);
+    // bass (round, filtered)
+    const bassF = new Tone.Filter(520, 'lowpass').connect(comp);
+    const bass = new Tone.MonoSynth({ oscillator: { type: 'triangle' }, filter: { Q: 1, type: 'lowpass' }, envelope: { attack: 0.01, decay: 0.3, sustain: 0.7, release: 0.25 },
+      filterEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.4, baseFrequency: 180, octaves: 2.2 }, volume: -12 }).connect(bassF);
+    // drums
+    const kick = new Tone.MembraneSynth({ pitchDecay: 0.03, octaves: 5, envelope: { attack: 0.001, decay: 0.28, sustain: 0 }, volume: -12 }).connect(comp);
+    const hatF = new Tone.Filter(7000, 'highpass').connect(bus);
+    const hat = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.04, sustain: 0 }, volume: -31 }).connect(hatF);
+    const snapF = new Tone.Filter(1800, 'bandpass').connect(bus);
+    const snap = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.12, sustain: 0 }, volume: -20 }).connect(snapF);
+    const shF = new Tone.Filter(5200, 'bandpass').connect(bus);
+    const shaker = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.006, decay: 0.05, sustain: 0 }, volume: -33 }).connect(shF);
+    // riser for the CTA lift
+    const riserF = new Tone.AutoFilter({ frequency: 0.2, baseFrequency: 300, octaves: 5 }).connect(bus).start();
+    const riser = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 2.2, decay: 0.1, sustain: 1, release: 0.3 }, volume: -34 }).connect(riserF);
+
+    // --- harmony (key of D) ---
+    const CH = {
+      Dmaj9: ['D3', 'F#3', 'A3', 'C#4', 'E4'], Bm9: ['B2', 'D3', 'F#3', 'A3', 'C#4'], Gmaj9: ['G2', 'B2', 'D3', 'F#3', 'A3'], A6sus: ['A2', 'D3', 'E3', 'F#3', 'B3'],
+      Em9: ['E3', 'G3', 'B3', 'D4', 'F#4'], A13: ['A2', 'G3', 'C#4', 'F#4'], Fsm7: ['F#2', 'E3', 'A3', 'C#4'], D69: ['D3', 'A3', 'B3', 'E4', 'F#4'],
+    };
+    const ROOT = { Dmaj9: 'D2', Bm9: 'B1', Gmaj9: 'G1', A6sus: 'A1', Em9: 'E2', A13: 'A1', Fsm7: 'F#1', D69: 'D2' };
+    const prog = { // bar index → chord
+      1: 'Dmaj9', 2: 'Bm9', 3: 'Gmaj9', 4: 'A6sus', 5: 'Dmaj9', 6: 'Bm9', 7: 'Gmaj9', 8: 'A6sus', 9: 'Dmaj9', 10: 'Bm9',
+      11: 'Gmaj9', 12: 'Fsm7', 13: 'Em9', 14: 'A13', 15: 'Dmaj9', 16: 'Bm9', 17: 'Gmaj9', 18: 'A6sus', 19: 'Em9', 20: 'A13', 21: 'Gmaj9', 22: 'A6sus', 23: 'D69',
+    };
+    const at = (t, fn) => transport.schedule(fn, t);
+    const T = (x) => Math.max(0, x);
+
+    // 10.625 → 12.5: pickup arpeggio chasing the line (8ths, rising)
+    const arp = ['A4', 'D5', 'E5', 'F#5', 'A5', 'B5'];
+    arp.forEach((n, i) => at(10.625 + i * E8, t => bell.triggerAttackRelease(n, 0.6, t, 0.55 + i * 0.06)));
+    // 12.5: logo bloom
+    at(bar(1), t => { pad.triggerAttackRelease(CH.Dmaj9, BAR * 2, t, 0.8); ep.triggerAttackRelease(CH.Dmaj9, 2.2, t, 0.7); bell.triggerAttackRelease(['D6', 'A5'], 1.2, t, 0.6); bass.triggerAttackRelease('D2', 1.0, t, 0.6); });
+    at(bar(1) + BEAT * 2.5, t => bell.triggerAttackRelease('F#6', 0.8, t, 0.35));
+    at(bar(2), t => { ep.triggerAttackRelease(CH.Bm9, 2.2, t, 0.55); pad.triggerAttackRelease(CH.Bm9, BAR, t, 0.6); });
+    // 15.0 → 17.5: build (shaker + bass)
+    at(bar(2), t => bass.triggerAttackRelease('B1', 0.9, t, 0.55));
+    for (let k = 0; k < 16; k++) at(bar(2) + k * S16 * 2, t => shaker.triggerAttackRelease(0.04, t, 0.3 + (k % 2) * 0.2));
+
+    // --- groove sections ---
+    const groove = (b0, b1, { kickOn = true, snapOn = true, full = 1 } = {}) => {
+      for (let b = b0; b < b1; b++) {
+        const t0 = bar(b); const c = prog[b] || 'Dmaj9';
+        // chords: EP comping (beat 1 and the "and" of 2)
+        at(t0, t => ep.triggerAttackRelease(CH[c], BEAT * 1.6, t, 0.55 * full));
+        at(t0 + BEAT * 1.5, t => ep.triggerAttackRelease(CH[c].slice(1), BEAT * 1.2, t, 0.38 * full));
+        at(t0 + BEAT * 3, t => ep.triggerAttackRelease(CH[c].slice(2), BEAT * 0.8, t, 0.3 * full));
+        at(t0, t => pad.triggerAttackRelease(CH[c], BAR * 0.95, t, 0.35 * full));
+        // bass: root, octave-ish walk
+        const r = ROOT[c]; const up = Tone.Frequency(r).transpose(12).toNote(); const fifth = Tone.Frequency(r).transpose(7).toNote();
+        at(t0, t => bass.triggerAttackRelease(r, BEAT * 0.9, t, 0.8));
+        at(t0 + BEAT * 1.5, t => bass.triggerAttackRelease(fifth, BEAT * 0.4, t, 0.55));
+        at(t0 + BEAT * 2, t => bass.triggerAttackRelease(r, BEAT * 0.7, t, 0.65));
+        at(t0 + BEAT * 3.5, t => bass.triggerAttackRelease(up, BEAT * 0.4, t, 0.5));
+        if (kickOn) { [0, 2].forEach(q => at(t0 + q * BEAT, t => kick.triggerAttackRelease('C1', 0.2, t, 0.85))); at(t0 + BEAT * 2.75, t => kick.triggerAttackRelease('C1', 0.2, t, 0.4)); }
+        if (snapOn) [1, 3].forEach(q => at(t0 + q * BEAT, t => snap.triggerAttackRelease(0.1, t, 0.55)));
+        for (let k = 0; k < 16; k++) at(t0 + k * S16, t => (k % 2 ? shaker : hat).triggerAttackRelease(0.03, t, k % 4 === 2 ? 0.55 : 0.28));
+      }
+    };
+    groove(3, 8);                                   // 17.5 → 30.0 product
+    // 30 → 35 break: drums out, soft pad + marimba droplets
+    [8, 9].forEach(b => { const c = b === 8 ? 'Gmaj9' : 'Fsm7'; const t0 = bar(b);
+      at(t0, t => { pad.triggerAttackRelease(CH[c], BAR, t, 0.55); ep.triggerAttackRelease(CH[c], 2.0, t, 0.42); bass.triggerAttackRelease(ROOT[c], 1.4, t, 0.45); }); });
+    ['B5', 'F#5', 'A5', 'D6', 'E5', 'C#6', 'A5', 'F#5'].forEach((n, i) => at(bar(8) + BEAT * 0.5 + i * BEAT * 1.2, t => mar.triggerAttackRelease(n, 0.3, t, 0.3)));
+    groove(10, 12, { full: 0.9 });                  // 35 → 40 second block
+    groove(12, 16, { full: 0.85 });                 // 40 → 50 payoff (under VO)
+    // whimsical motif over the product & payoff (sparse, leaves room for VO)
+    const motif = [[0, 'F#5'], [0.5, 'A5'], [1, 'B5'], [2.5, 'A5'], [3, 'F#5']];
+    [3, 5, 7, 11, 13, 15].forEach(b => motif.forEach(([q, n]) => at(bar(b) + q * BEAT, t => bell.triggerAttackRelease(n, 0.5, t, 0.33))));
+    // 50 → 52.5: lift (riser, rising arp, no kick)
+    at(bar(16), t => riser.triggerAttackRelease(2.4, t, 0.8));
+    at(bar(16), t => { ep.triggerAttackRelease(CH.Gmaj9, 2.2, t, 0.5); pad.triggerAttackRelease(CH.Gmaj9, BAR, t, 0.6); bass.triggerAttackRelease('G1', 2.0, t, 0.6); });
+    ['D5', 'E5', 'F#5', 'A5', 'B5', 'D6', 'E6', 'F#6'].forEach((n, i) => at(bar(16) + i * E8 * 1.2, t => bell.triggerAttackRelease(n, 0.4, t, 0.3 + i * 0.05)));
+    for (let k = 0; k < 16; k++) at(bar(16) + k * S16 * 2, t => shaker.triggerAttackRelease(0.03, t, 0.2 + k * 0.03));
+    // 52.5: resolve → 55 → 57.5 final
+    at(bar(17), t => { kick.triggerAttackRelease('C1', 0.3, t, 0.9); ep.triggerAttackRelease(CH.A6sus, 2.2, t, 0.6); pad.triggerAttackRelease(CH.A6sus, BAR, t, 0.6); bass.triggerAttackRelease('A1', 2.2, t, 0.7); bell.triggerAttackRelease(['A5', 'E6'], 1.0, t, 0.45); });
+    groove(18, 19, { kickOn: true, snapOn: false, full: 0.75 });  // 55 → 57.5 light outro under the CTA VO
+    at(bar(19), t => { pad.triggerAttackRelease(CH.D69, 2.5, t, 0.8); ep.triggerAttackRelease(CH.D69, 2.4, t, 0.7); bass.triggerAttackRelease('D2', 2.4, t, 0.7); bell.triggerAttackRelease(['D6', 'F#6', 'A6'], 2.0, t, 0.45); kick.triggerAttackRelease('C1', 0.3, t, 0.6); });
+    transport.start(0);
+  }, DUR, 2, SR);
+  return buf;
+}
+
+function toWav(buffer) {
+  const ch = [buffer.getChannelData(0), buffer.getChannelData(1)], n = ch[0].length;
+  const out = new DataView(new ArrayBuffer(44 + n * 4));
+  const w = (o, s) => [...s].forEach((c, i) => out.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); out.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt '); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 2, true);
+  out.setUint32(24, SR, true); out.setUint32(28, SR * 4, true); out.setUint16(32, 4, true); out.setUint16(34, 16, true); w(36, 'data'); out.setUint32(40, n * 4, true);
+  let o = 44; for (let i = 0; i < n; i++) for (let c = 0; c < 2; c++) { const v = Math.max(-1, Math.min(1, ch[c][i])); out.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true); o += 2; }
+  return new Uint8Array(out.buffer);
+}
+window.renderMusic = async () => {
+  const buf = await renderScore();
+  const bytes = toWav(buf.get());
+  let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+</script>

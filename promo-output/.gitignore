@@ -1,0 +1,10 @@
+node_modules/
+render/
+review/frames-*/
+review/vframes-*/
+review/kf-*/
+*.log
+# large binaries: final MP4s and intermediate WAV stems are delivered as files, not versioned
+*.mp4
+audio/*.wav
+audio/*.npy

@@ -1,0 +1,125 @@
+# Review notes
+
+Method: I can't watch video, so each render is reviewed from a contact sheet built from the encoded
+MP4 (one frame every 0.5 s, timestamp labels, vertical safe-area lines at y=250 and y=1520).
+I also pull key frames at 540×960 or 960×540, and check against `storyboard.md`, `voiceover-script.md`
+and `ref/product-notes.md`. The audio is checked by measurement (ffmpeg loudnorm/ebur128 plus numpy
+stem analysis), and every VO line is round-tripped through xAI speech-to-text.
+
+Sheets: `review/sheet-vertical-pass1.jpg`, `review/sheet-vertical-pass2.jpg`, `review/sheet-wide-pass2.jpg`,
+`review/sheet-*-final.jpg`.
+
+---
+
+## Pass 0: pre-render preview sheets (direct `renderAt` screenshots)
+Caught before any encode:
+- `.appcard {position: relative}` overrode `.abs`, so the app cards fell into normal flow (off-centre). Fixed.
+- `#preview {display:flex}` beat the `hidden` attribute, so preview controls leaked into frames. Fixed.
+- `PROPS.notifs` was an array, and `.keys` resolved to `Array.prototype.keys`. Moved to its own list.
+- Vertical Tasks card too small, with empty space under it. Now top-anchored in the safe band and scaled
+  to fit; the wide version gets a desktop-width Tasks layout (like `ref/06-tasks-queued.png`).
+- Scaling around a non-centre `transform-origin` (paper fold / page flip) shifted the scaled cards, so the
+  Focus card sat off-centre and the header logo landed above the card. The origin now stays centred.
+- Thought strips showed an empty white strip before the handwriting. The reveal now clips the whole strip.
+- Wide CTA headline collided with the logo ring. Now two stacked lines on the left.
+- Payoff was cluttered (thoughts on top of the phone and Analytics). Re-composed: workload row on top,
+  phone on the left, the three thoughts as a right-hand column, Analytics below.
+
+## Pass 1: `roamlyflow-promo-vertical.mp4` (first full encode)
+Findings:
+1. **Tasks card: Add Task button clipped.** The three controls overflowed the 390 px card.
+   Fixed: fixed-width session select, subject shrinks and truncates like the real app ("Subject, e.g. Ph…").
+2. **Object → task-row morph mostly invisible.** The slide/flashcards hovered at y≈1780, inside the
+   bottom unsafe zone. Fixed: they hover just under the card (y≈1290–1370) before shrinking into their row.
+3. **Payoff phone too small / overlapping Analytics.** Phone enlarged (0.9) and moved up. Analytics moved down.
+4. **Render speed.** Playwright's `page.screenshot` took about 1 s/frame. Switched to CDP
+   `Page.captureScreenshot` (lossless PNG, `optimizeForSpeed`) at 0.27 s/frame.
+5. CTA ring cards were small, so they were enlarged (0.30 → 0.36). Added hand-drawn sparkles to the end card.
+
+Success test, pass 1 (vertical):
+1. Relevant to a student within 5 s? **Yes.** By 1.2 s it's "10:47 pm" in pencil on notebook paper plus a
+   printed "Lecture 12 — Heart Failure" slide. By 3.4 s: flashcards, a highlighted pharm textbook, and
+   "Where do I even start?".
+2. Problem obvious within 15 s? **Yes.** The pile, three anxious thoughts, a generic 25:00 timer that changes
+   nothing, then VO "You need more than a countdown."
+3. Can someone explain Roamly Flow by 30 s? **Partly.** The queue → method → Focus mode arc is there, but in
+   pass 1 the object-to-task morph was mostly off-screen, which weakens "a timer tied to what you study".
+   Fixed for pass 2.
+4. More useful than a generic Pomodoro timer? **Yes.** There's an explicit generic-timer foil. Then tasks with
+   session counts, a method matched to material, a break with its own state, and auto-advancing tasks.
+5. Real product visible enough? **Yes.** Real Tasks, Timer method, Focus mode, On a break, Studying and
+   Analytics screens, rebuilt from production DOM/CSS with verbatim copy.
+6. CTA makes you want to visit? **Mostly.** The lockup is clear, but it was a bit static. Sparkles and the
+   URL underline were added.
+
+## Pass 2: both formats (`review/sheet-vertical-pass2.jpg`, `review/sheet-wide-pass2.jpg`)
+Checked frame by frame against the storyboard:
+- 0–10 s chaos reads clearly at phone size. Thoughts are 64–78 px handwriting on paper strips with a
+  highlighter swipe, all inside the vertical safe band. The generic LCD timer ticks 25:00 → 24:55 and
+  freezes at 10.0 s.
+- 10.6–12.5 s: the amber line tidies the pile into two margin columns, strikes the generic timer, and
+  closes into the logo ring. The wordmark wipes on at 12.85 s under "This is Roamly Flow."
+- 17.5–22 s: the lecture slide, flashcards and renal slides each shrink into their typed task row.
+  The vertical Add Task button is no longer clipped.
+- 25 s: Start → the page chrome, phone and stickies blow away → FOCUS MODE. 30 s: confetti + ON A BREAK
+  (sage), rain on the garden. 37.5 s: Cardio 2/2 ✓ → "Completed · 1", Pharm flashcards is *Focusing*.
+- 40–50 s payoff: the same objects, organized. The thoughts are rewritten in sync with the VO beats.
+
+Findings fixed for the final render:
+1. The CTA wordmark faded in while the logo was still moving up, so they overlapped at 55.5 s.
+   The wordmark now waits until the logo settles (55.75 s).
+2. The end card was undersized for a phone: logo 300 → 340 px, wordmark 132 → 150 px, sub 50 px,
+   URL pill 58 px. The sparkles are retimed.
+3. The payoff (41–50 s) was compositionally static for 9 s, so I added a slow 4.5% push-in.
+4. The wide Tasks card sat in the top half with an empty lower half. It's now anchored lower, so the
+   finished list is centred.
+5. File size: CRF 15 gave 133 MB/min. The final uses CRF 17 capped at 12 Mbps (the standard 1080p60
+   delivery rate).
+
+Success test, pass 2 (both formats): all six answers are now **yes**.
+1. Student-relevant within 5 s: pencil "10:47 pm", a cardiology lecture slide, pharm flashcards.
+2. The problem is obvious by 10 s. By 15 s the fix has been introduced.
+3. By 30 s a viewer can say: "you queue what you're studying, pick a block length that fits it, and it
+   runs a focus mode + break around that task."
+4. It's clearly more than a countdown: the generic timer is literally struck out, and each Roamly screen
+   shows something a plain timer can't (tasks with session counts, a method per material, auto-advancing
+   tasks, a break state, progress).
+5. The real app is recognisable. Six production screens appear with their real copy, colours and fonts,
+   and the phone in the payoff shows Focus mode running.
+6. The CTA is frictionless and true: "Start your next study session free. No account needed. Just start.
+   roamlyflow.com".
+
+## Fresh-eyes read (as someone who's never heard of Roamly Flow)
+"It's 10:47 pm, there's too much to study, and a timer doesn't help. Roamly Flow is a study timer
+where you list what you're studying (lecture, flashcards, slides). It picks a block length for that
+material, hides everything else while you focus, gives you a real break, and ticks things off
+as you finish sessions. It's free and I don't need an account." That's the intended message.
+Two things a first-time viewer might miss:
+the garden (it's just a nice detail, which is fine), and that the exam date isn't a feature (on purpose: exam
+countdowns need an account, so the calendar stays a paper prop only).
+
+## Audio measurements (final mix, `audio/mix.wav`, ffmpeg loudnorm analysis)
+| Metric | Target | Measured |
+|---|---|---|
+| Integrated loudness | −14 LUFS | **−13.99 LUFS** |
+| True peak | < −1 dBTP | **−1.26 dBTP** |
+| Loudness range | — | 7.4 LU |
+| Music duck under VO | 8–10 dB | **9.0 dB** (60 ms attack / 180 ms hold / 350 ms release) |
+| Silence beat 10.00–10.62 s (0.62 s) | near-silent ≥ 0.5 s | **−74.2 dBFS RMS, −62.0 dBFS peak** |
+| VO over bed (music+SFX), per line | intelligible | **7.9–12.8 dB** (lowest is v01, inside the deliberately busy chaos section) |
+
+Final MP4 audio: AAC-LC 256 kb/s, 48 kHz stereo, muxed from `audio/mix.wav`.
+
+## Pass 3: final renders (`review/sheet-vertical-final.jpg`, `review/sheet-wide-final.jpg`)
+Confirmed on the encoded MP4s: all pass-2 fixes landed and nothing regressed. Key content sits inside
+y 250–1520 on vertical throughout, except deliberately peripheral props and the page chrome that flies away.
+
+| File | Size | Video | Audio | Loudness (from the MP4) |
+|---|---|---|---|---|
+| `roamlyflow-promo-vertical.mp4` | 86 MB | 1080×1920, 60 fps, H.264 High, yuv420p/bt709, 60.00 s | AAC-LC 48 kHz stereo | −13.99 LUFS, −1.27 dBTP |
+| `roamlyflow-promo-wide.mp4` | 85 MB | 1920×1080, 60 fps, H.264 High, yuv420p/bt709, 60.00 s | AAC-LC 48 kHz stereo | −13.99 LUFS, −1.27 dBTP |
+
+Things only a human listen can confirm:
+- The pronunciation of "Roamly". The line is sent with IPA `/ˈroʊmli/`. STT transcribes it as "Romley",
+  but it does the same for an unambiguous "Roamlee" spelling, so this looks like STT spelling, not a mispronunciation.
+- The balance of the synthesized SFX against the music. Levels were set by measurement, not by ear.
