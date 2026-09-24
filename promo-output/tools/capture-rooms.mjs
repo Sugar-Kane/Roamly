@@ -3,9 +3,14 @@
 // Usage: node tools/capture-rooms.mjs   → ref/30-room-*.png + ref/rooms-dom.txt
 import { chromium } from 'playwright';
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
 const email = process.env.ROAMLY_TEST_EMAIL, password = process.env.ROAMLY_TEST_PASSWORD;
 if (!email || !password) { console.error('ROAMLY_TEST_EMAIL / ROAMLY_TEST_PASSWORD not set'); process.exit(1); }
-const args = process.env.HTTPS_PROXY && fs.existsSync('/root/.ccr/agent-proxy-ca.crt') ? ['--ignore-certificate-errors-spki-list=' + (process.env.PROXY_SPKI || '')] : [];
+// In the sandbox, HTTPS goes through a re-terminating proxy: trust exactly its CA key (by SPKI hash), nothing else.
+const CA = '/root/.ccr/agent-proxy-ca.crt';
+const args = process.env.HTTPS_PROXY && fs.existsSync(CA)
+  ? ['--ignore-certificate-errors-spki-list=' + execSync(`openssl x509 -in ${CA} -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`).toString().trim()]
+  : [];
 const b = await chromium.launch({ executablePath: process.env.CHROMIUM || '/opt/pw-browsers/chromium', args, proxy: process.env.HTTPS_PROXY ? { server: process.env.HTTPS_PROXY } : undefined });
 const dom = [];
 for (const [w, h, tag] of [[390, 844, 'mobile'], [1440, 900, 'desktop']]) {
