@@ -65,9 +65,9 @@ const T = {
   stickies: [2.75, 4.55, 6.05, 7.4], timer: 5.0, thought3: 6.55,
   notifs: [4.45, 5.9, 7.1, 7.95, 8.6, 9.2, 9.6],
   freeze: 10.0, line0: 10.625, line1: 12.5, logo: 12.5, word: 12.85,
-  unfold: 15.0, tasks: 17.5, method: 22.5, flip: 24.0, start: 25.0,
-  block1: 30.0, resume1: 30.6, breakEnd: 34.55, resume2: 35.0, block2: 37.5,
-  room: 40.0, payoff: 43.6, rw: [45.0, 47.3, 48.5], cta: 50.0, tagA: 50.7, tagB: 52.45, ring: 52.3, final: 55.0, end: 60,
+  unfold: 15.0, tasks: 17.5, upFly: 17.9, upDrop: 18.9, upRead: 19.45, upDone: 21.3, method: 23.3, flip: 24.0, start: 25.0,
+  block1: 28.8, resume1: 29.3, breakEnd: 32.2,
+  room: 33.0, join: 34.6, roomIn: 35.0, lapse0: 38.6, rbreak: 40.0, payoff: 45.0, rw: [46.3, 47.6, 48.8], cta: 50.0, tagA: 50.7, tagB: 52.45, ring: 52.3, final: 55.0, end: 60,
 };
 
 // SFX cue sheet (consumed by tools/build-audio.py). id → synth recipe name.
@@ -105,6 +105,7 @@ const I = {
   chev: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
   info: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5" stroke-linecap="round"/></svg>',
   drop: '<svg viewBox="0 0 24 24" width="11" height="11"><path d="M12 3c3 4.5 6 7.5 6 11a6 6 0 0 1-12 0c0-3.5 3-6.5 6-11z" fill="#5fb4f0"/></svg>',
+  checkG: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
   navFocus: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="14" r="7"/><path d="M12 14l2.5-2.5M10 3h4"/></svg>',
   navTasks: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l1.5 1.5L7 5M3 13l1.5 1.5L7 12M11 6h10M11 13h10M11 19h10"/></svg>',
@@ -112,6 +113,11 @@ const I = {
   navGarden: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 21v-9M12 12c0-3 2-5 6-5 0 3-2 5-6 5zM12 14c0-3-2-5-6-5 0 3 2 5 6 5zM7 21h10"/></svg>',
   navAn: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 20h16M7 17V9M12 17V5M17 17v-6"/></svg>',
   crown: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg>',
+  sparkles: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>',
+  file: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>',
+  users: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.5 3-6 6-6s6 2.5 6 6M16 4.5a3.5 3.5 0 0 1 0 7M18 14c2 .8 3 3 3 6"/></svg>',
+  inf: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><path d="M12 12c-2-2.5-4-4-6-4a4 4 0 0 0 0 8c2 0 4-1.5 6-4zm0 0c2 2.5 4 4 6 4a4 4 0 0 0 0-8c-2 0-4 1.5-6 4z"/></svg>',
+  send: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>',
   userPlus: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></svg>',
   logout: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
   maximize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
@@ -282,12 +288,19 @@ function torn(seed, n = 6) { // jagged top/bottom edges
 const UI = {};
 // Group session: production "Deep Work Hall" (always-on, 50/10) — member names are fictional.
 const ROOM_MEMBERS = ['alex', 'maya.r', 'devin', 'sofia_l', 'theo', 'priya', 'jordan.k', 'sam'];
-const ROOM_JOIN = [0.55, 0.78, 0.95, 1.1, 1.24, 1.38, 1.52, 1.66]; // seconds after T.room each chip pops in
+const ROOM_JOIN = [0.3, 0.5, 0.65, 0.8, 0.93, 1.05, 1.17, 1.3]; // seconds after T.roomIn each member chip pops in
+// The AI upload's result for "Lecture 12 — Heart Failure" (SAMPLE output that follows api/generate-tasks'
+// rules; see room-harness/sample-ai-tasks.json). Colours = production tagColor() for these subjects.
+const CARD = '#CA8A04', PHARM = '#65A30D';
 const TASKS = [
-  { title: 'Cardio lecture 12: heart failure', subj: 'Cardiology', color: '#CA8A04', est: 2 },
-  { title: 'Pharm flashcards: antiarrhythmics', subj: 'Pharmacology', color: '#65A30D', est: 1 },
-  { title: 'Renal slides + practice questions', subj: 'Nephrology', color: '#0D9488', est: 2 },
+  { title: 'Review HFrEF vs HFpEF definitions and EF cutoffs', subj: 'Cardiology', color: CARD, est: 1, bit: 'HFrEF vs HFpEF' },
+  { title: 'Map RAAS and sympathetic activation in heart failure', subj: 'Cardiology', color: CARD, est: 1, bit: '↓ CO → RAAS' },
+  { title: 'Learn HF signs: JVD, S3, pitting edema, BNP', subj: 'Cardiology', color: CARD, est: 1, bit: 'JVD · S3 · BNP' },
+  { title: 'Memorize GDMT drug classes for HFrEF', subj: 'Pharmacology', color: PHARM, est: 2, bit: 'GDMT' },
+  { title: 'Practice 15 questions on heart failure management', subj: 'Cardiology', color: CARD, est: 1, bit: '15 Qs' },
 ];
+// grouped like the app: subject headers in order of first appearance
+const LIST = [{ grp: 'Cardiology', n: 4, color: CARD }, { task: 0 }, { task: 1 }, { task: 2 }, { task: 4 }, { grp: 'Pharmacology', n: 1, color: PHARM }, { task: 3 }];
 function hdrHTML() { return `<div class="hdr"><div class="lg" style="width:34px;height:34px">${logoSVG()}</div><div class="word">Roamly Flow</div><div class="sp"></div>
   <div class="chip streak" style="background:hsl(33 30% 88%);color:hsl(var(--muted-foreground));opacity:0">${I.flame} 1 day</div></div>`; }
 function buildUI() {
@@ -296,19 +309,22 @@ function buildUI() {
   tc.style.overflow = 'hidden';
   tc.innerHTML = `${hdrHTML()}
     <div class="t-h1">Tasks</div><div class="t-sub">Queue what you'll study. Pick one to focus on. <span style="vertical-align:-3px">${I.info}</span></div>
-    <div class="t-prog" style="display:none"><span class="pt">0 of 0 done</span><div class="t-bar"><i></i></div></div>
-    <div class="card" style="margin-top:12px;padding:11px 13px;border-style:dashed;font:400 12.5px/1.45 Inter;color:hsl(var(--muted-foreground))">Guest tasks stay on this device. <span class="gu">0 of 5 used.</span> Create a free account to sync and use AI uploads.</div>
-    <div class="t-in"><div class="field ph" style="margin-top:12px"><span class="in">Add a study task…</span></div>
-    <div class="t-row2"><div class="field ph" style="flex:1.25 1 0;min-width:0"><span class="sj">Subject, e.g. Pharm</span>${I.chev}</div><div class="field" style="flex:none;width:${V ? 120 : 118}px"><span class="ss">1 session</span>${I.chev}</div>
-      <div class="btn grad addb" style="height:46px;padding:0 12px;flex:none;gap:5px;font-size:14.5px">${I.plus} Add Task</div></div></div>
+    <div class="t-prog"><span class="pt">0 of 5 done</span><div class="t-bar"><i></i></div></div>
+    <div class="up">
+      <div class="up-c"><div class="up-box"><span class="up-ic">${I.sparkles}</span><span>Upload study material and AI will create editable tasks for you</span><span class="btn grad up-btn">Choose file</span></div>
+        <p class="up-left">You have <span class="ul">3 uploads</span> left <span class="up-top">Top up</span> ${I.info}</p></div>
+      <div class="up-o"><div class="up-h"><span>Upload notes, slides, or a photo</span>${I.x}</div>
+        <p class="up-d">Roamly Flow AI reads your PDF, Word file, PowerPoint, text, screenshot, or photo and creates editable study tasks from the material. Files can be up to 12 MB; scans use OCR automatically and handwriting is best effort.</p>
+        <div class="up-file">${I.file} Lecture-12-Heart-Failure.pdf</div>
+        <div class="up-bar"><i></i></div><p class="up-st"></p></div>
+    </div>
     <div class="list" style="position:relative"></div>`;
-  if (!V) { tc.style.width = '640px'; const ti = tc.querySelector('.t-in'); ti.style.cssText = 'display:flex;gap:8px;align-items:flex-end'; ti.firstElementChild.style.cssText += ';flex:1.3 1 0;min-width:0'; ti.lastElementChild.style.cssText += ';flex:2 1 0;min-width:0'; }
+  if (!V) tc.style.width = '640px';
   const list = tc.querySelector('.list');
-  const rows = TASKS.map((t, i) => {
-    const g = $('div', '', list);
-    g.innerHTML = `<div class="grp"><i style="background:${t.color}"></i>${t.subj.toUpperCase()} · 1</div>
-      <div class="trow"><div class="cb"></div><div class="tt">${t.title}</div><span class="pill" style="background:${t.color}1f;color:${t.color}">${t.subj}</span><span style="color:hsl(var(--muted-foreground))">${I.play}</span><span class="cnt">0/${t.est}</span></div>`;
-    g.style.overflow = 'hidden';
+  const rows = LIST.map((it) => {
+    const g = $('div', '', list); g.style.overflow = 'hidden';
+    if (it.grp) g.innerHTML = `<div class="grp"><i style="background:${it.color}"></i>${it.grp.toUpperCase()} · ${it.n}</div>`;
+    else { const t = TASKS[it.task]; g.innerHTML = `<div class="trow" style="margin-bottom:7px"><div class="cb"></div><div class="tt">${t.title}</div><span class="pill" style="background:${t.color}1f;color:${t.color}">${t.subj}</span><span style="color:hsl(var(--muted-foreground))">${I.play}</span><span class="cnt">0/${t.est}</span></div>`; }
     return g;
   });
   // method sheet
@@ -320,7 +336,10 @@ function buildUI() {
   // highlighter behind Deep Work description
   const hlm = $('div', '', mcards[1].querySelector('span')); hlm.style.cssText = 'position:absolute;left:-3px;right:-3px;top:1px;bottom:-1px;background:rgba(255,214,74,.62);z-index:-1;transform-origin:0 50%;border-radius:3px';
   mcards[1].querySelector('span').style.zIndex = 0; mcards[1].querySelector('span').style.isolation = 'isolate';
-  UI.tasks = { el: tc, list, rows, sheet: sh, mcards, hlm, pt: tc.querySelector('.pt'), bar: tc.querySelector('.t-bar i'), gu: tc.querySelector('.gu'), inp: tc.querySelector('.in'), inpF: tc.querySelector('.in').parentNode, sj: tc.querySelector('.sj'), sjF: tc.querySelector('.sj').parentNode, ss: tc.querySelector('.ss'), addb: tc.querySelector('.addb'), lg: tc.querySelector('.lg'), word: tc.querySelector('.word') };
+  UI.tasks = { el: tc, list, rows, sheet: sh, mcards, hlm, pt: tc.querySelector('.pt'), prog: tc.querySelector('.t-prog'), up: tc.querySelector('.up'), upC: tc.querySelector('.up-c'), upO: tc.querySelector('.up-o'), upBtn: tc.querySelector('.up-btn'), ul: tc.querySelector('.ul'),
+    upBar: tc.querySelector('.up-bar i'), upSt: tc.querySelector('.up-st'), lg: tc.querySelector('.lg'), word: tc.querySelector('.word') };
+  // lecture bullets that lift off the printout and land as tasks
+  UI.bits = TASKS.map(t => { const d = $('div', 'abs bit', topL, t.bit); return d; });
 
   // ---------- FOCUS CORE
   const fc = $('div', 'abs app appcard', uiL);
@@ -352,11 +371,11 @@ function buildUI() {
   sc.innerHTML = `<div class="lbl-mono sh" style="font-size:11px">STUDYING</div>
     <div class="brk"><div class="trow" style="margin-top:10px;background:hsl(150 15% 94%);border-color:hsl(157 16% 72%)"><div class="cb"></div><div class="tt">Slow breaths</div><span class="pill" style="background:hsl(150 20% 88%);color:hsl(157 20% 38%)">Optional</span></div>
       <div class="trow" style="margin-top:8px;background:hsl(150 15% 94%);border-color:hsl(157 16% 72%)"><div class="cb"></div><div class="tt">Gentle back stretch</div><span class="pill" style="background:hsl(150 20% 88%);color:hsl(157 20% 38%)">Optional</span></div></div>
-    <div class="sl" style="position:relative"></div><div class="done" style="margin-top:12px;font:500 12.5px Inter;color:hsl(var(--muted-foreground))">Completed · 1</div>`;
+    <div class="sl" style="position:relative"></div>`;
   const sl = sc.querySelector('.sl');
-  const srows = TASKS.map((t, i) => { const r = $('div', 'trow', sl); r.style.marginTop = '8px';
+  const srows = TASKS.slice(0, 3).map((t, i) => { const r = $('div', 'trow', sl); r.style.marginTop = '8px';
     r.innerHTML = `<div class="cb"></div><div class="tt">${t.title}</div><span class="focusing">${I.timer} Focusing</span><span class="cnt">0/${t.est}</span>`; return { el: r, cb: r.querySelector('.cb'), foc: r.querySelector('.focusing'), cnt: r.querySelector('.cnt'), tt: r.querySelector('.tt') }; });
-  UI.stud = { el: sc, sh: sc.querySelector('.sh'), brk: sc.querySelector('.brk'), rows: srows, done: sc.querySelector('.done') };
+  UI.stud = { el: sc, sh: sc.querySelector('.sh'), brk: sc.querySelector('.brk'), rows: srows };
 
   // ---------- ANALYTICS card (Your progress)
   const an = $('div', 'abs app appcard an', uiL);
@@ -374,14 +393,29 @@ function buildUI() {
       <div class="rm-note">Everyone in this room sees the same timer.</div>
       <div class="rm-chips">${ROOM_MEMBERS.map((m, i) => `<span class="rm-chip${i === 0 ? ' me' : ''}"><b>${m.slice(0, 2).toUpperCase()}</b>${m}${i === 0 ? ' (you)' : ''}</span>`).join('')}</div>
       <div class="rm-btns"><span class="btn grad" style="height:44px;padding:0 18px;border-radius:999px">${I.maximize} Focus mode</span><span class="btn ghost" style="height:44px;padding:0 16px;border-radius:999px">${I.pip} Pop out timer</span></div></div>`;
+  // ---------- ROOMS LOBBY — rebuilt from ref/30-room-lobby-mobile.png
+  const lb = $('div', 'abs app appcard', uiL);
+  const LOBBY = [['The Grind Hall', '25/5', 14, 250], ['Deep Work Hall', '50/10', 7, 1870], ['Sprint Studio', '15/3', 6, 190], ['Marathon Library', '90/20', 3, 1450]];
+  lb.innerHTML = `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px"><div><div class="rm-h1" style="font-size:34px">Rooms <span class="muted" style="vertical-align:4px">${I.info}</span></div>
+      <div class="rm-sub" style="font-size:14.5px;margin-top:4px">Focus alongside other PA students in real time.</div></div>
+      <div style="display:flex;gap:6px;flex:none;margin-top:6px"><span class="chip" style="border:1px solid hsl(var(--border));background:hsl(var(--card))">${I.users} Friends</span><span class="chip btn grad" style="padding:6px 12px">${I.plus} Host</span></div></div>
+    <div class="lbl-mono" style="margin:18px 2px 10px;font-size:11px">${I.inf} ALWAYS-ON ROOMS</div>
+    ${LOBBY.map(r => `<div class="card lb-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div class="lb-n">${r[0]}</div><div class="lb-s">${r[1]} rhythm · always on</div></div>
+      <span class="lb-ph">Focus · <span class="lb-t mono">00:00</span></span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px"><span class="lb-m">${I.users} <span class="lb-c">${r[2]}/50</span> &nbsp; ${r[1]}</span><span class="btn grad lb-j">Join</span></div></div>`).join('')}`;
+  UI.lobby = { el: lb, times: [...lb.querySelectorAll('.lb-t')], secs: LOBBY.map(r => r[3]), counts: [...lb.querySelectorAll('.lb-c')], join: lb.querySelectorAll('.lb-j')[1], card: lb.querySelectorAll('.lb-card')[1] };
   const chipsSvg = S('svg', { width: 10, height: 10, style: 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none' }, rm.querySelector('.rm-card'));
   const rc = $('div', 'abs app appcard', uiL);
   rc.style.padding = '16px';
+  const MSGS = [['maya.r', 'block 2 done. heart failure makes sense now lol'], ['sofia_l', 'same. stretching then pharm cards'], ['priya', 'see you all next block']];
   rc.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="display:flex;align-items:center;gap:7px;font:600 16px Inter">${I.msg} Break-time chat</span>
-      <span class="chip" style="background:hsl(var(--secondary));color:hsl(var(--muted-foreground));font-size:12px">${I.lock} Opens at break · <span class="rcd mono">31:06</span></span></div>
-    <div style="margin-top:10px;border:1px solid hsl(var(--border));border-radius:14px;padding:14px;text-align:center;font:400 13.5px Inter;color:hsl(var(--muted-foreground))">No messages yet. Say hi at the next break.</div>
+      <span class="chip ch-lock" style="background:hsl(var(--secondary));color:hsl(var(--muted-foreground));font-size:12px">${I.lock} Opens at break · <span class="rcd mono">31:06</span></span>
+      <span class="chip ch-open" style="background:hsl(var(--roamly-green) / .1);color:hsl(var(--roamly-green));font-size:12px;display:none">Open, it's break time</span></div>
+    <div class="ch-box"><div class="ch-empty">No messages yet. Say hi at the next break.</div>${MSGS.map(m => `<div class="ch-msg"><b>${m[0]}</b>${m[1]}</div>`).join('')}</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><div class="field ph ch-in" style="flex:1;height:42px"><span>Chat opens in 31:06. Keep focusing</span></div><div class="btn" style="width:46px;height:42px;background:hsl(var(--secondary));color:#fff">${I.send}</div></div>
     <div style="margin-top:8px;font:400 11.5px/1.4 Inter;color:hsl(var(--muted-foreground))">Chat unlocks during short and long breaks, then locks again when focus starts.</div>`;
-  UI.room = { el: rm, dig: rm.querySelector('.rm-dig'), bar: rm.querySelector('.rm-bar i'), chips: [...rm.querySelectorAll('.rm-chip')], chipsBox: rm.querySelector('.rm-chips'), svg: chipsSvg, chat: rc, cd: rc.querySelector('.rcd') };
+  UI.room = { el: rm, dig: rm.querySelector('.rm-dig'), bar: rm.querySelector('.rm-bar i'), lab: rm.querySelector('.rm-lab'), chips: [...rm.querySelectorAll('.rm-chip')], chipsBox: rm.querySelector('.rm-chips'), svg: chipsSvg, chat: rc, cd: rc.querySelector('.rcd'),
+    lock: rc.querySelector('.ch-lock'), open: rc.querySelector('.ch-open'), empty: rc.querySelector('.ch-empty'), msgs: [...rc.querySelectorAll('.ch-msg')], inp: rc.querySelector('.ch-in span') };
   // phone bezel for payoff (behind core)
   UI.bezel = $('div', 'abs bezel', uiL); uiL.insertBefore(UI.bezel, fc);
 }
@@ -437,7 +471,7 @@ function buildHUD() {
   CTA.logo = $('div', 'abs', hud, logoSVG('#E8A33D', '#F2C078'));
   CTA.word = $('div', 'abs cta-word', hud, 'Roamly Flow');
   CTA.sub = $('div', 'abs ctasub', hud, 'Start your next study session free.');
-  CTA.hand = $('div', 'abs ctahand', hud, 'No account needed. Just start.');
+  CTA.hand = $('div', 'abs ctahand', hud, 'Free account: AI note uploads + study rooms.');
   CTA.url = $('div', 'abs url', hud, `roamlyflow.com <span style="font-size:.8em">→</span>`);
   CTA.sp = S('svg', { width: 10, height: 10, style: 'position:absolute;left:0;top:0;overflow:visible' }, hud);
   CTA.sparks = [0, 1, 2].map(() => inkPath(CTA.sp, '', '#E8A33D', 7));
@@ -475,9 +509,9 @@ function buildTracks() {
     : { lecture: 10.84, calendar: 10.98, book: 11.12, stickyD: 11.26, renal: 11.36, stickyB: 11.44, stickyC: 11.52, flash: 11.64, stickyA: 11.74, coffee: 11.68, phone: 11.3, gtimer: 11.05 };
   // product phase: margin "peeks" (things still on the desk around the app)
   const peek = V ? {
-    coffee: P(-400, 830, 0, .8), phone: P(380, 800, -14, .95), stickyA: P(410, -840, 12, .85), calendar: P(-330, -880, -6, .7), stickyB: P(-440, 700, -10, .8), stickyD: P(460, 420, 14, .7), book: P(560, -300, 6, .7), stickyC: P(-560, -200, -8, .8),
+    flash: P(-540, 560, 12, .6), renal: P(540, -640, -8, .6), coffee: P(-400, 830, 0, .8), phone: P(380, 800, -14, .95), stickyA: P(410, -840, 12, .85), calendar: P(-330, -880, -6, .7), stickyB: P(-440, 700, -10, .8), stickyD: P(460, 420, 14, .7), book: P(560, -300, 6, .7), stickyC: P(-560, -200, -8, .8),
   } : {
-    coffee: P(-880, 400, 0, .85), phone: P(890, 330, -14, .9), stickyA: P(-900, -380, 12, .8), calendar: P(880, -360, -6, .6), stickyB: P(780, 520, -10, .7), stickyD: P(-760, 540, 14, .7), book: P(1040, 0, 6, .7), stickyC: P(-1050, 60, -8, .8),
+    flash: P(-1010, -240, 10, .6), renal: P(1010, -150, -8, .6), coffee: P(-880, 400, 0, .85), phone: P(890, 330, -14, .9), stickyA: P(-900, -380, 12, .8), calendar: P(880, -360, -6, .6), stickyB: P(780, 520, -10, .7), stickyD: P(-760, 540, 14, .7), book: P(1040, 0, 6, .7), stickyC: P(-1050, 60, -8, .8),
   };
   // payoff: organized desk
   const pay = V ? {
@@ -499,18 +533,18 @@ function buildTracks() {
     }
     const ts = tidyAt[n];
     k.push([ts, ch], [ts + 0.55, tidy[n], E.outBack]);
-    const isMorph = n === 'lecture' || n === 'flash' || n === 'renal';
+    const isMorph = n === 'lecture';
     if (isMorph) {
       // leave toward the margin, then get pulled into the queue when its row is typed
       const m = MORPH[n]; const off = V ? P(tidy[n].x < 0 ? -760 : 760, tidy[n].y, 0, .5) : P(tidy[n].x < 0 ? -1200 : 1200, tidy[n].y, 0, .5);
       k.push([15.0, tidy[n]], [15.9, off, E.inCubic], [m.t0, { ...m.from, o: 1 }], [m.t0 + 0.45, m.hover, E.outCubic], [m.t1, m.hover], [m.t1 + 0.32, { ...m.to, o: 0 }, E.inCubic]);
-      k.push([T.payoff + 0.3, { ...pay[n], o: 0, s: pay[n].s * 1.3, y: pay[n].y - 60 }], [T.payoff + 1.0 + (n === 'renal' ? .12 : n === 'flash' ? .24 : 0), pay[n], E.settle]);
+      k.push([T.payoff + 0.3, { ...pay[n], o: 0, s: pay[n].s * 1.3, y: pay[n].y - 60 }], [T.payoff + 1.0, pay[n], E.settle]);
     } else if (n === 'book') {
       k.push([15.0, tidy[n]], [16.1, peek[n], E.inOutCubic], [T.start, peek[n]], [T.start + 0.55, { ...peek[n], x: peek[n].x * 1.9, y: peek[n].y * 1.2, r: peek[n].r + 25, o: 0 }, E.inCubic]);
       k.push([T.payoff + 0.3, { ...pay[n], o: 0 }]);
     } else {
       k.push([15.0, tidy[n]], [16.1, peek[n], E.inOutCubic], [T.start + 0.02 + hash(n.length) * .15, peek[n]]);
-      const away = { ...peek[n], x: peek[n].x * L(1.9, 1.6), y: peek[n].y * L(1.45, 1.8), r: peek[n].r + (peek[n].x > 0 ? 40 : -40), o: 1 };
+      const away = { ...peek[n], x: peek[n].x * L(2.4, 1.9), y: peek[n].y * L(2.0, 2.2), r: peek[n].r + (peek[n].x > 0 ? 40 : -40), o: 1 };
       k.push([T.start + 0.6 + hash(n.length) * .15, away, E.inCubic]);
       k.push([T.payoff + 0.2, { ...pay[n], o: pay[n].o, x: pay[n].x * 1.5, y: pay[n].y * 1.3, r: pay[n].r + 20 }], [T.payoff + 1.1 + hash(n.length + 3) * .3, pay[n], E.settle]);
     }
@@ -547,7 +581,7 @@ const LAY = {};
 function layoutUI() {
   const tc = UI.tasks.el, fc = UI.core.el;
   // measure natural sizes (unscaled CSS px)
-  UI.tasks.rows.forEach(r => (r.style.height = 'auto'));
+  UI.tasks.rows.forEach(r => (r.style.height = 'auto')); UI.tasks.upO.style.display = 'none';
   const th = tc.offsetHeight + 3 * 0; // rows included at full height
   const fh = fc.offsetHeight, sh = UI.stud.el.offsetHeight, ah = UI.an.el.offsetHeight;
   LAY.tasksH = th; LAY.coreH = fh; LAY.studH = sh; LAY.anH = ah;
@@ -558,27 +592,28 @@ function layoutUI() {
     LAY.core = { x: 0, y: -80, s: Math.min(2.15, 1250 / fh) };
     LAY.stud = { x: 0, y: 300, s: 2.02 };
   } else {
-    { const s_ = Math.min(1.95, 880 / th); LAY.tasks = { x: 0, top: Math.max(-th * s_ / 2, -330), s: s_ }; }
+    { const s_ = Math.min(1.95, 880 / th); LAY.tasks = { x: 0, top: Math.max(-th * s_ / 2, -470), s: s_ }; }
     LAY.core = { x: -330, y: 0, s: Math.min(1.5, 980 / fh) };
     LAY.stud = { x: 390, y: 0, s: 1.5 };
   }
   LAY.chromeTop = { x: LAY.core.x, y: 0, s: LAY.core.s };
   // payoff: core becomes a phone on the desk
   LAY.roomH = UI.room.el.offsetHeight; LAY.rchatH = UI.room.chat.offsetHeight;
-  LAY.room = V ? { x: 0, y: -170, s: Math.min(2.25, 900 / LAY.roomH) } : { x: -200, y: -10, s: Math.min(1.75, 900 / LAY.roomH) };
-  LAY.rchat = V ? { x: 0, y: -170 + LAY.roomH * LAY.room.s / 2 + 40 + LAY.rchatH * 2.0 / 2, s: 2.0 } : { x: 470, y: 60, s: 1.5 };
+  LAY.room = V ? { x: 0, y: -290, s: Math.min(1.95, 800 / LAY.roomH) } : { x: -200, y: -10, s: Math.min(1.75, 900 / LAY.roomH) };
+  LAY.rchat = V ? { x: 0, y: -290 + LAY.roomH * LAY.room.s / 2 + 30 + LAY.rchatH * 1.9 / 2, s: 1.9 } : { x: 470, y: 60, s: 1.5 };
   LAY.pcore = V ? { x: -190, y: -95, s: 0.9 } : { x: -330, y: -10, s: 0.9 };
   LAY.an = V ? { x: 0, y: 425, s: 1.95 } : { x: 330, y: 335, s: 1.35 };
-  // morph targets: centre of each task row inside the tasks card, in world coords
-  const rows = UI.tasks.rows; const listTop = UI.tasks.list.offsetTop; let acc = 0;
+  // the lecture printout is dropped into the upload panel's "Choose file"
   LAY.tasksW = tc.offsetWidth; const S_ = LAY.tasks.s, cx0 = LAY.tasks.x - LAY.tasksW / 2 * S_, cy0 = LAY.tasks.top;
-  const tm = [[17.55, 19.25], [19.55, 20.65], [20.85, 21.95]];
-  ['lecture', 'flash', 'renal'].forEach((n, i) => {
-    const rh = UI.tasks.rowH[i]; const ty = cy0 + (listTop + acc + rh * .62) * S_; acc += rh;
-    const from = V ? P(i === 1 ? -760 : 760, -260 + i * 120, 0, .5) : P(i === 1 ? -1200 : 1200, -150 + i * 100, 0, .5);
-    const hover = V ? P(i === 1 ? -250 : 250, 330 + i * 40, i === 1 ? -6 : 5, .5) : P(i === 1 ? -760 : 760, ty - 80, i === 1 ? -6 : 5, .5);
-    MORPH[n] = { t0: tm[i][0], t1: tm[i][1], from, hover, to: P(cx0 + LAY.tasksW / 2 * S_, ty, 0, .12) };
-  });
+  const btn = UI.tasks.upBtn, box = btn.parentNode;
+  const bx = cx0 + (UI.tasks.up.offsetLeft + box.offsetLeft + btn.offsetLeft + btn.offsetWidth / 2) * S_, by = cy0 + (UI.tasks.up.offsetTop + box.offsetTop + btn.offsetTop + btn.offsetHeight / 2) * S_;
+  MORPH.lecture = { t0: T.upFly, t1: T.upDrop - 0.28, from: V ? P(760, 400, 0, .5) : P(1200, 200, 0, .5), hover: V ? P(90, 170, 5, .9) : P(560, 200, 6, .75), to: P(bx, by, 0, .06) };
+  // lobby + room chat layout
+  LAY.lobbyH = UI.lobby.el.offsetHeight;
+  LAY.lobby = V ? { x: 0, y: -60, s: Math.min(2.05, 1240 / LAY.lobbyH) } : { x: 0, y: 0, s: Math.min(1.45, 960 / LAY.lobbyH) };
+  UI.room.msgs.forEach(m => (m.style.display = 'block')); UI.room.empty.style.display = 'none'; LAY.rchatOpenH = UI.room.chat.offsetHeight;
+  UI.room.msgs.forEach(m => (m.style.display = 'none')); UI.room.empty.style.display = 'block';
+  if (V) LAY.rchat.yBreak = 560 - LAY.rchatOpenH * LAY.rchat.s / 2 + 40;
 }
 
 // ------------------------------------------------------------------ camera
@@ -599,7 +634,7 @@ function camera(t) {
   const up = E.inOutCubic(prog(t, 15.0, 16.4));
   x = lerp(x, 0, up); y = lerp(y, 0, up); z = lerp(z, 1.0, up);
   // focus push-in, break relax, second block
-  z *= 1 + 0.035 * E.inOutCubic(prog(t, T.start, T.start + 1.2)) - 0.045 * E.inOutSine(prog(t, T.block1, T.block1 + 1.4)) + 0.045 * E.inOutSine(prog(t, T.breakEnd - .4, T.resume2 + .6));
+  z *= 1 + 0.035 * E.inOutCubic(prog(t, T.start, T.start + 1.2)) - 0.045 * E.inOutSine(prog(t, T.block1, T.block1 + 1.4)) + 0.045 * E.inOutSine(prog(t, T.breakEnd - .4, T.room + .3));
   // vertical: pan to the STUDYING card when a task is completed
   // payoff pull-back
   const pb = E.inOutCubic(prog(t, T.payoff, T.payoff + 1.6));
@@ -706,7 +741,7 @@ function renderAt(t) {
   renderCTA(t);
   // ---------- fx: confetti + vignette + grain + final fade
   fxx.clearRect(0, 0, W, H);
-  confetti(t, T.block1 + 0.02, 1); confetti(t, T.block2 + 0.02, 2);
+  confetti(t, T.block1 + 0.02, 1, UI.core.dig); confetti(t, T.rbreak + 0.02, 2, UI.room.dig);
   const chaosVig = t < T.line0 ? 0.25 + 0.35 * prog(tj, 3, 10) : lerp(0.6, 0.18, prog(t, T.line0, 13));
   vig.style.background = `radial-gradient(ellipse ${L('90% 70%', '80% 85%')} at 50% 48%, rgba(0,0,0,0) 55%, rgba(70,40,15,${(t > 13 ? 0.18 : chaosVig).toFixed(3)}) 100%)`;
   gx.clearRect(0, 0, grain.width, grain.height); gx.drawImage(grainFrames[Math.floor(t * 24) % grainFrames.length], 0, 0);
@@ -756,37 +791,22 @@ function renderThoughts(t, tj) {
 
 function renderUI(t) {
   const U = UI.tasks;
-  // ---------- tasks card: unfold in, flip out
-  // header logo/word appear when the flying logo lands
   show(U.lg, t >= 15.86 ? 1 : 0); show(U.word, t >= 15.86 ? 1 : 0);
-  // typing
-  const typ = [
-    { i: 0, t0: 17.62, t1: 18.55, s0: 18.62, s1: 18.95, ss: 19.05, add: 19.25 },
-    { i: 1, t0: 19.6, t1: 20.2, s0: 20.24, s1: 20.5, ss: -1, add: 20.65 },
-    { i: 2, t0: 20.84, t1: 21.42, s0: 21.46, s1: 21.72, ss: 21.8, add: 21.95 },
-  ];
-  let inp = '', sj = '', ss = '1 session', caret = false, addPress = 0, nRows = 0, sjPh = true;
-  for (const k of typ) {
-    const tk = TASKS[k.i];
-    if (t >= k.add + 0.05) { nRows = k.i + 1; continue; }
-    if (t >= k.t0) {
-      const n = Math.floor(tk.title.length * prog(t, k.t0, k.t1)); inp = tk.title.slice(0, n); caret = t < k.s0;
-      if (t >= k.s0) { const m = Math.floor(tk.subj.length * prog(t, k.s0, k.s1)); sj = tk.subj.slice(0, m); sjPh = false; }
-      if (k.ss > 0 && t >= k.ss) ss = `${tk.est} sessions`;
-      addPress = Math.max(addPress, 1 - Math.abs(t - k.add) / 0.12);
-    }
-    break;
-  }
-  setHTML(U.inp, inp ? `${inp}${caret && Math.floor(t * 3) % 2 === 0 ? '<span class="caret"></span>' : ''}` : 'Add a study task…');
-  setCls(U.inpF, 'ph', !inp);
-  setHTML(U.sj, sj ? `${sj}${!caret && t < 22 && sj.length < 12 && Math.floor(t * 3) % 2 === 0 ? '<span class="caret"></span>' : ''}` : (nRows ? TASKS[nRows - 1].subj : 'Subject, e.g. Pharm'));
-  setCls(U.sjF, 'ph', !sj && !nRows);
-  setText(U.ss, ss);
-  U.addb.style.transform = `scale(${(1 - 0.08 * clamp(addPress)).toFixed(3)})`;
-  U.rows.forEach((r, i) => {
-    const on = t >= typ[i].add + 0.05; const p = E.outCubic(prog(t, typ[i].add + 0.05, typ[i].add + 0.4));
-    r.style.height = on ? (UI.tasks.rowH[i] * p).toFixed(1) + 'px' : '0px';
-    r.style.opacity = on ? p.toFixed(3) : 0;
+  // ---------- AI note upload (production UploadTasksPanel states)
+  const open = t >= T.upDrop && t < T.upDone + 0.55;
+  U.upC.style.display = open ? 'none' : 'block'; U.upO.style.display = open ? 'block' : 'none';
+  U.upBtn.style.transform = `scale(${(1 - 0.1 * clamp(1 - Math.abs(t - T.upDrop) / 0.12)).toFixed(3)})`;
+  setText(U.ul, t >= T.upDone + 0.55 ? '2 uploads' : '3 uploads');
+  let pr = 0, st = '';
+  if (t < T.upRead) { pr = 15; st = 'Uploading your file…'; }
+  else if (t < T.upDone) { pr = Math.min(90, 40 + 3 * Math.floor((t - T.upRead) / 0.35)); st = 'Reading text and using OCR only if needed…'; }
+  else { pr = 100; st = `<span style="color:hsl(var(--roamly-green));display:grid">${I.checkG}</span> Done: 5 tasks added.`; }
+  U.upBar.style.width = pr + '%'; setHTML(U.upSt, st);
+  const rowAt = j => T.upDone + 0.65 + j * 0.11;
+  U.rows.forEach((r, j) => {
+    const p = E.outCubic(prog(t, rowAt(j), rowAt(j) + 0.32));
+    r.style.height = t >= rowAt(j) ? (U.rowH[j] * p).toFixed(1) + 'px' : '0px';
+    r.style.opacity = p.toFixed(3);
   });
   { const L1 = LAY.tasks; const tw = LAY.tasksW, th = U.el.offsetHeight;
     const unf = E.outCubic(prog(t, 15.8, 16.65));
@@ -794,143 +814,159 @@ function renderUI(t) {
     const tst = { x: L1.x, y: L1.top + th * L1.s / 2 + (1 - unf) * 60, s: L1.s * (0.94 + 0.06 * unf), o: t < 15.8 || t > T.flip + 0.31 ? 0 : clamp(unf * 4) };
     place(U.el, tst, tw, th);
     U.el.style.transform += ` perspective(1600px) rotateX(${((1 - unf) * -82).toFixed(2)}deg) rotateY(${(E.inCubic(flipOut) * -90).toFixed(2)}deg)`;
-    U.el.style.transformOrigin = '50% 50%'; }
-  setText(U.pt, `0 of ${nRows} done`); setText(U.gu, `${nRows} of 5 used.`);
-  // method sheet
-  const shIn = E.outCubic(prog(t, T.method, T.method + 0.4)), shOut = E.inCubic(prog(t, 23.8, 24.05));
+    U.el.style.transformOrigin = '50% 50%';
+    // lecture bullets fly out of the upload and land as task rows
+    const S_ = L1.s, cx = L1.x - tw / 2 * S_, cy = L1.top;
+    const upY = cy + (U.up.offsetTop + 30) * S_;
+    let n = 0;
+    LIST.forEach((it, j) => {
+      if (it.grp) return;
+      const el = UI.bits[it.task], k = n++;
+      const t1 = rowAt(j) + 0.08, t0 = t1 - 0.62;
+      const row = U.rows[j]; const ry = cy + (U.list.offsetTop + row.offsetTop + U.rowH[j] * 0.45) * S_;
+      const pz = E.inOutCubic(prog(t, t0, t1));
+      const w = el.offsetWidth, h = el.offsetHeight;
+      const x0 = L1.x + (k - 2) * L(120, 150), x1 = cx + L(150, 190) * S_;
+      const arc = Math.sin(Math.PI * pz) * L(-160, -120);
+      place(el, { x: lerp(x0, x1, pz), y: lerp(upY, ry, pz) + arc, r: lerp((k % 2 ? 6 : -5), 0, pz), s: lerp(L(1.45, 1.25), 0.6, pz), o: t >= t0 && t < t1 + 0.12 ? (1 - prog(t, t1 - 0.02, t1 + 0.12)) : 0 }, w, h);
+    });
+  }
+  // method sheet (quick)
+  const shIn = E.outCubic(prog(t, T.method, T.method + 0.25)), shOut = E.inCubic(prog(t, 23.82, 23.98));
   U.sheet.style.transform = `translateY(${((1 - shIn + shOut) * 105).toFixed(2)}%)`;
-  U.sheet.style.visibility = t < T.method || t > 24.06 ? 'hidden' : 'visible';
-  U.hlm.style.transform = `scaleX(${E.outCubic(prog(t, 22.95, 23.3)).toFixed(3)})`;
-  const sel = t >= 23.55; setCls(U.mcards[0], 'sel', !sel); setCls(U.mcards[1], 'sel', sel);
-  U.mcards[1].style.transform = `scale(${(1 - 0.03 * clamp(1 - Math.abs(t - 23.5) / 0.1)).toFixed(3)})`;
+  U.sheet.style.visibility = t < T.method || t > 23.99 ? 'hidden' : 'visible';
+  U.hlm.style.transform = `scaleX(${E.outCubic(prog(t, 23.45, 23.63)).toFixed(3)})`;
+  const sel = t >= 23.68; setCls(U.mcards[0], 'sel', !sel); setCls(U.mcards[1], 'sel', sel);
+  U.mcards[1].style.transform = `scale(${(1 - 0.03 * clamp(1 - Math.abs(t - 23.66) / 0.1)).toFixed(3)})`;
+  tapRipple(t, [T.upDrop], U.upBtn); tapRipple(t, [23.66], U.mcards[1]);
+  U.prog.style.display = t >= rowAt(0) ? 'block' : 'none';
 
   // ---------- focus core
   const C = UI.core; const Lc = LAY.core; const fh = LAY.coreH;
   const flipIn = prog(t, T.flip + 0.3, T.flip + 0.62);
-  const pay = t >= T.room + 0.3 ? 1 : 0; // core is hidden during the room beat and returns already docked in the phone
-  const inRoom = t >= T.room + 0.3 && t < T.payoff - 0.05;
-  let cst = { x: Lc.x, y: Lc.y, s: Lc.s, o: t >= T.flip + 0.3 && t < T.cta + 0.9 && !inRoom ? (t >= T.payoff - 0.05 ? prog(t, T.payoff - 0.05, T.payoff + 0.12) : 1) : 0 };
-  // vertical: the studying sheet overlaps the bottom half; nudge core up slightly while it's out
-  cst = { ...cst, x: lerp(cst.x, LAY.pcore.x, pay), y: lerp(cst.y, LAY.pcore.y, pay), s: lerp(cst.s, LAY.pcore.s, pay) };
-  // CTA: phone drops away
+  const docked = t >= T.room + 0.3;
+  const hidden = t >= T.room + 0.3 && t < T.payoff - 0.05;
+  let cst = { x: Lc.x, y: Lc.y, s: Lc.s, o: t >= T.flip + 0.3 && t < T.cta + 0.9 && !hidden ? (t >= T.payoff - 0.05 ? prog(t, T.payoff - 0.05, T.payoff + 0.12) : 1) : 0 };
+  if (docked) cst = { ...cst, x: LAY.pcore.x, y: LAY.pcore.y, s: LAY.pcore.s };
   const cOut = E.inCubic(prog(t, T.cta, T.cta + 0.8)); cst.y += cOut * 1200; cst.r = cOut * 8;
   place(C.el, cst, 390, fh);
-  const roomTurn = E.inCubic(prog(t, T.room, T.room + 0.3));
-  C.el.style.transform += ` perspective(1400px) rotateY(${((1 - E.outCubic(flipIn)) * 90 + (t < T.room + 0.3 ? roomTurn * -90 : 0)).toFixed(2)}deg)`;
+  const turnOut = E.inCubic(prog(t, T.room, T.room + 0.3));
+  C.el.style.transform += ` perspective(1400px) rotateY(${((1 - E.outCubic(flipIn)) * 90 + (t < T.room + 0.3 ? turnOut * -90 : 0)).toFixed(2)}deg)`;
   C.el.style.transformOrigin = '50% 50%';
-  C.el.style.borderRadius = lerp(26, 44, pay).toFixed(1) + 'px';
-  // bezel
+  C.el.style.borderRadius = (docked ? 44 : 26) + 'px';
   const bz = UI.bezel; const bw = 390 + 26, bh = fh + 26;
   bz.style.width = bw + 'px'; bz.style.height = bh + 'px';
   place(bz, { ...cst, o: prog(t, T.payoff, T.payoff + 0.3) * (t < T.cta + 0.9 ? 1 : 0) }, bw, bh);
   bz.style.borderRadius = '56px';
-  // state machine
-  let phase = 'page', dig = 'Start', digits = '50:00', barP = 0, taskI = 0, lab = 'FOCUS', sage = false, rain = 0;
-  if (t >= T.start) phase = 'focus';
+  // state machine (Deep Work 50/10; task 1 is a 1-session task, so it auto-completes at the end of block 1)
+  let dig = 'Start', digits = '50:00', barP = 0, taskI = 0, lab = 'FOCUS', sage = false, rain = 0;
   if (t < T.start) { digits = '50:00'; dig = 'Start'; }
-  else if (t < T.block1) { digits = mmss(lapse(t, T.start + 0.1, T.block1, 3000)); dig = 'Pause'; barP = 1 - lapse(t, T.start + 0.1, T.block1, 3000) / 3000; }
-  else if (t < T.resume1) { digits = '10:00'; dig = 'Resume'; lab = 'SHORT BREAK'; sage = true; rain = 1; }
-  else if (t < T.breakEnd) { digits = mmss(lapse(t, T.resume1 + 0.05, T.breakEnd, 600)); dig = 'Pause'; lab = 'SHORT BREAK'; sage = true; rain = 1; barP = 1 - lapse(t, T.resume1 + 0.05, T.breakEnd, 600) / 600; }
-  else if (t < T.resume2) { digits = '50:00'; dig = 'Resume'; }
-  else if (t < T.block2) { digits = mmss(lapse(t, T.resume2 + 0.1, T.block2, 3000)); dig = 'Pause'; barP = 1 - lapse(t, T.resume2 + 0.1, T.block2, 3000) / 3000; }
-  else if (t < T.room) { digits = '50:00'; dig = 'Pause'; taskI = 1; }
-  else { const e = t - T.room; digits = mmss(3000 - 24 - e); dig = 'Pause'; taskI = 1; barP = (24 + e) / 3000; }
-  if (t >= T.block2) taskI = 1;
-  if (t >= T.block2 && t < T.room) { barP = 0; digits = mmss(3000 - Math.max(0, (t - T.block2 - 0.9) * 8)); }
+  else if (t < T.block1) { const r = lapse(t, T.start + 0.1, T.block1, 3000); digits = mmss(r); dig = 'Pause'; barP = 1 - r / 3000; }
+  else if (t < T.resume1) { digits = '10:00'; dig = 'Resume'; lab = 'SHORT BREAK'; sage = true; rain = 1; taskI = 1; }
+  else if (t < T.breakEnd) { const r = lapse(t, T.resume1 + 0.05, T.breakEnd, 600); digits = mmss(r); dig = 'Pause'; lab = 'SHORT BREAK'; sage = true; rain = 1; barP = 1 - r / 600; taskI = 1; }
+  else if (t < T.payoff) { digits = '50:00'; dig = 'Resume'; taskI = 1; }
+  else { const e = t - T.payoff; digits = mmss(3000 - 95 - e); dig = 'Pause'; taskI = 1; barP = (95 + e) / 3000; }
   setText(C.dig, digits); setText(C.lab, lab);
   setHTML(C.main, `${dig === 'Pause' ? I.pause : I.play} <span class="ml">${dig}</span>`);
-  const isSageBtn = sage;
-  C.main.style.background = isSageBtn ? 'hsl(157 16% 55%)' : 'hsl(24 33% 40%)';
+  C.main.style.background = sage ? 'hsl(157 16% 55%)' : 'hsl(24 33% 40%)';
   C.main.style.width = dig === 'Start' ? '124px' : '136px';
   C.lab.style.color = sage ? 'hsl(157 20% 45%)' : 'hsl(var(--muted-foreground))';
-  const topTxt = sage ? 'ON A BREAK' : 'FOCUS MODE';
-  setText(C.top, topTxt); C.top.style.color = sage ? 'hsl(157 20% 45%)' : 'hsl(var(--muted-foreground))';
+  setText(C.top, sage ? 'ON A BREAK' : 'FOCUS MODE'); C.top.style.color = sage ? 'hsl(157 20% 45%)' : 'hsl(var(--muted-foreground))';
   const fm = prog(t, T.start + 0.1, T.start + 0.5); show(C.top, fm); show(C.exit, fm);
   C.bar.style.width = (clamp(barP) * 100).toFixed(2) + '%';
   C.bar.style.background = sage ? 'hsl(157 16% 55%)' : 'hsl(24 33% 40%)';
   C.pips.forEach((p, i) => { p.style.background = i === 0 && t >= T.start ? (sage ? 'hsl(157 16% 55%)' : 'hsl(24 33% 40%)') : 'hsl(var(--border))'; });
   setText(C.task, TASKS[taskI].title);
   setText(C.hint, sage ? 'Break time. Look away, stretch, breathe. Your alerts are back on.' : 'Eyes here. Notifications quiet themselves in your device\'s Focus mode.');
-  show(C.hint, t >= T.start ? 1 : 0); show(C.line, t < T.block1 || (t >= T.resume2) ? 1 : 0);
-  setText(C.line, 'Depth over coverage. Leave this session knowing one thing better than when you started.');
-  // garden: sky & rain on breaks
+  show(C.hint, t >= T.start ? 1 : 0); show(C.line, sage ? 0 : 1);
   const rk = rain ? clamp(Math.min(prog(t, T.block1, T.block1 + 0.6), 1 - prog(t, T.breakEnd - 0.2, T.breakEnd + 0.3))) : 0;
   C.sky.style.background = `linear-gradient(180deg, ${mixc('#dfeaf1', '#b9c6cf', rk)}, ${mixc('#f0f1ea', '#cbd3d3', rk)})`;
   show(C.tagw, rk);
   const rx = C.rx; rx.clearRect(0, 0, 700, 170);
   if (rk > 0) { rx.strokeStyle = `rgba(110,170,215,${(0.75 * rk).toFixed(3)})`; rx.lineWidth = 2.2; for (let i = 0; i < 46; i++) { const sx = hash(i, 5) * 720, sp = 260 + hash(i, 6) * 160, ph = hash(i, 7); const y = ((t * sp / 170 + ph) % 1) * 200 - 20; rx.beginPath(); rx.moveTo(sx - y * 0.08, y); rx.lineTo(sx - y * 0.08 - 2, y + 16); rx.stroke(); } }
-  // sprout bounces a little when watered
   C.sp.style.transform = `translateX(-50%) scale(${(1 + 0.08 * rk * (0.5 + 0.5 * Math.sin(t * 5))).toFixed(3)})`;
-  // Start tap ripple
-  tapRipple(t, [T.start, T.resume1, T.resume2], C.main);
+  tapRipple(t, [T.start, T.resume1], C.main);
 
   // ---------- page chrome (above/below the core), blown away by Focus mode
   const chOn = t >= T.flip + 0.35 && t < T.start + 0.9;
   const cto = prog(t, T.flip + 0.4, T.flip + 0.65);
   const blow = E.inCubic(prog(t, T.start + 0.08, T.start + 0.7));
-  const ctop = { x: Lc.x + (V ? 0 : -8), y: Lc.y - fh / 2 * Lc.s - L(118, 85) * Lc.s * 0.72 - blow * 500, s: Lc.s * 0.72, r: blow * -12, o: chOn ? cto : 0 };
-  place(UI.chromeTop, ctop, 390, UI.chromeTop.offsetHeight);
-  const cbot = { x: Lc.x, y: Lc.y + fh / 2 * Lc.s + L(98, 80) * Lc.s * 0.72 + blow * 600, s: Lc.s * 0.72, r: blow * 10, o: chOn ? cto : 0 };
-  place(UI.chromeBot, cbot, 390, UI.chromeBot.offsetHeight);
+  place(UI.chromeTop, { x: Lc.x + (V ? 0 : -8), y: Lc.y - fh / 2 * Lc.s - L(118, 85) * Lc.s * 0.72 - blow * 500, s: Lc.s * 0.72, r: blow * -12, o: chOn ? cto : 0 }, 390, UI.chromeTop.offsetHeight);
+  place(UI.chromeBot, { x: Lc.x, y: Lc.y + fh / 2 * Lc.s + L(98, 80) * Lc.s * 0.72 + blow * 600, s: Lc.s * 0.72, r: blow * 10, o: chOn ? cto : 0 }, 390, UI.chromeBot.offsetHeight);
 
   // ---------- STUDYING / ON A BREAK card
   const SD = UI.stud; const Ls = LAY.stud; const sh = SD.el.offsetHeight;
   let so = 0, sy = Ls.y, sx = Ls.x;
-  if (V) { // sheet slides over the lower half of the core
-    const in1 = E.outCubic(prog(t, 30.55, 31.0)) - E.inCubic(prog(t, 34.2, 34.6));
-    const in2 = E.outCubic(prog(t, 37.25, 37.7)) - E.inCubic(prog(t, T.room, T.room + .4));
-    const k = Math.max(in1, in2); so = k > 0.001 ? 1 : 0;
-    sy = lerp(1200, 640 - sh * Ls.s / 2 + 250, k);
+  if (V) {
+    const k = E.outCubic(prog(t, T.resume1 + 0.15, T.resume1 + 0.6)) - E.inCubic(prog(t, T.breakEnd - 0.3, T.breakEnd + 0.1));
+    so = k > 0.001 ? 1 : 0; sy = lerp(1200, 640 - sh * Ls.s / 2 + 250, k);
   } else {
-    so = prog(t, T.start + 0.3, T.start + 0.8) * (1 - prog(t, T.room, T.room + .4));
-    sx = Ls.x + (1 - E.outCubic(prog(t, T.start + 0.3, T.start + 0.9))) * 500 + E.inCubic(prog(t, T.room, T.room + .5)) * 700;
+    so = prog(t, T.start + 0.3, T.start + 0.8) * (1 - prog(t, T.room, T.room + .35));
+    sx = Ls.x + (1 - E.outCubic(prog(t, T.start + 0.3, T.start + 0.9))) * 500 + E.inCubic(prog(t, T.room, T.room + .45)) * 700;
   }
   place(SD.el, { x: sx, y: sy, s: Ls.s, o: so }, 390, sh);
   const onBreak = t >= T.block1 && t < T.breakEnd;
   SD.brk.style.display = onBreak ? 'block' : 'none';
   setText(SD.sh, onBreak ? 'ON A BREAK' : 'STUDYING'); SD.sh.style.color = onBreak ? 'hsl(157 20% 45%)' : 'hsl(var(--muted-foreground))';
-  const done0 = t >= T.block2 + 0.35; const lift = prog(t, T.block2 + 0.45, T.block2 + 0.95);
+  const done0 = t >= T.block1 + 0.3;
   SD.rows.forEach((r, i) => {
-    let c = 0; if (i === 0) c = t >= T.block2 ? 2 : t >= T.block1 ? 1 : 0;
-    setText(r.cnt, `${c}/${TASKS[i].est}`);
+    setText(r.cnt, `${i === 0 && t >= T.block1 ? 1 : 0}/${TASKS[i].est}`);
     const active = i === taskI; setCls(r.el, 'active', active); r.foc.style.display = active ? 'inline-flex' : 'none';
-    if (i === 0) {
-      setCls(r.cb, 'on', done0); setHTML(r.cb, done0 ? I.check : '');
-      r.el.style.display = lift >= 1 ? 'none' : 'flex';
-      r.el.style.opacity = (1 - lift).toFixed(3); r.el.style.transform = `translateY(${(-lift * 20).toFixed(1)}px)`;
-      r.tt.style.textDecoration = done0 ? 'line-through' : 'none';
-      r.tt.style.color = done0 ? 'hsl(var(--muted-foreground))' : '';
-    }
+    if (i === 0) { setCls(r.cb, 'on', done0); setHTML(r.cb, done0 ? I.check : ''); r.tt.style.textDecoration = done0 ? 'line-through' : 'none'; r.tt.style.color = done0 ? 'hsl(var(--muted-foreground))' : ''; }
   });
-  show(SD.done, lift >= 1 ? prog(t, T.block2 + 0.95, T.block2 + 1.2) : 0);
-  SD.done.style.display = lift >= 1 ? 'block' : 'none';
-  // streak chip in tasks header? (only after a finished session) — shown in chrome header on payoff not needed
-  // ---------- ROOM: the group session (40.0 → 43.6)
+
+  // ---------- ROOMS LOBBY (33.3 → 35.0)
+  { const Lb = UI.lobby, Ll = LAY.lobby;
+    const inT = E.outCubic(prog(t, T.room + 0.3, T.room + 0.6)), outT = E.inCubic(prog(t, T.join + 0.12, T.roomIn));
+    place(Lb.el, { x: Ll.x, y: Ll.y, s: Ll.s, o: t >= T.room + 0.3 && t < T.roomIn ? 1 : 0 }, 390, LAY.lobbyH);
+    Lb.el.style.transform += ` perspective(1400px) rotateY(${((1 - inT) * 90 - outT * 90).toFixed(2)}deg)`;
+    const el = Math.floor(Math.max(0, t - (T.room + 0.3)));
+    Lb.times.forEach((x, i) => setText(x, mmss(Lb.secs[i] - el)));
+    setText(Lb.counts[1], t >= T.join ? '8/50' : '7/50');
+    Lb.card.style.boxShadow = t >= T.join - 0.3 ? `0 0 0 ${(2 * clamp((t - T.join + 0.3) / 0.2)).toFixed(2)}px hsl(var(--primary) / .55)` : 'none';
+    tapRipple(t, [T.join], Lb.join);
+  }
+  // ---------- ROOM: the group session (35.0 → 45.0)
   { const R = UI.room, Lr = LAY.room, rh = LAY.roomH;
-    const inT = E.outCubic(prog(t, T.room + 0.3, T.room + 0.62));
+    const inT = E.outCubic(prog(t, T.roomIn, T.roomIn + 0.32));
     const toPhone = E.inOutCubic(prog(t, T.payoff - 0.45, T.payoff));
-    const vis = t >= T.room + 0.3 && t < T.payoff ? 1 : 0;
-    const st = { x: lerp(Lr.x, LAY.pcore.x, toPhone), y: lerp(Lr.y, LAY.pcore.y, toPhone), s: lerp(Lr.s, LAY.pcore.s * 0.9, toPhone), o: vis * (1 - prog(t, T.payoff - 0.15, T.payoff)) };
+    const vis = t >= T.roomIn && t < T.payoff ? 1 : 0;
+    const brk = t >= T.rbreak;
+    const lift = V ? E.inOutCubic(prog(t, T.rbreak - 0.1, T.rbreak + 0.5)) * -150 : 0;
+    const st = { x: lerp(Lr.x, LAY.pcore.x, toPhone), y: lerp(Lr.y + lift, LAY.pcore.y, toPhone), s: lerp(Lr.s, LAY.pcore.s * 0.9, toPhone), o: vis * (1 - prog(t, T.payoff - 0.15, T.payoff)) };
     place(R.el, st, 390, rh);
     R.el.style.transform += ` perspective(1400px) rotateY(${((1 - inT) * 90).toFixed(2)}deg)`;
-    const secs = 31 * 60 + 6 - Math.floor(Math.max(0, t - (T.room + 0.3)));
+    // shared timer: live seconds, then a time-lapse to the break
+    const live = 1868 - Math.floor(Math.max(0, t - T.roomIn));
+    let secs = live, total = 3000;
+    if (t >= T.lapse0 && t < T.rbreak) { const l0 = 1868 - Math.floor(T.lapse0 - T.roomIn); secs = Math.round(l0 * (1 - E.inCubic(prog(t, T.lapse0, T.rbreak)))); }
+    if (brk) { secs = 600 - Math.floor(t - T.rbreak); total = 600; }
     setText(R.dig, mmss(secs)); setText(R.cd, mmss(secs));
-    R.bar.style.width = ((1 - secs / 3000) * 100).toFixed(2) + '%';
-    R.chips.forEach((c, i) => { const k = E.outBack(prog(t, T.room + ROOM_JOIN[i], T.room + ROOM_JOIN[i] + 0.3)); c.style.opacity = clamp(k * 1.5).toFixed(3); c.style.transform = `scale(${(0.6 + 0.4 * k).toFixed(3)})`; });
-    // hand-drawn ring around the group
+    setText(R.lab, brk ? 'SHORT BREAK · BLOCK 2/3' : 'FOCUS · BLOCK 2/3');
+    const col = brk ? 'hsl(var(--roamly-green))' : 'hsl(var(--primary))';
+    R.lab.style.color = col; R.bar.style.background = col;
+    R.bar.style.width = ((1 - secs / total) * 100).toFixed(2) + '%';
+    R.chips.forEach((c, i) => { const k = E.outBack(prog(t, T.roomIn + ROOM_JOIN[i], T.roomIn + ROOM_JOIN[i] + 0.3)); c.style.opacity = clamp(k * 1.5).toFixed(3); c.style.transform = `scale(${(0.6 + 0.4 * k).toFixed(3)})`; });
     if (!R.ring && R.chipsBox.offsetWidth) { const bx = R.chipsBox.offsetLeft, by = R.chipsBox.offsetTop, bw = R.chipsBox.offsetWidth, bh2 = R.chipsBox.offsetHeight;
       const pts = []; for (let k = 0; k <= 64; k++) { const a = -2.2 + k / 64 * 6.9; pts.push([bx + bw / 2 + Math.cos(a) * (bw / 2 + 10) * (1 + k * 0.0015), by + bh2 / 2 + Math.sin(a) * (bh2 / 2 + 12)]); }
       R.ring = inkPath(R.svg, toD(wobble(pts, 1.2, 99)), '#E8A33D', 3.2); }
-    if (R.ring) reveal(R.ring, prog(t, T.room + 1.35, T.room + 1.9) * (t < T.payoff - 0.45 ? 1 : 0));
-    const cin = E.outCubic(prog(t, T.room + 1.9, T.room + 2.35));
-    place(R.chat, { x: LAY.rchat.x, y: LAY.rchat.y + (1 - cin) * 60, s: LAY.rchat.s, r: V ? 1 : -1, o: cin * vis * (1 - prog(t, T.payoff - 0.5, T.payoff - 0.2)) }, 390, LAY.rchatH);
+    if (R.ring) reveal(R.ring, prog(t, T.roomIn + 1.45, T.roomIn + 2.0) * (t < T.lapse0 ? 1 : 1 - prog(t, T.lapse0, T.lapse0 + 0.3)));
+    // break-time chat: locked during focus, opens on the break
+    show(R.lock, brk ? 0 : 1); R.lock.style.display = brk ? 'none' : 'inline-flex'; R.open.style.display = brk ? 'inline-flex' : 'none';
+    R.empty.style.display = brk && t >= T.rbreak + 0.45 ? 'none' : 'block';
+    R.msgs.forEach((m, i) => { const t0 = T.rbreak + 0.45 + i * 0.5; const k = E.outBack(prog(t, t0, t0 + 0.3)); m.style.display = t >= t0 ? 'block' : 'none'; m.style.opacity = clamp(k * 1.4).toFixed(3); m.style.transform = `translateY(${((1 - k) * 14).toFixed(1)}px) scale(${(0.92 + 0.08 * k).toFixed(3)})`; });
+    setText(R.inp, brk ? 'Message the room…' : `Chat opens in ${mmss(secs)}. Keep focusing`);
+    const cin = E.outCubic(prog(t, T.roomIn + 1.9, T.roomIn + 2.3));
+    const cy2 = V ? lerp(LAY.rchat.y, LAY.rchat.yBreak, E.inOutCubic(prog(t, T.rbreak - 0.1, T.rbreak + 0.5))) : LAY.rchat.y;
+    const ch = R.chat.offsetHeight;
+    place(R.chat, { x: LAY.rchat.x, y: cy2 + (1 - cin) * 60 + (V ? 0 : 0), s: LAY.rchat.s, r: V ? 1 : -1, o: cin * vis * (1 - prog(t, T.payoff - 0.75, T.payoff - 0.5)) }, 390, ch);
   }
   // ---------- analytics card on payoff
   const A = UI.an; const La = LAY.an; const ah = LAY.anH;
-  const ain = E.outBack(prog(t, T.payoff + 1.0, T.payoff + 1.6)); const aout = E.inCubic(prog(t, T.cta, T.cta + 0.7));
-  place(A.el, { x: La.x, y: La.y + (1 - ain) * 80 + aout * 900, s: La.s * (0.9 + 0.1 * ain), r: V ? -1.2 : 1.5, o: t >= T.payoff + 1.0 && t < T.cta + 0.8 ? clamp(ain) : 0 }, 390, ah);
-  A.bar.style.width = (62.5 * E.outCubic(prog(t, T.payoff + 1.4, T.payoff + 2.4))).toFixed(2) + '%';
-  setText(A.am, `${Math.round(75 * E.outCubic(prog(t, T.payoff + 1.4, T.payoff + 2.4)))} / 120 min`);
+  const ain = E.outBack(prog(t, T.payoff + 0.7, T.payoff + 1.3)); const aout = E.inCubic(prog(t, T.cta, T.cta + 0.7));
+  place(A.el, { x: La.x, y: La.y + (1 - ain) * 80 + aout * 900, s: La.s * (0.9 + 0.1 * ain), r: V ? -1.2 : 1.5, o: t >= T.payoff + 0.7 && t < T.cta + 0.8 ? clamp(ain) : 0 }, 390, ah);
+  A.bar.style.width = (62.5 * E.outCubic(prog(t, T.payoff + 1.1, T.payoff + 2.1))).toFixed(2) + '%';
+  setText(A.am, `${Math.round(75 * E.outCubic(prog(t, T.payoff + 1.1, T.payoff + 2.1)))} / 120 min`);
 }
 const mixc = (a, b, k) => { const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16)); return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * k)).join(',')})`; };
 
@@ -949,9 +985,9 @@ function tapRipple(t, times, btn) {
     fxx.restore();
   }
 }
-function confetti(t, t0, seed) {
+function confetti(t, t0, seed, el) {
   const age = t - t0; if (age < 0 || age > 2.2) return;
-  const r = UI.core.dig.getBoundingClientRect(), sr = stage.getBoundingClientRect(), k = sr.width / W;
+  const r = el.getBoundingClientRect(), sr = stage.getBoundingClientRect(), k = sr.width / W;
   const cx = (r.left + r.width / 2 - sr.left) / k, cy = (r.top + r.height * 0.4 - sr.top) / k;
   const cols = ['#E8A33D', '#886044', '#7fa393', '#d9785a', '#f2c078', '#6d8fb8'];
   for (let i = 0; i < 110; i++) {
@@ -998,7 +1034,7 @@ function renderCTA(t) {
     const k = E.outQuint(prog(t, t0, t0 + 0.8)); const w = el.offsetWidth, h = el.offsetHeight;
     place(el, { x: p.x, y: p.y + (1 - k) * 40, o: k, s: el === CTA.url ? lerp(0.92, 1, E.outBack(prog(t, t0, t0 + 0.6))) : 1 }, w, h);
   }
-  CTA.word.style.fontSize = L(150, 150) + 'px'; CTA.sub.style.fontSize = L(50, 48) + 'px'; CTA.hand.style.fontSize = L(68, 62) + 'px'; CTA.url.style.fontSize = L(58, 54) + 'px';
+  CTA.word.style.fontSize = L(150, 150) + 'px'; CTA.sub.style.fontSize = L(50, 48) + 'px'; CTA.hand.style.fontSize = L(54, 56) + 'px'; CTA.url.style.fontSize = L(58, 54) + 'px';
   CTA.hand.style.clipPath = `inset(-30% ${((1 - prog(t, T.final + 0.95, T.final + 1.9)) * 100).toFixed(2)}% -30% 0)`;
   // hand-drawn arrow/underline pointing at the URL
   const u = CTA.url; const uw = u.offsetWidth, uh = u.offsetHeight; const up = V ? P(540, 1385) : P(1260, 785);
@@ -1040,24 +1076,25 @@ function buildCues() {
   [10.86, 11.0, 11.08, 11.22, 11.36, 11.46, 11.56, 11.7, 11.78].forEach((s, i) => cue(s + .35, 'settle', .45 + (i % 3) * .08));
   cue(T.logo, 'logoBloom', 1); cue(T.word, 'swish', .6);
   cue(15.05, 'whoosh', .8); cue(15.4, 'paperFold', .9);
-  // tasks typing
-  const keys = (t0, t1, n, g = .55) => { for (let i = 0; i < n; i++) cue(t0 + (t1 - t0) * i / n, 'key', g, { seed: i }); };
-  keys(17.62, 18.55, 18); keys(18.62, 18.95, 6, .45); cue(19.05, 'uiTap', .6); cue(19.25, 'uiTap', .9); cue(19.3, 'pop', .7);
-  keys(19.6, 20.2, 14); keys(20.24, 20.5, 5, .45); cue(20.65, 'uiTap', .9); cue(20.7, 'pop', .7);
-  keys(20.84, 21.42, 14); keys(21.46, 21.72, 5, .45); cue(21.8, 'uiTap', .6); cue(21.95, 'uiTap', .9); cue(22.0, 'pop', .75);
-  cue(17.62, 'whooshSoft', .5); cue(19.55, 'whooshSoft', .45); cue(20.85, 'whooshSoft', .45);
-  cue(T.method, 'sheet', .7); cue(22.95, 'highlighter', .8, { dur: .35 }); cue(23.3, 'pencil', .5, { dur: .4 }); cue(23.55, 'uiTap', .9); cue(23.8, 'sheet', .5);
+  // AI note upload: the printout flies in and drops into the panel, the file is read, tasks land
+  cue(T.upFly, 'whooshSoft', .6); cue(T.upDrop - 0.3, 'paperFold', .6); cue(T.upDrop, 'uiTap', .9);
+  cue(T.upRead, 'highlighter', .45, { dur: .5 }); cue(T.upRead + 0.7, 'highlighter', .4, { dur: .5 }); cue(T.upRead + 1.4, 'highlighter', .45, { dur: .5 });
+  cue(T.upDone, 'chime', .55, { alt: 1 });
+  [1, 2, 3, 4, 6].forEach((j, i) => { cue(T.upDone + 0.65 + j * 0.11 - 0.45, 'swish', .3); cue(T.upDone + 0.65 + j * 0.11, 'pop', .5 + i * .04); });
+  cue(T.method, 'sheet', .6); cue(23.45, 'highlighter', .6, { dur: .2 }); cue(23.66, 'uiTap', .9); cue(23.8, 'sheet', .45);
   cue(T.flip, 'pageTurn', .9); cue(T.flip + 0.3, 'pageTurn', .5);
   cue(T.start - 0.02, 'uiTapBig', 1); cue(T.start + 0.1, 'whooshAway', 1); cue(T.start + 0.35, 'paperShuffle', .6);
-  cue(T.block1, 'chime', 1); cue(T.block1 + 0.02, 'confetti', .6);
-  cue(T.block1 + 0.2, 'rain', .5, { dur: 4.6 });
-  cue(T.resume1, 'uiTap', .8); cue(T.breakEnd - 0.05, 'chime', .55, { alt: 1 }); cue(T.resume2, 'uiTap', .85);
-  cue(T.block2, 'chime', .9); cue(T.block2 + 0.02, 'confetti', .5); cue(T.block2 + 0.35, 'check', .9); cue(T.block2 + 0.9, 'stackThud', .7);
-  cue(37.8, 'pop', .5);
-  // group session (Rooms)
+  cue(T.block1, 'chime', 1); cue(T.block1 + 0.02, 'confetti', .6); cue(T.block1 + 0.3, 'check', .7);
+  cue(T.block1 + 0.2, 'rain', .5, { dur: T.breakEnd - T.block1 });
+  cue(T.resume1, 'uiTap', .8); cue(T.breakEnd - 0.05, 'chime', .5, { alt: 1 });
+  // group session (Rooms): lobby → join → shared timer → break chat
   cue(T.room, 'pageTurn', .9); cue(T.room + 0.3, 'pageTurn', .5);
-  ROOM_JOIN.forEach((s, i) => cue(T.room + s, 'pop', .45 + (i % 3) * .08));
-  cue(T.room + 1.35, 'pencil', .6, { dur: .55 }); cue(T.room + 2.2, 'uiTap', .4);
+  cue(T.join, 'uiTap', .9); cue(T.join + 0.12, 'pageTurn', .7); cue(T.roomIn, 'pageTurn', .45);
+  ROOM_JOIN.forEach((s, i) => cue(T.roomIn + s, 'pop', .45 + (i % 3) * .08));
+  cue(T.roomIn + 1.45, 'pencil', .6, { dur: .55 }); cue(T.roomIn + 1.9, 'sheet', .4);
+  cue(T.lapse0, 'riser', .45, { dur: T.rbreak - T.lapse0 });
+  cue(T.rbreak, 'chime', .9); cue(T.rbreak + 0.02, 'confetti', .5);
+  [0, 1, 2].forEach(i => cue(T.rbreak + 0.45 + i * 0.5, 'ping2', .45));
   cue(T.payoff - 0.35, 'whooshSoft', .6);
   cue(T.payoff, 'whoosh', .7); [0.3, 0.45, 0.62, 0.8, 1.0].forEach((s, i) => cue(T.payoff + s + .5, 'settle', .45 + (i % 2) * .1));
   cue(T.payoff + 1.05, 'paperSlap', .6); cue(T.payoff + 1.1, 'tape', .6);
@@ -1077,7 +1114,7 @@ async function boot() {
   makeNoise(); makePaper(); makeGrain();
   buildProps();
   thought('Where do I even start?', false, 'start here ↓');
-  thought('Did I actually learn that?', false, '1 of 3 done ✓');
+  thought('Did I actually learn that?', false, '1 of 5 done ✓');
   thought('Wait… I’ve been studying<br>for THREE HOURS?', true, '75 min. on purpose.');
   buildUI(); buildInk(); buildHUD();
   layoutUI(); buildTracks(); buildCues();

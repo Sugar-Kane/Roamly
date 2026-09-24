@@ -109,6 +109,23 @@ Streak `1 day`, Best day (7d) `Today 75m`. "Focus minutes by day — Your last 7
   Pop out timer, "Break-time chat", "Opens at break · 31:06", "No messages yet. Say hi at the next break.",
   "Chat unlocks during short and long breaks, then locks again when focus starts."
 
+## AI note uploads (used 17.5–23 s)
+- Production component `src/UploadTasks.tsx` (`UploadTasksPanel`), rendered unchanged in `room-harness/upload.html`,
+  with screenshots `ref/40-upload-idle-*.png`, `41-upload-reading-*.png`, `41b-…`, `42-upload-done-*.png` and text in
+  `ref/upload-dom-*.txt`. Copy: "Upload study material and AI will create editable tasks for you" · "Choose file" ·
+  "You have 3 uploads left" · "Top up" · "Upload notes, slides, or a photo" · "Roamly Flow AI reads your PDF, Word file,
+  PowerPoint, text, screenshot, or photo and creates editable study tasks from the material. Files can be up to 12 MB;
+  scans use OCR automatically and handwriting is best effort." · "Uploading your file…" · "Reading text and using OCR
+  only if needed…" · "Done: 5 tasks added."
+- Quotas (`FREE_MONTHLY_UPLOAD_QUOTA = 3`, Premium 10; Pricing page: free account "3 a month").
+- `api/generate-tasks.ts` sends the file to Claude (claude-haiku-4-5) with a PA-school prompt that returns
+  `{title, tag, est}` per topic, reusing the student's existing subjects, with 1–2 sessions per task typical.
+- **The 5 tasks in the video are SAMPLE output** (`room-harness/sample-ai-tasks.json`), written to follow that prompt's
+  rules for a "Lecture 12 — Heart Failure" upload. No Anthropic key was available in the render environment, and the
+  production endpoint requires a signed-in session. Everything around it (panel, progress states, copy) is the real
+  component.
+- One small liberty: the open panel's native file input ("Choose File · No file chosen") is shown as a filename chip.
+
 ## Other (observed, mostly not used)
 - Garden tab: "Sign in to unlock your Garden" (XP, pets, plants) — account required, so the video only
   shows the **timer's garden widget**, which works for guests.
@@ -124,8 +141,10 @@ Streak `1 day`, Best day (7d) `Today 75m`. "Focus minutes by day — Your last 7
 - Sessions count toward the task; finished tasks are checked off and the next one is up.
 - Daily goal / streak / focus minutes in Analytics.
 - Rooms: study alongside others on one shared timer, with chat locked during focus and open on breaks (free account).
-- **Free; the timer, 5 tasks and basic analytics work with no account.** → "No account needed. Just start."
+- **Free to start.** The timer, 5 tasks and basic analytics work with no account. A free account adds AI note uploads
+  (3/month) and joining study rooms → "Start your next study session free. Free account: AI note uploads + study rooms."
+- AI note uploads: upload lecture material and AI creates editable study tasks (free account, 3 a month).
 
 ## Not to be shown (account-only or not observed)
-Exam countdown UI, Planned study, AI note uploads, Garden XP/pets, voice chat in use (Premium).
+Exam countdown UI, Planned study, Garden XP/pets, voice chat in use (Premium).
 (An exam date may appear only as a physical paper prop in the collage — never as Roamly UI.)

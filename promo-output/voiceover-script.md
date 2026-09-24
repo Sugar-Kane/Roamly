@@ -16,15 +16,13 @@ playful, not a motivational speaker.
 | — | 10.00 → 10.62 | *(silence)* | Everything freezes. The mix is near-silent (−74 dBFS RMS). |
 | v03 | 12.71 → 14.18 | This is Roamly Flow. | The amber line closes into the logo ring, then the wordmark wipes on. |
 | v04 | 14.48 → 16.24 | A timer that knows what you're studying. | The logo flies into the app header and the Tasks screen unfolds. |
-| v05 | 17.65 → 20.74 | Queue up tonight's lectures, slides, and flashcards. | Real Tasks UI: the lecture slide morphs into "Cardio lecture 12: heart failure · 2 sessions", then flashcards, then renal slides. |
-| v06 | 22.59 → 24.36 | Pick a rhythm that fits the material. | Timer method sheet: Deep Work 50/10, "Longer blocks for dense material like pharmacology." |
-| v07 | 25.28 → 28.54 | Press start, [pause] and everything else falls away. | Start tap. Page chrome, phone and stickies blow off the page, leaving FOCUS MODE. |
-| v08 | 30.38 → 34.31 | Take the break. [pause] Even your garden gets watered. | ON A BREAK: sage UI, rain on the garden ("Watering"), optional break reset. |
-| v09 | 35.39 → 39.97 | Every session counts. [pause] Finish a task, and the next one's already up. | Cardio hits 2/2, gets checked off into "Completed · 1", and Pharm flashcards becomes *Focusing*. |
-| v09b | 40.45 → 41.98 | And you don't have to do it alone. | Group session: the Deep Work Hall room, members joining one by one on one shared timer. |
-| v10 | 44.07 → 46.91 | Same lectures. [pause] Same exam. | Back on the same desk, now organized. The exam is still circled. |
-| v11 | 47.16 → 48.22 | Same workload. | The opening thoughts get struck out and rewritten. |
-| v12 | 48.33 → 49.82 | Just a better way through it. | Analytics: Today 75 / 120 min, 1-day streak. "75 min. on purpose." |
+| v05 | 17.76 → 19.16 | Upload tonight's lecture. | The Lecture 12 printout drops into the real upload panel. |
+| v06 | 19.62 → 22.43 | AI turns it into tasks you can actually finish. | "Reading text…" → "Done: 5 tasks added." The lecture's bullets land as 5 tasks. |
+| v07 | 25.28 → 28.54 | Press start, [pause] and everything else falls away. | Start tap. Chrome and distractions blow off the page, leaving FOCUS MODE. |
+| v08 | 29.30 → 32.92 | Take the break. [pause] Your next task is already waiting. | ON A BREAK: rain on the garden. Task 1 is done ✓ and task 2 is *Focusing*. |
+| v09b | 35.40 → 36.93 | And you don't have to do it alone. | Deep Work Hall: members join on one shared timer. |
+| v10 | 37.46 → 41.81 | Everyone shares one timer, [pause] and chat only opens on the break. | Locked chat → time-lapse → the break hits: chat unlocks, and messages arrive. |
+| v11 | 46.04 → 49.34 | Same workload. [pause] Better way through it. | The same desk, organized. Thoughts rewritten, Analytics 75 / 120 min. |
 | v13 | 50.75 → 53.93 | Don't just study longer. [pause] Study with flow. | Camera rises. The materials orbit into the logo. DON'T JUST STUDY LONGER. / STUDY WITH FLOW. |
 | v14 | 55.35 → 58.91 | Start your next session free, at roamly flow dot com. | Lockup: Roamly Flow · "Start your next study session free." · "No account needed. Just start." · roamlyflow.com |
 
@@ -32,12 +30,14 @@ In/out times are the measured speech onset and offset (−40 dBFS gate) after pl
 
 ## On-screen copy (all verified against production, see `ref/product-notes.md`)
 - Handwritten thoughts: "Where do I even start?" · "Did I actually learn that?" · "Wait… I've been
-  studying for THREE HOURS?" → rewritten in the payoff as "start here ↓" · "1 of 3 done ✓" · "75 min. on purpose."
+  studying for THREE HOURS?" → rewritten in the payoff as "start here ↓" · "1 of 5 done ✓" · "75 min. on purpose."
 - End card: **DON'T JUST STUDY LONGER. / STUDY WITH FLOW.** · **Roamly Flow** · Start your next study
-  session free. · No account needed. Just start. · **roamlyflow.com**
-  ("No account needed" is true on production: the timer, 5 guest tasks and 7-day local analytics work signed-out.)
+  session free. · Free account: AI note uploads + study rooms. · **roamlyflow.com**
+  (Both featured features need a free account: 3 AI uploads a month, and joining rooms. So the old
+  "No account needed" line was replaced, at the client's choice.)
 
 ## Mix notes
 Music ducks 9 dB under VO (60 ms attack, 180 ms hold, 350 ms release). SFX dip 3 dB under VO.
-Chaos SFX swell +4 dB from 2 s to the freeze. The master is two-pass loudnorm (linear): see `review-notes.md`
+Chaos SFX swell +4 dB from 2 s to the freeze. The VO bus has a 3:1 compressor above −16 dBFS. The master measures integrated loudness, applies the exact gain
+to reach −14 LUFS, then a 4× oversampled true-peak limiter (ceiling −1.4 dBFS). See `review-notes.md`
 for the measured values.

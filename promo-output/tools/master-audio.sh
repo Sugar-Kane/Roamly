@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Two-pass EBU R128 loudness normalisation → -14 LUFS integrated, true peak ≤ -1.2 dBTP, 48 kHz.
+# Master: measure integrated loudness, apply the exact gain to -14 LUFS, then an oversampled
+# peak limiter (4x, ceiling -1.4 dBFS) so true peak stays below -1 dBTP. Verified with loudnorm analysis.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 FF=${FFMPEG:-$(python3 -c 'import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())')}
-M=$($FF -hide_banner -i audio/mix_pre.wav -af loudnorm=I=-14:TP=-1.2:LRA=11:print_format=json -f null - 2>&1 | sed -n '/^{/,/^}/p')
-g() { echo "$M" | python3 -c "import sys,json;print(json.load(sys.stdin)['$1'])"; }
-$FF -hide_banner -y -i audio/mix_pre.wav -af "loudnorm=I=-14:TP=-1.2:LRA=11:measured_I=$(g input_i):measured_TP=$(g input_tp):measured_LRA=$(g input_lra):measured_thresh=$(g input_thresh):offset=$(g target_offset):linear=true,aresample=48000" -ar 48000 -c:a pcm_s16le audio/mix.wav 2>/dev/null
+measure() { $FF -hide_banner -i "$1" -af loudnorm=I=-14:TP=-1:print_format=json -f null - 2>&1 | sed -n '/^{/,/^}/p'; }
+I0=$(measure audio/mix_pre.wav | python3 -c "import sys,json;print(json.load(sys.stdin)['input_i'])")
+G=$(python3 -c "print(round(-14.0 - float('$I0') + 0.04, 2))")   # +0.04 LU pre-compensates the limiter
+$FF -hide_banner -y -i audio/mix_pre.wav -af "aresample=192000,volume=${G}dB,alimiter=limit=0.851:attack=1:release=60:level=disabled:asc=1,aresample=48000" -ar 48000 -c:a pcm_s16le audio/mix.wav 2>/dev/null
+echo "pre-master: ${I0} LUFS, gain ${G} dB"
 echo "== verification (loudnorm analysis of audio/mix.wav) =="
-$FF -hide_banner -i audio/mix.wav -af loudnorm=I=-14:TP=-1.2:print_format=json -f null - 2>&1 | sed -n '/^{/,/^}/p'
+measure audio/mix.wav

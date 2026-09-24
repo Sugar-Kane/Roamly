@@ -142,3 +142,54 @@ The client asked to include group sessions. The beat sits at 40.0–43.6 s, with
   shared timer, which a plain Pomodoro timer can't do. The other answers are unchanged: **all yes**.
 - Final measurements (both MP4s): 60.00 s, 60 fps, H.264 High, AAC 48 kHz. **−14.01 LUFS, −1.60 dBTP**.
   Silence beat: −74.6 dBFS RMS.
+
+## Pass 5: re-cut around AI note uploads and group sessions (`review/sheet-*-final.jpg`)
+Client direction: "focus more on the group sessions and the AI note uploads". The chosen structure is
+Upload → Focus → Room, with the CTA changed to "Free to start".
+- **New middle act.** 17.5–23.2 s AI upload (production `UploadTasksPanel`) · 23.3–33 s method + focus + break,
+  condensed · 33–45 s Rooms (lobby → join → shared timer → break chat) · 45–50 s desk payoff. See `storyboard.md`.
+- **Sample AI output.** The five tasks the upload produces are sample output written to the production prompt's
+  rules. The real endpoint needs a signed-in session and an Anthropic key, and neither was available. The panel,
+  its states and its copy are the real component. This is disclosed in `ref/product-notes.md`.
+- **CTA truth fix.** Both featured features need a free account, so "No account needed" was replaced with
+  "Free account: AI note uploads + study rooms."
+- **VO.** Rewrote v05/v06 (STT heard "Upload" as "Grok in", and v06 ran 5.75 s), added v10, and dropped v09/v12.
+  Every line was re-checked with STT.
+- **Audio chain.** A 3:1 VO bus compressor kept VO under the bed, so the music was lowered 3 dB and SFX 2 dB. The
+  master is now measure → exact gain → 4× oversampled limiter, because two-pass loudnorm stalled around −14.2.
+
+Checked on the encoded MP4s, frame by frame:
+- 17.9–19.0 s: the Lecture 12 printout hovers and drops into **Choose file**. 19.45–21.3 s: Uploading → Reading
+  (progress bar climbs) → "Done: 5 tasks added." 21.95–22.4 s: five paper strips fly into five rows, grouped
+  CARDIOLOGY · 4 / PHARMACOLOGY · 1, and the quota reads "You have 2 uploads left".
+- 28.8 s: confetti, then ON A BREAK. Task 1 (1 session) auto-completes and task 2 becomes *Focusing*.
+- 33.3 s: lobby with four always-on rooms and live timers. Deep Work Hall is joined at 34.6 s.
+- 35–38.6 s: eight members join, an amber ring circles them, and the chat stays locked. 38.6–40 s: the shared
+  timer time-lapses. 40.0 s: every member hits SHORT BREAK · BLOCK 2/3 together (green), confetti, the chat
+  opens, and three messages arrive. I checked 39.95 / 40.00 / 40.03 / 40.10 s directly: the lift is smooth.
+- Vertical: all key content stays inside y 250–1520, including the chat card after it moves up for the break.
+
+Success test, pass 5 (both formats):
+1. Student-relevant within 5 s: **yes** (unchanged opening).
+2. Problem obvious within 15 s: **yes** (unchanged).
+3. Explain Roamly Flow by 30 s: **yes, and more concretely**. "You upload your lecture, it turns it into tasks,
+   then runs focus blocks and breaks on those tasks."
+4. More useful than a generic Pomodoro timer: **yes, strongest so far**. AI-made tasks from your own material,
+   plus a room of people on one shared timer with chat only on the break. A plain timer does neither.
+5. Real product visible enough: **yes**. Upload panel, Tasks, Timer method, Focus mode, On a break, Rooms lobby,
+   in-room focus/break, and Analytics, all from production components or DOM.
+6. CTA makes you want to visit: **yes**, and it's now accurate about what needs a free account.
+
+| Metric | Target | Measured (`audio/mix.wav`) |
+|---|---|---|
+| Integrated loudness | −14 LUFS | **−14.00 LUFS** |
+| True peak | < −1 dBTP | **−1.38 dBTP** |
+| Loudness range | — | 8.1 LU |
+| Music duck under VO | 8–10 dB | **9.0 dB** |
+| Silence beat 10.00–10.62 s | ≥ 0.5 s near-silent | **−70.9 dBFS RMS** |
+| VO over bed, per line | intelligible | **7.7–12.1 dB** |
+
+| File | Size | Video | Audio | Loudness (from the MP4) |
+|---|---|---|---|---|
+| `roamlyflow-promo-vertical.mp4` | 86 MB | 1080×1920, 60 fps, H.264 High, yuv420p/bt709, 60.00 s | AAC-LC 48 kHz stereo | −14.01 LUFS, −1.40 dBTP |
+| `roamlyflow-promo-wide.mp4` | 86 MB | 1920×1080, 60 fps, H.264 High, yuv420p/bt709, 60.00 s | AAC-LC 48 kHz stereo | −14.01 LUFS, −1.40 dBTP |

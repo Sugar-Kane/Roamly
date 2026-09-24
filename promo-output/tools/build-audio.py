@@ -435,6 +435,22 @@ def build():
     # gentle VO EQ: high-pass 90 Hz, presence lift is left to the voice
     for c in range(2):
         vo[:, c] = bp(vo[:, c], 90, 16000)
+    # VO compressor (3:1 above -16 dBFS, 3 ms attack / 90 ms release): evens out syllable peaks so the
+    # master can reach -14 LUFS without the true-peak ceiling limiting it
+    blk = 48
+    env_raw = np.abs(vo).max(axis=1)
+    nb = len(env_raw) // blk
+    env_b = env_raw[: nb * blk].reshape(nb, blk).max(axis=1)
+    thr, ratio = db(-16), 3.0
+    g = np.ones(nb); e = 0.0
+    a_att, a_rel = np.exp(-1 / 3.0), np.exp(-1 / 90.0)
+    for i in range(nb):
+        x = env_b[i]
+        e = a_att * e + (1 - a_att) * x if x > e else a_rel * e + (1 - a_rel) * x
+        g[i] = 1.0 if e <= thr else (thr / e) ** (1 - 1 / ratio)
+    gs = np.repeat(g, blk); gs = np.concatenate([gs, np.full(N - len(gs), gs[-1])])
+    vo *= gs[:, None]
+    vo *= db(-4) / (np.abs(vo).max() + 1e-9)
 
     # ---- music + ducking from VO activity
     music = load_wav('audio/music.wav')[:N]
@@ -452,12 +468,13 @@ def build():
     duck_db = -9.0
     gain = db(duck_db * sm)
     gain_s = np.repeat(gain, hop)[:N]
-    music *= gain_s[:, None] * db(-0.5)
+    music *= gain_s[:, None] * db(-3.5)
     sfx_duck = db(-3.0 * sm); sfx *= np.repeat(sfx_duck, hop)[:N][:, None]
 
     # chaos builds: SFX swell +4 dB from 2 s to the freeze
     tt = np.arange(N) / SR
     sfx *= db(4.0 * np.clip((tt - 2.0) / 7.5, 0, 1) * (tt < 10.0))[:, None]
+    sfx *= db(-2.0)
     mix = vo + music + sfx + amb
     # ---- silence beat: near-silent 10.0 → 10.625 (only a -60 dB room floor)
     a, b = int(SILENCE[0] * SR), int(SILENCE[1] * SR)
