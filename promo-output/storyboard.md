@@ -47,3 +47,16 @@ appear as physical "printouts/phone" moments.
 - All VO lines sit inside their shots and none cross an act boundary. Final positions after TTS are in
   `voiceover-script.md`.
 - Vertical safe area: nothing essential above y=250 or below y=1520.
+
+## Addendum: group sessions (Rooms). In progress.
+Requested after the first delivery. Placement (chosen by the client): the start of the payoff.
+- **40.0–43.6 s, "Not alone"**: the Focus-mode phone pulls back into a live **Room**: others focusing on the
+  same shared timer, and chat locked during focus. VO v09b at 40.35 s: "And you don't have to do it alone."
+  (generated, eve, STT-verified).
+- The payoff VO moves later to make room: v10 → 44.0 s, v11 → 47.1 s, v12 → 48.3 s (ends 49.82 s). Thought
+  rewrites follow at ~44.6 / 47.2 / 48.5 s.
+- Confirmed from the signed-out "How rooms work" dialog (`ref/28-rooms-how-it-works.png`): the timer inside a room
+  is already running and everyone shares it, chat stays locked during focus, and chat + voice open on breaks.
+- **Blocked on a test login.** Joining a room needs an account. Once `ROAMLY_TEST_EMAIL` /
+  `ROAMLY_TEST_PASSWORD` are in the environment, run `node tools/capture-rooms.mjs`, rebuild the room screen
+  from `ref/31-room-focus-*.png`, then re-render.
