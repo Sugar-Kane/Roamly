@@ -1,0 +1,10 @@
+{
+  "_note": "SAMPLE output, written to follow api/generate-tasks' system prompt for a 'Lecture 12 - Heart Failure' upload (reuses the student's existing subjects; 1-2 sessions each; ~6 total). Not produced by the model: no Anthropic key was available in the render environment.",
+  "tasks": [
+    { "title": "Review HFrEF vs HFpEF definitions and EF cutoffs", "tag": "Cardiology", "est": 1 },
+    { "title": "Map RAAS and sympathetic activation in heart failure", "tag": "Cardiology", "est": 1 },
+    { "title": "Learn HF signs: JVD, S3, pitting edema, BNP", "tag": "Cardiology", "est": 1 },
+    { "title": "Memorize GDMT drug classes for HFrEF", "tag": "Pharmacology", "est": 2 },
+    { "title": "Practice 15 questions on heart failure management", "tag": "Cardiology", "est": 1 }
+  ]
+}

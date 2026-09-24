@@ -1,0 +1,17 @@
+{
+  "name": "roamlyflow-promo",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic JS animation source for the Roamly Flow 60s promo",
+  "scripts": {
+    "preview": "node tools/serve.mjs",
+    "music": "node tools/render-music.mjs",
+    "render": "node tools/render-frames.mjs"
+  },
+  "dependencies": {
+    "tone": "^15.1.22"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

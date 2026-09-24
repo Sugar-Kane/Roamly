@@ -1,0 +1,7 @@
+Upload notes, slides, or a photo
+
+Roamly Flow AI reads your PDF, Word file, PowerPoint, text, screenshot, or photo and creates editable study tasks from the material. Files can be up to 12 MB; scans use OCR automatically and handwriting is best effort.
+
+Done: 5 tasks added.
+
+Upload another
