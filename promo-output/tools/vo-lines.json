@@ -40,18 +40,23 @@
     "text": "Take the break. [pause] Your next task is already waiting."
   },
   {
-    "id": "v09b",
-    "at": 35.3,
-    "text": "And you don't have to do it alone."
+    "id": "v09c",
+    "at": 33.0,
+    "text": "And you don't have to do it alone. Join a study room."
   },
   {
-    "id": "v10",
-    "at": 37.4,
+    "id": "v10b",
+    "at": 36.55,
     "text": "Everyone shares one timer, [pause] and chat only opens on the break."
   },
   {
+    "id": "v10c",
+    "at": 41.4,
+    "text": "Say hi, compare notes, [pause] then start the next block together."
+  },
+  {
     "id": "v11",
-    "at": 46.0,
+    "at": 46.1,
     "text": "Same workload. [pause] Better way through it."
   },
   {

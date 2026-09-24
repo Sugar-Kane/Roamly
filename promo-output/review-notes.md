@@ -193,3 +193,45 @@ Success test, pass 5 (both formats):
 |---|---|---|---|---|
 | `roamlyflow-promo-vertical.mp4` | 86 MB | 1080×1920, 60 fps, H.264 High, yuv420p/bt709, 60.00 s | AAC-LC 48 kHz stereo | −14.01 LUFS, −1.40 dBTP |
 | `roamlyflow-promo-wide.mp4` | 86 MB | 1920×1080, 60 fps, H.264 High, yuv420p/bt709, 60.00 s | AAC-LC 48 kHz stereo | −14.01 LUFS, −1.40 dBTP |
+
+## Pass 6: Rooms beat cut to the voice, and the feature called out on screen
+Client note: "time the group rooms transitioned properly with the voice and emphasize that feature better".
+Problems in pass 5:
+- The lobby (33.3–35.0 s) played with no VO, and "And you don't have to do it alone" only started after
+  the room was already open.
+- The break hit at 40.0 s while the VO was still on "…and chat only opens on the…". The word "break"
+  landed about 1.5 s late.
+- 41.8–46.0 s had no VO over the break chat, which is the feature's payoff.
+- The vertical break layout lifted the room above the safe band (title at about y 145).
+
+Changes:
+- **VO rewritten for the beat.** Three lines replace v09b/v10: v09c "And you don't have to do it alone. Join a
+  study room." · v10b "Everyone shares one timer, and chat only opens on the break." · v10c "Say hi, compare notes,
+  then start the next block together." (The last one paraphrases production's "How rooms work" step 3.)
+- **Cut to the words.** The lines were transcribed with word timestamps, and each event sits on its word:
+  - "Join" → the Join tap (35.2).
+  - "Everyone" → the ring around the members (36.7).
+  - "one timer" → the digits pulse amber (37.6).
+  - "chat" → the chat card lands, locked (39.2).
+  - "break" → SHORT BREAK, confetti, chat unlocks (40.85).
+  - "hi" / "notes" / "next block" → one message each (41.5 / 42.2 / 43.5).
+- **Emphasis.**
+  - Four taped callouts: "real students, studying live", "one timer for everyone", "chat stays locked while you
+    focus", "break = chat time ✓".
+  - Before the chat arrives, the room sits alone, centred and larger.
+  - The chat card flashes green when it opens.
+- **Safe area.** On the break in vertical, the room and chat scale down together, so they fit inside y 250–1520.
+- The payoff moves 0.3 s later (45.3 s), and v11 moves to 46.14 s.
+
+Success test re-check: Q3 and Q4 get stronger. By 45 s a viewer can say what a room is (a live, shared timer
+with strangers, where chat is locked during focus and opens on the break). No other answers change: **all yes**.
+
+Checked on the encoded MP4s (sheet of 33–46.5 s at 2 fps, both formats): every event lands on its word, the callouts
+wipe on in order, and vertical stays inside y 250–1520 through the break.
+
+| File | Size | Video | Audio | Loudness (from the MP4) |
+|---|---|---|---|---|
+| `roamlyflow-promo-vertical.mp4` | 86 MB | 1080×1920, 60 fps, H.264 High, 60.00 s | AAC-LC 48 kHz stereo | −13.98 LUFS, −1.36 dBTP |
+| `roamlyflow-promo-wide.mp4` | 86 MB | 1920×1080, 60 fps, H.264 High, 60.00 s | AAC-LC 48 kHz stereo | −13.98 LUFS, −1.36 dBTP |
+
+Silence beat 10.00–10.62 s: −71.2 dBFS RMS.

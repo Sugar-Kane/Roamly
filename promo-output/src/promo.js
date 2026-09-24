@@ -67,7 +67,9 @@ const T = {
   freeze: 10.0, line0: 10.625, line1: 12.5, logo: 12.5, word: 12.85,
   unfold: 15.0, tasks: 17.5, upFly: 17.9, upDrop: 18.9, upRead: 19.45, upDone: 21.3, method: 23.3, flip: 24.0, start: 25.0,
   block1: 28.8, resume1: 29.3, breakEnd: 32.2,
-  room: 33.0, join: 34.6, roomIn: 35.0, lapse0: 38.6, rbreak: 40.0, payoff: 45.0, rw: [46.3, 47.6, 48.8], cta: 50.0, tagA: 50.7, tagB: 52.45, ring: 52.3, final: 55.0, end: 60,
+  // group session: cut to the VO words (v09c "…Join a study room." @33.0, v10b "Everyone shares one timer, …the break." @36.55, v10c @41.4)
+  room: 33.0, join: 35.2, roomIn: 35.6, rEvery: 36.7, rTimer: 37.6, rChat: 39.2, lapse0: 39.7, rbreak: 40.85, rMsgs: [41.5, 42.2, 43.5],
+  payoff: 45.3, rw: [46.6, 47.9, 49.1], cta: 50.0, tagA: 50.7, tagB: 52.45, ring: 52.3, final: 55.0, end: 60,
 };
 
 // SFX cue sheet (consumed by tools/build-audio.py). id → synth recipe name.
@@ -610,10 +612,16 @@ function layoutUI() {
   MORPH.lecture = { t0: T.upFly, t1: T.upDrop - 0.28, from: V ? P(760, 400, 0, .5) : P(1200, 200, 0, .5), hover: V ? P(90, 170, 5, .9) : P(560, 200, 6, .75), to: P(bx, by, 0, .06) };
   // lobby + room chat layout
   LAY.lobbyH = UI.lobby.el.offsetHeight;
-  LAY.lobby = V ? { x: 0, y: -60, s: Math.min(2.05, 1240 / LAY.lobbyH) } : { x: 0, y: 0, s: Math.min(1.45, 960 / LAY.lobbyH) };
+  LAY.lobby = V ? { x: 0, y: 15, s: Math.min(2.05, 1090 / LAY.lobbyH) } : { x: 0, y: 0, s: Math.min(1.45, 960 / LAY.lobbyH) };
   UI.room.msgs.forEach(m => (m.style.display = 'block')); UI.room.empty.style.display = 'none'; LAY.rchatOpenH = UI.room.chat.offsetHeight;
   UI.room.msgs.forEach(m => (m.style.display = 'none')); UI.room.empty.style.display = 'block';
-  if (V) LAY.rchat.yBreak = 560 - LAY.rchatOpenH * LAY.rchat.s / 2 + 40;
+  // vertical break: the room shrinks so the open chat fits under it inside the safe band (y -710…560)
+  // (the camera is pushed in ~8% here, so the target band is a little inside -710…560)
+  // before the chat lands the room sits alone, centred and larger
+  LAY.roomSolo = V ? { x: 0, y: -120, s: Math.min(2.2, 940 / LAY.roomH) } : { x: 0, y: -10, s: LAY.room.s };
+  if (V) { const rs = 1.4, cs = 1.45, top = -655; LAY.roomB = { x: 0, y: top + LAY.roomH * rs / 2, s: rs };
+    LAY.rchatB = { x: 0, y: top + LAY.roomH * rs + 24 + LAY.rchatOpenH * cs / 2, s: cs }; }
+  else { LAY.roomB = LAY.room; LAY.rchatB = LAY.rchat; }
 }
 
 // ------------------------------------------------------------------ camera
@@ -735,6 +743,7 @@ function renderAt(t) {
 
   // ---------- thoughts
   renderThoughts(t, tj);
+  renderNotes(t);
   // ---------- app UI
   renderUI(t);
   // ---------- HUD (CTA)
@@ -754,6 +763,35 @@ function renderAt(t) {
 // world position of the tasks-card header logo / word (for the match cut)
 function headerLogoWorld() { const s = LAY.tasks.s; return { x: LAY.tasks.x + (-LAY.tasksW / 2 + 18 + 17) * s, y: LAY.tasks.top + (18 + 17) * s, s: (34 * s) / (INK.tileSide) }; }
 function headerWordWorld() { const s = LAY.tasks.s; const hw = UI.tasks.word.offsetWidth; const wd = INK.word.offsetWidth || 800; return { x: LAY.tasks.x + (-LAY.tasksW / 2 + 18 + 34 + 10 + hw / 2) * s, y: LAY.tasks.top + (18 + 17) * s, s: (hw * s) / (wd * 0.94) }; }
+
+// group-session callouts: taped handwritten notes that point at what the VO is naming
+const NOTES = [];
+function note(txt, t0, t1, pos, seed) {
+  const wrap = $('div', 'abs', topL);
+  const strip = $('div', 'thought shadowwrap', wrap, `<div class="hl"></div><div class="txt">${txt}</div>`);
+  strip.style.position = 'relative'; strip.style.display = 'inline-block'; strip.style.background = '#fff7cf';
+  strip.style.fontSize = L(60, 50) + 'px'; strip.style.textAlign = 'center'; strip.style.clipPath = torn(seed, 6);
+  NOTES.push({ wrap, strip, txt: strip.querySelector('.txt'), hl: strip.querySelector('.hl'), t0, t1, pos });
+}
+function buildNotes() {
+  const roomBot = () => LAY.room.y + LAY.roomH * LAY.room.s / 2, chatTop = () => LAY.rchat.y - LAY.rchatH * LAY.rchat.s / 2;
+  note(V ? 'real students, studying live ↓' : 'real students,<br>studying live →', T.room + 0.6, T.join + 0.1, () => V ? { x: 0, y: LAY.lobby.y - LAY.lobbyH * LAY.lobby.s / 2 - 60, r: -2, s: 1 } : { x: -600, y: -160, r: -3, s: 1 }, 31);
+  note(V ? 'one timer for everyone ↑' : 'one timer<br>for everyone →', T.rTimer, T.rChat - 0.2, () => V ? { x: 40, y: LAY.roomSolo.y + LAY.roomH * LAY.roomSolo.s / 2 + 55, r: -2, s: 1 } : { x: -620, y: -40, r: -3, s: 1 }, 32);
+  note(V ? 'chat stays locked while you focus ↓' : 'chat stays locked<br>while you focus ↓', T.rChat + 0.15, T.rbreak, () => V ? { x: 0, y: (roomBot() + chatTop()) / 2 + 10, r: 2, s: 1 } : { x: LAY.rchat.x, y: chatTop() - 95, r: 2, s: 1 }, 33);
+  note(V ? 'break = chat time ✓' : 'break = chat time ✓ ↓', T.rbreak + 0.2, T.payoff - 0.5, () => V ? { x: 190, y: LAY.roomB.y + LAY.roomH * LAY.roomB.s / 2 - 30, r: 4, s: 1 } : { x: LAY.rchat.x, y: LAY.rchat.y - LAY.rchatOpenH * LAY.rchat.s / 2 - 70, r: -2, s: 1 }, 34);
+}
+function renderNotes(t) {
+  NOTES.forEach(n => {
+    const vis = t >= n.t0 && t < n.t1;
+    if (!vis) { n.wrap.style.visibility = 'hidden'; n.wrap.style.opacity = 0; return; }
+    const w = n.strip.offsetWidth, h = n.strip.offsetHeight, p = n.pos();
+    const k = E.outBack(prog(t, n.t0, n.t0 + 0.3)), out = prog(t, n.t1 - 0.2, n.t1);
+    n.wrap.style.width = w + 'px'; n.wrap.style.height = h + 'px';
+    place(n.wrap, { x: p.x, y: p.y + (1 - k) * 24 + out * 20, r: p.r + (1 - k) * 4, s: p.s * (0.9 + 0.1 * k), o: clamp(k * 1.5) * (1 - out) }, w, h);
+    n.txt.style.clipPath = `inset(-20% ${((1 - prog(t, n.t0 + 0.05, n.t0 + 0.65)) * 100).toFixed(2)}% -20% 0)`;
+    n.hl.style.transform = `scaleX(${E.outCubic(prog(t, n.t0 + 0.45, n.t0 + 0.85)).toFixed(3)})`;
+  });
+}
 
 function renderThoughts(t, tj) {
   const defs = V ? [[-10, -650, -3, 1], [40, -300, 3, 1], [0, 330, -2, 1]] : [[-380, -440, -3, .92], [430, -410, 3, .92], [20, 400, -2, .95]];
@@ -932,10 +970,16 @@ function renderUI(t) {
     const toPhone = E.inOutCubic(prog(t, T.payoff - 0.45, T.payoff));
     const vis = t >= T.roomIn && t < T.payoff ? 1 : 0;
     const brk = t >= T.rbreak;
-    const lift = V ? E.inOutCubic(prog(t, T.rbreak - 0.1, T.rbreak + 0.5)) * -150 : 0;
-    const st = { x: lerp(Lr.x, LAY.pcore.x, toPhone), y: lerp(Lr.y + lift, LAY.pcore.y, toPhone), s: lerp(Lr.s, LAY.pcore.s * 0.9, toPhone), o: vis * (1 - prog(t, T.payoff - 0.15, T.payoff)) };
+    const bk = E.inOutCubic(prog(t, T.rbreak - 0.1, T.rbreak + 0.5));
+    const sk = E.inOutCubic(prog(t, T.rChat - 0.25, T.rChat + 0.3)), Ls = LAY.roomSolo;
+    const R0 = { x: lerp(Ls.x, Lr.x, sk), y: lerp(Ls.y, Lr.y, sk), s: lerp(Ls.s, Lr.s, sk) };
+    const Rb = { x: lerp(R0.x, LAY.roomB.x, bk), y: lerp(R0.y, LAY.roomB.y, bk), s: lerp(R0.s, LAY.roomB.s, bk) };
+    // "one timer": a small pulse on the shared digits as the VO says it
+    const pulse = 1 + 0.025 * Math.sin(Math.PI * prog(t, T.rTimer, T.rTimer + 0.45));
+    const st = { x: lerp(Rb.x, LAY.pcore.x, toPhone), y: lerp(Rb.y, LAY.pcore.y, toPhone), s: lerp(Rb.s * pulse, LAY.pcore.s * 0.9, toPhone), o: vis * (1 - prog(t, T.payoff - 0.15, T.payoff)) };
     place(R.el, st, 390, rh);
     R.el.style.transform += ` perspective(1400px) rotateY(${((1 - inT) * 90).toFixed(2)}deg)`;
+    R.dig.style.color = t >= T.rTimer && t < T.rTimer + 0.8 ? `color-mix(in srgb, #E8A33D ${(100 * Math.sin(Math.PI * prog(t, T.rTimer, T.rTimer + 0.8))).toFixed(0)}%, currentColor)` : '';
     // shared timer: live seconds, then a time-lapse to the break
     const live = 1868 - Math.floor(Math.max(0, t - T.roomIn));
     let secs = live, total = 3000;
@@ -950,16 +994,20 @@ function renderUI(t) {
     if (!R.ring && R.chipsBox.offsetWidth) { const bx = R.chipsBox.offsetLeft, by = R.chipsBox.offsetTop, bw = R.chipsBox.offsetWidth, bh2 = R.chipsBox.offsetHeight;
       const pts = []; for (let k = 0; k <= 64; k++) { const a = -2.2 + k / 64 * 6.9; pts.push([bx + bw / 2 + Math.cos(a) * (bw / 2 + 10) * (1 + k * 0.0015), by + bh2 / 2 + Math.sin(a) * (bh2 / 2 + 12)]); }
       R.ring = inkPath(R.svg, toD(wobble(pts, 1.2, 99)), '#E8A33D', 3.2); }
-    if (R.ring) reveal(R.ring, prog(t, T.roomIn + 1.45, T.roomIn + 2.0) * (t < T.lapse0 ? 1 : 1 - prog(t, T.lapse0, T.lapse0 + 0.3)));
+    if (R.ring) reveal(R.ring, prog(t, T.rEvery, T.rEvery + 0.55) * (t < T.lapse0 ? 1 : 1 - prog(t, T.lapse0, T.lapse0 + 0.3)));
     // break-time chat: locked during focus, opens on the break
     show(R.lock, brk ? 0 : 1); R.lock.style.display = brk ? 'none' : 'inline-flex'; R.open.style.display = brk ? 'inline-flex' : 'none';
-    R.empty.style.display = brk && t >= T.rbreak + 0.45 ? 'none' : 'block';
-    R.msgs.forEach((m, i) => { const t0 = T.rbreak + 0.45 + i * 0.5; const k = E.outBack(prog(t, t0, t0 + 0.3)); m.style.display = t >= t0 ? 'block' : 'none'; m.style.opacity = clamp(k * 1.4).toFixed(3); m.style.transform = `translateY(${((1 - k) * 14).toFixed(1)}px) scale(${(0.92 + 0.08 * k).toFixed(3)})`; });
+    R.empty.style.display = brk && t >= T.rMsgs[0] ? 'none' : 'block';
+    R.msgs.forEach((m, i) => { const t0 = T.rMsgs[i]; const k = E.outBack(prog(t, t0, t0 + 0.3)); m.style.display = t >= t0 ? 'block' : 'none'; m.style.opacity = clamp(k * 1.4).toFixed(3); m.style.transform = `translateY(${((1 - k) * 14).toFixed(1)}px) scale(${(0.92 + 0.08 * k).toFixed(3)})`; });
     setText(R.inp, brk ? 'Message the room…' : `Chat opens in ${mmss(secs)}. Keep focusing`);
-    const cin = E.outCubic(prog(t, T.roomIn + 1.9, T.roomIn + 2.3));
-    const cy2 = V ? lerp(LAY.rchat.y, LAY.rchat.yBreak, E.inOutCubic(prog(t, T.rbreak - 0.1, T.rbreak + 0.5))) : LAY.rchat.y;
+    const cin = E.outBack(prog(t, T.rChat, T.rChat + 0.4));
+    // chat is top-anchored so it grows downward as messages arrive
+    const Cs = lerp(LAY.rchat.s, LAY.rchatB.s, bk), Ctop = lerp(LAY.rchat.y - LAY.rchatH * LAY.rchat.s / 2, LAY.rchatB.y - LAY.rchatOpenH * LAY.rchatB.s / 2, bk);
+    // green flash on the chat card the moment it opens
+    const glow = Math.sin(Math.PI * prog(t, T.rbreak, T.rbreak + 0.9));
+    R.chat.style.boxShadow = glow > 0 ? `0 0 0 ${(5 * glow).toFixed(1)}px hsl(var(--roamly-green) / ${(0.55 * glow).toFixed(2)})` : '';
     const ch = R.chat.offsetHeight;
-    place(R.chat, { x: LAY.rchat.x, y: cy2 + (1 - cin) * 60 + (V ? 0 : 0), s: LAY.rchat.s, r: V ? 1 : -1, o: cin * vis * (1 - prog(t, T.payoff - 0.75, T.payoff - 0.5)) }, 390, ch);
+    place(R.chat, { x: lerp(LAY.rchat.x, LAY.rchatB.x, bk), y: Ctop + ch * Cs / 2 + (1 - cin) * 80, s: Cs * (0.9 + 0.1 * cin), r: V ? 1 : -1, o: clamp(cin * 1.5) * vis * (1 - prog(t, T.payoff - 0.75, T.payoff - 0.5)) }, 390, ch);
   }
   // ---------- analytics card on payoff
   const A = UI.an; const La = LAY.an; const ah = LAY.anH;
@@ -1091,10 +1139,11 @@ function buildCues() {
   cue(T.room, 'pageTurn', .9); cue(T.room + 0.3, 'pageTurn', .5);
   cue(T.join, 'uiTap', .9); cue(T.join + 0.12, 'pageTurn', .7); cue(T.roomIn, 'pageTurn', .45);
   ROOM_JOIN.forEach((s, i) => cue(T.roomIn + s, 'pop', .45 + (i % 3) * .08));
-  cue(T.roomIn + 1.45, 'pencil', .6, { dur: .55 }); cue(T.roomIn + 1.9, 'sheet', .4);
+  cue(T.rEvery, 'pencil', .6, { dur: .55 }); cue(T.rChat, 'sheet', .5);
+  NOTES.forEach(n => cue(n.t0, 'pencil', .55, { dur: .5 }));
   cue(T.lapse0, 'riser', .45, { dur: T.rbreak - T.lapse0 });
   cue(T.rbreak, 'chime', .9); cue(T.rbreak + 0.02, 'confetti', .5);
-  [0, 1, 2].forEach(i => cue(T.rbreak + 0.45 + i * 0.5, 'ping2', .45));
+  T.rMsgs.forEach(m => cue(m, 'ping2', .5));
   cue(T.payoff - 0.35, 'whooshSoft', .6);
   cue(T.payoff, 'whoosh', .7); [0.3, 0.45, 0.62, 0.8, 1.0].forEach((s, i) => cue(T.payoff + s + .5, 'settle', .45 + (i % 2) * .1));
   cue(T.payoff + 1.05, 'paperSlap', .6); cue(T.payoff + 1.1, 'tape', .6);
@@ -1117,7 +1166,7 @@ async function boot() {
   thought('Did I actually learn that?', false, '1 of 5 done ✓');
   thought('Wait… I’ve been studying<br>for THREE HOURS?', true, '75 min. on purpose.');
   buildUI(); buildInk(); buildHUD();
-  layoutUI(); buildTracks(); buildCues();
+  layoutUI(); buildNotes(); buildTracks(); buildCues();
   // pre-layout: render a few times so offsets settle
   renderAt(0); renderAt(30); renderAt(0);
 }
