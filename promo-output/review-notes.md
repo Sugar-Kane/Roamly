@@ -101,8 +101,8 @@ countdowns need an account, so the calendar stays a paper prop only).
 ## Audio measurements (final mix, `audio/mix.wav`, ffmpeg loudnorm analysis)
 | Metric | Target | Measured |
 |---|---|---|
-| Integrated loudness | −14 LUFS | **−13.99 LUFS** |
-| True peak | < −1 dBTP | **−1.26 dBTP** |
+| Integrated loudness | −14 LUFS | **−13.99 LUFS** (pass 3); **−14.01 LUFS** final, with Rooms |
+| True peak | < −1 dBTP | **−1.26 dBTP** (pass 3); **−1.60 dBTP** final |
 | Loudness range | — | 7.4 LU |
 | Music duck under VO | 8–10 dB | **9.0 dB** (60 ms attack / 180 ms hold / 350 ms release) |
 | Silence beat 10.00–10.62 s (0.62 s) | near-silent ≥ 0.5 s | **−74.2 dBFS RMS, −62.0 dBFS peak** |
@@ -123,3 +123,22 @@ Things only a human listen can confirm:
 - The pronunciation of "Roamly". The line is sent with IPA `/ˈroʊmli/`. STT transcribes it as "Romley",
   but it does the same for an unambiguous "Roamlee" spelling, so this looks like STT spelling, not a mispronunciation.
 - The balance of the synthesized SFX against the music. Levels were set by measurement, not by ear.
+
+## Pass 4: group sessions (Rooms) added, re-rendered (`review/sheet-*-final.jpg`)
+The client asked to include group sessions. The beat sits at 40.0–43.6 s, with the desk payoff moved to 43.6–50 s.
+- **Source of the room UI.** Logging in with the client's test account hit Cloudflare Turnstile (verified
+  server-side by Supabase). I didn't try to get around it. At the client's choice, the in-room screens were
+  rendered from the production `RoomsLive` component itself (`room-harness/`), with the real always-on room
+  data (read-only query) and fictional member names. See `ref/product-notes.md`.
+- Checked on the encoded MP4s:
+  - 40.0 s: the Focus-mode card page-turns into Deep Work Hall.
+  - 40.55–41.66 s: eight member chips pop in, under VO v09b (40.45–41.98 s).
+  - 41.35 s: an amber ring draws around the group.
+  - 41.9 s: the locked "Break-time chat · Opens at break" card arrives.
+  - 43.15–43.6 s: the room shrinks into the payoff phone.
+- Payoff VO moved to 44.07 / 47.16 / 48.33 s. The rewrites follow at 45.0 / 47.3 / 48.5 s, and the last VO line
+  ends at 49.82 s, before the CTA act.
+- Success test re-check. Q3 and Q4 are stronger: a viewer now also sees that you can study *with* people on one
+  shared timer, which a plain Pomodoro timer can't do. The other answers are unchanged: **all yes**.
+- Final measurements (both MP4s): 60.00 s, 60 fps, H.264 High, AAC 48 kHz. **−14.01 LUFS, −1.60 dBTP**.
+  Silence beat: −74.6 dBFS RMS.

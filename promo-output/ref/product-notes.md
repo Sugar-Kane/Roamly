@@ -90,8 +90,26 @@ back without pressing Start."). SESSION ENDING: Completion sound, Browser notifi
 Streak `1 day`, Best day (7d) `Today 75m`. "Focus minutes by day — Your last 7 days." bar chart.
 "Guest analytics stay in this browser only." Premium "Deeper insights" section (not used).
 
+## Rooms: group sessions (used in the payoff)
+- Signed out (observed on production, `ref/17-rooms*.png`, `ref/28-rooms-how-it-works.png`): "Rooms: Focus
+  alongside other PA students in real time." Guests can browse only. "How rooms work", verbatim:
+  1. "With an account, pick a room and hit Join. The timer inside is already running, and everyone in the room shares it."
+  2. "Focus together in silence. Music plays if you want it; chat stays locked so nobody can distract you."
+  3. "When the break hits, chat and voice open. Say hi, compare notes, then the next focus block starts automatically."
+  4. "Premium members can host public or private rooms…" and "Always-on rooms never stop, so there's always one to drop into."
+- **In-room screens** (`ref/30-room-lobby-mobile.png`, `ref/31-room-{focus,break}-{mobile,desktop}[-full].png`,
+  `ref/rooms-dom.txt`). Signing in with the client's test account was blocked by Cloudflare Turnstile, which is
+  verified server-side by Supabase. At the client's choice, the in-room UI was rendered from the **production source**
+  (`src/RoomsLive.tsx`, which main auto-deploys) in `room-harness/`: the component is unchanged, and only the
+  Supabase client is swapped for an offline stand-in. Room data is production's real always-on rooms, read
+  read-only from the database: The Grind Hall 25/5, **Deep Work Hall 50/10** ("Long 50/10 blocks for dense
+  material"), Sprint Studio 15/3, Marathon Library 90/20. Member usernames and chat lines are **fictional**.
+- In-room copy used: "Deep Work Hall", "Always on · 50/10 rhythm · study anything", Invite / Leave,
+  "FOCUS · BLOCK 2/3", "Everyone in this room sees the same timer.", member chips "alex (you)", Focus mode,
+  Pop out timer, "Break-time chat", "Opens at break · 31:06", "No messages yet. Say hi at the next break.",
+  "Chat unlocks during short and long breaks, then locks again when focus starts."
+
 ## Other (observed, mostly not used)
-- Rooms: "Focus alongside other PA students in real time." — guests can browse only (sign in to join).
 - Garden tab: "Sign in to unlock your Garden" (XP, pets, plants) — account required, so the video only
   shows the **timer's garden widget**, which works for guests.
 - Premium: $3/month or $30/year. No account: tasks 5 on this device, core timer methods,
@@ -105,8 +123,9 @@ Streak `1 day`, Best day (7d) `Today 75m`. "Focus minutes by day — Your last 7
 - Breaks are their own state (On a break, the garden gets watered, optional break reset).
 - Sessions count toward the task; finished tasks are checked off and the next one is up.
 - Daily goal / streak / focus minutes in Analytics.
+- Rooms: study alongside others on one shared timer, with chat locked during focus and open on breaks (free account).
 - **Free; the timer, 5 tasks and basic analytics work with no account.** → "No account needed. Just start."
 
 ## Not to be shown (account-only or not observed)
-Exam countdown UI, Planned study, AI note uploads, Garden XP/pets, joining rooms, voice chat.
+Exam countdown UI, Planned study, AI note uploads, Garden XP/pets, voice chat in use (Premium).
 (An exam date may appear only as a physical paper prop in the collage — never as Roamly UI.)

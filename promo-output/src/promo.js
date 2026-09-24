@@ -67,7 +67,7 @@ const T = {
   freeze: 10.0, line0: 10.625, line1: 12.5, logo: 12.5, word: 12.85,
   unfold: 15.0, tasks: 17.5, method: 22.5, flip: 24.0, start: 25.0,
   block1: 30.0, resume1: 30.6, breakEnd: 34.55, resume2: 35.0, block2: 37.5,
-  payoff: 40.0, rw: [42.5, 45.0, 47.35], cta: 50.0, tagA: 50.7, tagB: 52.45, ring: 52.3, final: 55.0, end: 60,
+  room: 40.0, payoff: 43.6, rw: [45.0, 47.3, 48.5], cta: 50.0, tagA: 50.7, tagB: 52.45, ring: 52.3, final: 55.0, end: 60,
 };
 
 // SFX cue sheet (consumed by tools/build-audio.py). id → synth recipe name.
@@ -112,6 +112,11 @@ const I = {
   navGarden: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 21v-9M12 12c0-3 2-5 6-5 0 3-2 5-6 5zM12 14c0-3-2-5-6-5 0 3 2 5 6 5zM7 21h10"/></svg>',
   navAn: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 20h16M7 17V9M12 17V5M17 17v-6"/></svg>',
   crown: '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg>',
+  userPlus: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></svg>',
+  logout: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
+  maximize: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
+  msg: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M21 12a8.5 8.5 0 0 1-12.5 7.5L3 21l1.5-5.5A8.5 8.5 0 1 1 21 12z"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
   moon: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
 };
 const sprout = '<svg viewBox="0 0 40 44" width="30" height="33"><path d="M20 42V22" stroke="#5c8f3a" stroke-width="3" stroke-linecap="round"/><path d="M20 24C20 14 13 9 4 9c0 9 7 15 16 15z" fill="#79b547"/><path d="M20 22c0-9 6-14 15-14 0 8-6 14-15 14z" fill="#95cc5c"/><ellipse cx="20" cy="42" rx="7" ry="2" fill="rgba(40,25,10,.35)"/></svg>';
@@ -275,6 +280,9 @@ function torn(seed, n = 6) { // jagged top/bottom edges
 
 // ------------------------------------------------------------------ APP UI (rebuilt from ref/*.png)
 const UI = {};
+// Group session: production "Deep Work Hall" (always-on, 50/10) — member names are fictional.
+const ROOM_MEMBERS = ['alex', 'maya.r', 'devin', 'sofia_l', 'theo', 'priya', 'jordan.k', 'sam'];
+const ROOM_JOIN = [0.55, 0.78, 0.95, 1.1, 1.24, 1.38, 1.52, 1.66]; // seconds after T.room each chip pops in
 const TASKS = [
   { title: 'Cardio lecture 12: heart failure', subj: 'Cardiology', color: '#CA8A04', est: 2 },
   { title: 'Pharm flashcards: antiarrhythmics', subj: 'Pharmacology', color: '#65A30D', est: 1 },
@@ -358,6 +366,22 @@ function buildUI() {
     <div class="bar"><i style="width:62.5%"></i></div>
     <div class="row" style="margin-top:14px"><span style="font:400 15px Inter;color:hsl(var(--muted-foreground))">Daily goal</span><span class="step"><i>−</i><span>120 min</span><i>+</i></span></div>`;
   UI.an = { el: an, bar: an.querySelector('.bar i'), am: an.querySelector('.am') };
+  // ---------- ROOM (group session) — rebuilt from ref/31-room-*-mobile.png (production RoomsLive, harness-rendered)
+  const rm = $('div', 'abs app appcard', uiL);
+  rm.innerHTML = `<div class="rm-h1">Deep Work Hall</div><div class="rm-sub">Always on · 50/10 rhythm · study anything</div>
+    <div style="display:flex;gap:8px;margin-top:10px"><span class="chip" style="border:1px solid hsl(var(--border));background:hsl(var(--card))">${I.userPlus} Invite</span><span class="chip" style="border:1px solid hsl(var(--border));background:hsl(var(--card))">${I.logout} Leave</span></div>
+    <div class="card rm-card"><div class="rm-lab">FOCUS · BLOCK 2/3</div><div class="rm-dig">31:06</div><div class="rm-bar"><i></i></div>
+      <div class="rm-note">Everyone in this room sees the same timer.</div>
+      <div class="rm-chips">${ROOM_MEMBERS.map((m, i) => `<span class="rm-chip${i === 0 ? ' me' : ''}"><b>${m.slice(0, 2).toUpperCase()}</b>${m}${i === 0 ? ' (you)' : ''}</span>`).join('')}</div>
+      <div class="rm-btns"><span class="btn grad" style="height:44px;padding:0 18px;border-radius:999px">${I.maximize} Focus mode</span><span class="btn ghost" style="height:44px;padding:0 16px;border-radius:999px">${I.pip} Pop out timer</span></div></div>`;
+  const chipsSvg = S('svg', { width: 10, height: 10, style: 'position:absolute;left:0;top:0;overflow:visible;pointer-events:none' }, rm.querySelector('.rm-card'));
+  const rc = $('div', 'abs app appcard', uiL);
+  rc.style.padding = '16px';
+  rc.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="display:flex;align-items:center;gap:7px;font:600 16px Inter">${I.msg} Break-time chat</span>
+      <span class="chip" style="background:hsl(var(--secondary));color:hsl(var(--muted-foreground));font-size:12px">${I.lock} Opens at break · <span class="rcd mono">31:06</span></span></div>
+    <div style="margin-top:10px;border:1px solid hsl(var(--border));border-radius:14px;padding:14px;text-align:center;font:400 13.5px Inter;color:hsl(var(--muted-foreground))">No messages yet. Say hi at the next break.</div>
+    <div style="margin-top:8px;font:400 11.5px/1.4 Inter;color:hsl(var(--muted-foreground))">Chat unlocks during short and long breaks, then locks again when focus starts.</div>`;
+  UI.room = { el: rm, dig: rm.querySelector('.rm-dig'), bar: rm.querySelector('.rm-bar i'), chips: [...rm.querySelectorAll('.rm-chip')], chipsBox: rm.querySelector('.rm-chips'), svg: chipsSvg, chat: rc, cd: rc.querySelector('.rcd') };
   // phone bezel for payoff (behind core)
   UI.bezel = $('div', 'abs bezel', uiL); uiL.insertBefore(UI.bezel, fc);
 }
@@ -540,6 +564,9 @@ function layoutUI() {
   }
   LAY.chromeTop = { x: LAY.core.x, y: 0, s: LAY.core.s };
   // payoff: core becomes a phone on the desk
+  LAY.roomH = UI.room.el.offsetHeight; LAY.rchatH = UI.room.chat.offsetHeight;
+  LAY.room = V ? { x: 0, y: -170, s: Math.min(2.25, 900 / LAY.roomH) } : { x: -200, y: -10, s: Math.min(1.75, 900 / LAY.roomH) };
+  LAY.rchat = V ? { x: 0, y: -170 + LAY.roomH * LAY.room.s / 2 + 40 + LAY.rchatH * 2.0 / 2, s: 2.0 } : { x: 470, y: 60, s: 1.5 };
   LAY.pcore = V ? { x: -190, y: -95, s: 0.9 } : { x: -330, y: -10, s: 0.9 };
   LAY.an = V ? { x: 0, y: 425, s: 1.95 } : { x: 330, y: 335, s: 1.35 };
   // morph targets: centre of each task row inside the tasks card, in world coords
@@ -704,7 +731,7 @@ function renderThoughts(t, tj) {
     const d = defs[i]; const pd = payDefs[i]; const t0 = starts[i];
     const keys = norm([[t0 - 0.001, { x: d[0], y: d[1] + 20, r: d[2] - 4, s: d[3] * 1.1, o: 0 }], [t0 + 0.25, { x: d[0], y: d[1], r: d[2], s: d[3], o: 1 }, E.outBack],
       [10.62 + i * 0.1, { x: d[0], y: d[1], r: d[2], s: d[3] }], [11.2 + i * 0.1, { x: d[0] + (i === 1 ? 700 : -700), y: d[1] - 80, r: d[2] - 15, s: d[3] * .8, o: 0 }, E.inCubic],
-      [T.payoff + 0.8 + i * 0.25, { x: pd[0], y: pd[1] - 40, r: pd[2] + 6, s: pd[3] * 1.15, o: 0 }], [T.payoff + 1.15 + i * 0.25, { x: pd[0], y: pd[1], r: pd[2], s: pd[3], o: 1 }, E.outBack],
+      [T.payoff + 0.45 + i * 0.2, { x: pd[0], y: pd[1] - 40, r: pd[2] + 6, s: pd[3] * 1.15, o: 0 }], [T.payoff + 0.8 + i * 0.2, { x: pd[0], y: pd[1], r: pd[2], s: pd[3], o: 1 }, E.outBack],
       [T.cta, { x: pd[0], y: pd[1], r: pd[2], s: pd[3], o: 1 }], [T.cta + 0.7, { x: pd[0], y: pd[1] + 700, r: pd[2], s: pd[3], o: 0 }, E.inCubic]]);
     let st = sample(keys, t);
     if (t < 11.3) { st.x += vnoise(tj * 1.3, 40 + i) * 3 * prog(tj, 2, 10); st.r += vnoise(tj, 50 + i) * 1.2 * prog(tj, 3, 10); }
@@ -780,20 +807,22 @@ function renderUI(t) {
   // ---------- focus core
   const C = UI.core; const Lc = LAY.core; const fh = LAY.coreH;
   const flipIn = prog(t, T.flip + 0.3, T.flip + 0.62);
-  const pay = E.inOutCubic(prog(t, T.payoff, T.payoff + 1.3));
-  let cst = { x: Lc.x, y: Lc.y, s: Lc.s, o: t >= T.flip + 0.3 && t < T.cta + 0.9 ? 1 : 0 };
+  const pay = t >= T.room + 0.3 ? 1 : 0; // core is hidden during the room beat and returns already docked in the phone
+  const inRoom = t >= T.room + 0.3 && t < T.payoff - 0.05;
+  let cst = { x: Lc.x, y: Lc.y, s: Lc.s, o: t >= T.flip + 0.3 && t < T.cta + 0.9 && !inRoom ? (t >= T.payoff - 0.05 ? prog(t, T.payoff - 0.05, T.payoff + 0.12) : 1) : 0 };
   // vertical: the studying sheet overlaps the bottom half; nudge core up slightly while it's out
   cst = { ...cst, x: lerp(cst.x, LAY.pcore.x, pay), y: lerp(cst.y, LAY.pcore.y, pay), s: lerp(cst.s, LAY.pcore.s, pay) };
   // CTA: phone drops away
   const cOut = E.inCubic(prog(t, T.cta, T.cta + 0.8)); cst.y += cOut * 1200; cst.r = cOut * 8;
   place(C.el, cst, 390, fh);
-  C.el.style.transform += ` perspective(1400px) rotateY(${((1 - E.outCubic(flipIn)) * 90).toFixed(2)}deg)`;
+  const roomTurn = E.inCubic(prog(t, T.room, T.room + 0.3));
+  C.el.style.transform += ` perspective(1400px) rotateY(${((1 - E.outCubic(flipIn)) * 90 + (t < T.room + 0.3 ? roomTurn * -90 : 0)).toFixed(2)}deg)`;
   C.el.style.transformOrigin = '50% 50%';
   C.el.style.borderRadius = lerp(26, 44, pay).toFixed(1) + 'px';
   // bezel
   const bz = UI.bezel; const bw = 390 + 26, bh = fh + 26;
   bz.style.width = bw + 'px'; bz.style.height = bh + 'px';
-  place(bz, { ...cst, o: prog(t, T.payoff + 0.6, T.payoff + 1.2) * (t < T.cta + 0.9 ? 1 : 0) }, bw, bh);
+  place(bz, { ...cst, o: prog(t, T.payoff, T.payoff + 0.3) * (t < T.cta + 0.9 ? 1 : 0) }, bw, bh);
   bz.style.borderRadius = '56px';
   // state machine
   let phase = 'page', dig = 'Start', digits = '50:00', barP = 0, taskI = 0, lab = 'FOCUS', sage = false, rain = 0;
@@ -804,10 +833,10 @@ function renderUI(t) {
   else if (t < T.breakEnd) { digits = mmss(lapse(t, T.resume1 + 0.05, T.breakEnd, 600)); dig = 'Pause'; lab = 'SHORT BREAK'; sage = true; rain = 1; barP = 1 - lapse(t, T.resume1 + 0.05, T.breakEnd, 600) / 600; }
   else if (t < T.resume2) { digits = '50:00'; dig = 'Resume'; }
   else if (t < T.block2) { digits = mmss(lapse(t, T.resume2 + 0.1, T.block2, 3000)); dig = 'Pause'; barP = 1 - lapse(t, T.resume2 + 0.1, T.block2, 3000) / 3000; }
-  else if (t < T.payoff + 0.8) { digits = '50:00'; dig = 'Pause'; taskI = 1; }
-  else { const e = t - (T.payoff + 0.8); digits = mmss(3000 - 24 - e); dig = 'Pause'; taskI = 1; barP = (24 + e) / 3000; }
+  else if (t < T.room) { digits = '50:00'; dig = 'Pause'; taskI = 1; }
+  else { const e = t - T.room; digits = mmss(3000 - 24 - e); dig = 'Pause'; taskI = 1; barP = (24 + e) / 3000; }
   if (t >= T.block2) taskI = 1;
-  if (t >= T.block2 && t < T.payoff + 0.8) { barP = 0; digits = mmss(3000 - Math.max(0, (t - T.block2 - 0.9) * 8)); }
+  if (t >= T.block2 && t < T.room) { barP = 0; digits = mmss(3000 - Math.max(0, (t - T.block2 - 0.9) * 8)); }
   setText(C.dig, digits); setText(C.lab, lab);
   setHTML(C.main, `${dig === 'Pause' ? I.pause : I.play} <span class="ml">${dig}</span>`);
   const isSageBtn = sage;
@@ -849,12 +878,12 @@ function renderUI(t) {
   let so = 0, sy = Ls.y, sx = Ls.x;
   if (V) { // sheet slides over the lower half of the core
     const in1 = E.outCubic(prog(t, 30.55, 31.0)) - E.inCubic(prog(t, 34.2, 34.6));
-    const in2 = E.outCubic(prog(t, 37.25, 37.7)) - E.inCubic(prog(t, T.payoff, T.payoff + .5));
+    const in2 = E.outCubic(prog(t, 37.25, 37.7)) - E.inCubic(prog(t, T.room, T.room + .4));
     const k = Math.max(in1, in2); so = k > 0.001 ? 1 : 0;
     sy = lerp(1200, 640 - sh * Ls.s / 2 + 250, k);
   } else {
-    so = prog(t, T.start + 0.3, T.start + 0.8) * (1 - prog(t, T.payoff, T.payoff + .5));
-    sx = Ls.x + (1 - E.outCubic(prog(t, T.start + 0.3, T.start + 0.9))) * 500 + E.inCubic(prog(t, T.payoff, T.payoff + .6)) * 700;
+    so = prog(t, T.start + 0.3, T.start + 0.8) * (1 - prog(t, T.room, T.room + .4));
+    sx = Ls.x + (1 - E.outCubic(prog(t, T.start + 0.3, T.start + 0.9))) * 500 + E.inCubic(prog(t, T.room, T.room + .5)) * 700;
   }
   place(SD.el, { x: sx, y: sy, s: Ls.s, o: so }, 390, sh);
   const onBreak = t >= T.block1 && t < T.breakEnd;
@@ -876,6 +905,26 @@ function renderUI(t) {
   show(SD.done, lift >= 1 ? prog(t, T.block2 + 0.95, T.block2 + 1.2) : 0);
   SD.done.style.display = lift >= 1 ? 'block' : 'none';
   // streak chip in tasks header? (only after a finished session) — shown in chrome header on payoff not needed
+  // ---------- ROOM: the group session (40.0 → 43.6)
+  { const R = UI.room, Lr = LAY.room, rh = LAY.roomH;
+    const inT = E.outCubic(prog(t, T.room + 0.3, T.room + 0.62));
+    const toPhone = E.inOutCubic(prog(t, T.payoff - 0.45, T.payoff));
+    const vis = t >= T.room + 0.3 && t < T.payoff ? 1 : 0;
+    const st = { x: lerp(Lr.x, LAY.pcore.x, toPhone), y: lerp(Lr.y, LAY.pcore.y, toPhone), s: lerp(Lr.s, LAY.pcore.s * 0.9, toPhone), o: vis * (1 - prog(t, T.payoff - 0.15, T.payoff)) };
+    place(R.el, st, 390, rh);
+    R.el.style.transform += ` perspective(1400px) rotateY(${((1 - inT) * 90).toFixed(2)}deg)`;
+    const secs = 31 * 60 + 6 - Math.floor(Math.max(0, t - (T.room + 0.3)));
+    setText(R.dig, mmss(secs)); setText(R.cd, mmss(secs));
+    R.bar.style.width = ((1 - secs / 3000) * 100).toFixed(2) + '%';
+    R.chips.forEach((c, i) => { const k = E.outBack(prog(t, T.room + ROOM_JOIN[i], T.room + ROOM_JOIN[i] + 0.3)); c.style.opacity = clamp(k * 1.5).toFixed(3); c.style.transform = `scale(${(0.6 + 0.4 * k).toFixed(3)})`; });
+    // hand-drawn ring around the group
+    if (!R.ring && R.chipsBox.offsetWidth) { const bx = R.chipsBox.offsetLeft, by = R.chipsBox.offsetTop, bw = R.chipsBox.offsetWidth, bh2 = R.chipsBox.offsetHeight;
+      const pts = []; for (let k = 0; k <= 64; k++) { const a = -2.2 + k / 64 * 6.9; pts.push([bx + bw / 2 + Math.cos(a) * (bw / 2 + 10) * (1 + k * 0.0015), by + bh2 / 2 + Math.sin(a) * (bh2 / 2 + 12)]); }
+      R.ring = inkPath(R.svg, toD(wobble(pts, 1.2, 99)), '#E8A33D', 3.2); }
+    if (R.ring) reveal(R.ring, prog(t, T.room + 1.35, T.room + 1.9) * (t < T.payoff - 0.45 ? 1 : 0));
+    const cin = E.outCubic(prog(t, T.room + 1.9, T.room + 2.35));
+    place(R.chat, { x: LAY.rchat.x, y: LAY.rchat.y + (1 - cin) * 60, s: LAY.rchat.s, r: V ? 1 : -1, o: cin * vis * (1 - prog(t, T.payoff - 0.5, T.payoff - 0.2)) }, 390, LAY.rchatH);
+  }
   // ---------- analytics card on payoff
   const A = UI.an; const La = LAY.an; const ah = LAY.anH;
   const ain = E.outBack(prog(t, T.payoff + 1.0, T.payoff + 1.6)); const aout = E.inCubic(prog(t, T.cta, T.cta + 0.7));
@@ -1005,7 +1054,12 @@ function buildCues() {
   cue(T.resume1, 'uiTap', .8); cue(T.breakEnd - 0.05, 'chime', .55, { alt: 1 }); cue(T.resume2, 'uiTap', .85);
   cue(T.block2, 'chime', .9); cue(T.block2 + 0.02, 'confetti', .5); cue(T.block2 + 0.35, 'check', .9); cue(T.block2 + 0.9, 'stackThud', .7);
   cue(37.8, 'pop', .5);
-  cue(T.payoff, 'whoosh', .7); [40.3, 40.45, 40.62, 40.8, 41.0].forEach((s, i) => cue(s + .5, 'settle', .45 + (i % 2) * .1));
+  // group session (Rooms)
+  cue(T.room, 'pageTurn', .9); cue(T.room + 0.3, 'pageTurn', .5);
+  ROOM_JOIN.forEach((s, i) => cue(T.room + s, 'pop', .45 + (i % 3) * .08));
+  cue(T.room + 1.35, 'pencil', .6, { dur: .55 }); cue(T.room + 2.2, 'uiTap', .4);
+  cue(T.payoff - 0.35, 'whooshSoft', .6);
+  cue(T.payoff, 'whoosh', .7); [0.3, 0.45, 0.62, 0.8, 1.0].forEach((s, i) => cue(T.payoff + s + .5, 'settle', .45 + (i % 2) * .1));
   cue(T.payoff + 1.05, 'paperSlap', .6); cue(T.payoff + 1.1, 'tape', .6);
   T.rw.forEach(s => { cue(s - 0.05, 'scribble', .8, { dur: .35 }); cue(s + 0.3, 'pencil', .75, { dur: .8 }); });
   cue(T.cta, 'riser', .8, { dur: 2.3 }); cue(T.cta + 0.1, 'whooshUp', .9);

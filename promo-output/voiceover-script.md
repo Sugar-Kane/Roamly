@@ -21,9 +21,10 @@ playful, not a motivational speaker.
 | v07 | 25.28 → 28.54 | Press start, [pause] and everything else falls away. | Start tap. Page chrome, phone and stickies blow off the page, leaving FOCUS MODE. |
 | v08 | 30.38 → 34.31 | Take the break. [pause] Even your garden gets watered. | ON A BREAK: sage UI, rain on the garden ("Watering"), optional break reset. |
 | v09 | 35.39 → 39.97 | Every session counts. [pause] Finish a task, and the next one's already up. | Cardio hits 2/2, gets checked off into "Completed · 1", and Pharm flashcards becomes *Focusing*. |
-| v10 | 41.07 → 43.91 | Same lectures. [pause] Same exam. | Back on the same desk, now organized. The exam is still circled. |
-| v11 | 44.21 → 45.27 | Same workload. | The opening thoughts get struck out and rewritten. |
-| v12 | 45.63 → 47.12 | Just a better way through it. | Analytics: Today 75 / 120 min, 1-day streak. "75 min. on purpose." |
+| v09b | 40.45 → 41.98 | And you don't have to do it alone. | Group session: the Deep Work Hall room, members joining one by one on one shared timer. |
+| v10 | 44.07 → 46.91 | Same lectures. [pause] Same exam. | Back on the same desk, now organized. The exam is still circled. |
+| v11 | 47.16 → 48.22 | Same workload. | The opening thoughts get struck out and rewritten. |
+| v12 | 48.33 → 49.82 | Just a better way through it. | Analytics: Today 75 / 120 min, 1-day streak. "75 min. on purpose." |
 | v13 | 50.75 → 53.93 | Don't just study longer. [pause] Study with flow. | Camera rises. The materials orbit into the logo. DON'T JUST STUDY LONGER. / STUDY WITH FLOW. |
 | v14 | 55.35 → 58.91 | Start your next session free, at roamly flow dot com. | Lockup: Roamly Flow · "Start your next study session free." · "No account needed. Just start." · roamlyflow.com |
 

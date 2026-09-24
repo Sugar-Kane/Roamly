@@ -209,3 +209,18 @@ canvas.full { position: absolute; left: 0; top: 0; pointer-events: none; }
 #preview { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: rgba(20,20,20,.85); color: #eee; font: 13px Inter; z-index: 10; }
 #preview input { flex: 1; }
 #preview a { color: #9cf; }
+
+/* room (group session) — from production RoomsLive */
+.rm-h1 { font: 600 30px/1.1 Fraunces; letter-spacing: -.01em; }
+.rm-sub { font: 400 14px Inter; color: hsl(var(--muted-foreground)); margin-top: 4px; }
+.rm-card { margin-top: 16px; padding: 20px 16px 18px; border-radius: 24px; display: flex; flex-direction: column; align-items: center; position: relative; }
+.rm-lab { font: 500 12px 'IBM Plex Mono'; letter-spacing: .25em; color: hsl(var(--primary)); }
+.rm-dig { font: 500 72px/1.05 Fraunces; letter-spacing: -.01em; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.rm-bar { width: 100%; height: 10px; border-radius: 6px; background: hsl(var(--border)); margin-top: 10px; overflow: hidden; }
+.rm-bar i { display: block; height: 100%; border-radius: 6px; background: hsl(var(--primary)); }
+.rm-note { font: 400 12.5px Inter; color: hsl(var(--muted-foreground)); margin-top: 8px; }
+.rm-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 16px; padding: 0 6px; }
+.rm-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 4px 10px 4px 5px; font: 400 13px Inter; background: hsl(var(--secondary)); color: hsl(var(--foreground)); }
+.rm-chip b { font: 600 9px Inter; text-transform: uppercase; background: hsl(var(--primary) / .15); color: hsl(var(--primary)); border-radius: 999px; padding: 2px 5px; }
+.rm-chip.me { background: hsl(var(--primary) / .1); color: hsl(var(--primary)); }
+.rm-btns { display: flex; gap: 8px; margin-top: 18px; }

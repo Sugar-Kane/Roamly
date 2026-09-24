@@ -12,6 +12,7 @@
 | `voice-samples/` | The 5 xAI voice auditions (the client picked `eve`) |
 | `audio/vo/` | Final VO, one file per line |
 | `tools/` | Render + audio pipeline |
+| `room-harness/` | Renders the production Rooms component offline, with sample data, to capture the in-room screens |
 
 ## Run it locally
 ```bash
@@ -43,3 +44,10 @@ node tools/render-frames.mjs vertical 3 && node tools/render-frames.mjs wide 3
 tools/video-sheet.sh roamlyflow-promo-vertical.mp4 vertical review/sheet-vertical-final.jpg
 ```
 Requires Node 18+, Python 3 with numpy/pillow/imageio-ffmpeg, and Chromium (`CHROMIUM=/path` to override).
+
+## Room screens (group sessions)
+Sign-in is protected by Cloudflare Turnstile, so the in-room UI is captured from the app's own component:
+```bash
+npx vite --config promo-output/room-harness/vite.config.ts     # from the repo root
+node promo-output/room-harness/capture.mjs                     # → promo-output/ref/31-room-*.png
+```
