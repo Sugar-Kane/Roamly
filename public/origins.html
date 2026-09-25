@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Before Olympus | Roamly Flow</title>
+    <meta name="description" content="An animated retelling of the Greek creation myth, from Chaos to the birth of Zeus." />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="theme-color" content="#050508" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Cinzel:wght@500;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050508;
+        --text: #ece6d8;
+        --muted: #a79f8f;
+        --gold: #d9b56a;
+        --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+        --display: "Cinzel", "Trajan Pro", Georgia, serif;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0; background: var(--bg); color: var(--text);
+        font-family: var(--serif); font-size: clamp(1.35rem, 2.6vw, 1.9rem); line-height: 1.5;
+        overflow-x: hidden;
+      }
+      canvas#sky { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: 0; display: block; }
+      .flash { position: fixed; inset: 0; z-index: 1; pointer-events: none; background: #e9ecff; opacity: 0; }
+
+      main { position: relative; z-index: 2; }
+      .scene {
+        min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center;
+        padding: 20vh 16px; text-align: center; gap: 1.4em;
+      }
+      .scene.tall { min-height: 160vh; }
+      .scene p { margin: 0; max-width: 32em; text-shadow: 0 2px 24px rgba(0,0,0,.85); }
+      .scene .big { font-size: 1.45em; font-style: italic; }
+      .scene .whisper { color: var(--muted); font-style: italic; }
+      h1, .name {
+        font-family: var(--display); font-weight: 500; letter-spacing: .18em; text-transform: uppercase; margin: 0;
+      }
+      h1 { font-size: clamp(2.2rem, 8vw, 5.2rem); line-height: 1.1; color: var(--gold); }
+      .name { font-size: clamp(2rem, 7vw, 4.4rem); color: var(--gold); text-shadow: 0 0 40px rgba(217,181,106,.35); }
+      .kicker { font-family: var(--display); font-size: .7em; letter-spacing: .4em; text-transform: uppercase; color: var(--muted); }
+
+      /* line-by-line reveal */
+      .reveal { opacity: 0; transform: translateY(18px); filter: blur(6px);
+        transition: opacity 1.4s ease, transform 1.4s ease, filter 1.4s ease; }
+      .reveal.in { opacity: 1; transform: none; filter: none; }
+
+      .brood { display: flex; flex-wrap: wrap; justify-content: center; gap: .6em 2.2em; font-family: var(--display);
+        font-size: .8em; letter-spacing: .2em; text-transform: uppercase; color: var(--gold); }
+
+      .scroll-cue { position: absolute; bottom: 6vh; left: 50%; transform: translateX(-50%); font-size: .55em;
+        font-family: var(--display); letter-spacing: .35em; color: var(--muted); animation: bob 2.4s ease-in-out infinite; }
+      @keyframes bob { 50% { transform: translate(-50%, 8px); opacity: .5; } }
+
+      /* sickle */
+      .sickle { width: min(220px, 50vw); height: auto; overflow: visible; }
+      .sickle path { fill: none; stroke: #e8e3d6; stroke-width: 5; stroke-linecap: round;
+        stroke-dasharray: 700; stroke-dashoffset: 700; transition: stroke-dashoffset 2.2s cubic-bezier(.7,0,.2,1);
+        filter: drop-shadow(0 0 10px rgba(255,120,80,.55)); }
+      .sickle .handle { stroke: #8a5a34; stroke-width: 9; }
+      .sickle.in path { stroke-dashoffset: 0; }
+
+      /* eye */
+      .eye { width: min(300px, 70vw); height: auto; }
+      .eye .lid { transform-origin: 150px 60px; transform: scaleY(0.04); transition: transform 2.6s cubic-bezier(.6,0,.2,1) .4s; }
+      .eye.in .lid { transform: scaleY(1); }
+      .eye .iris { fill: url(#irisGrad); }
+
+      /* progress rail */
+      nav.rail { position: fixed; right: 14px; top: 50%; transform: translateY(-50%); z-index: 3;
+        display: flex; flex-direction: column; gap: 10px; }
+      nav.rail a { width: 8px; height: 8px; border-radius: 50%; background: rgba(236,230,216,.22); display: block;
+        transition: background .4s, transform .4s; }
+      nav.rail a.on { background: var(--gold); transform: scale(1.5); }
+      nav.rail a:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+      .home { position: fixed; left: 16px; top: 14px; z-index: 3; font-family: var(--display); font-size: .75rem;
+        letter-spacing: .2em; color: var(--muted); text-decoration: none; }
+      .home:hover, .home:focus-visible { color: var(--text); }
+
+      .end-link { font-family: var(--display); font-size: .6em; letter-spacing: .3em; text-transform: uppercase;
+        color: var(--muted); text-decoration: none; border: 1px solid rgba(236,230,216,.25); padding: .8em 1.4em; border-radius: 999px; }
+      .end-link:hover, .end-link:focus-visible { color: var(--text); border-color: var(--gold); }
+
+      @media (max-width: 600px) { nav.rail { right: 6px; } }
+
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        .reveal { opacity: 1; transform: none; filter: none; transition: none; }
+        .sickle path { stroke-dashoffset: 0; transition: none; }
+        .eye .lid { transform: scaleY(1); transition: none; }
+        .scroll-cue { animation: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="sky" aria-hidden="true"></canvas>
+    <div class="flash" aria-hidden="true"></div>
+    <a class="home" href="/">&larr; Roamly</a>
+    <nav class="rail" aria-label="Chapters"></nav>
+
+    <main>
+      <section class="scene" data-mood="chaos" data-label="Chaos" id="chaos" style="position:relative">
+        <p class="kicker reveal">A creation myth</p>
+        <h1 class="reveal">Before Olympus</h1>
+        <p class="whisper reveal">Before Zeus. Before even the sky and the sea&hellip;</p>
+        <p class="big reveal">there was Chaos.</p>
+        <span class="scroll-cue" aria-hidden="true">SCROLL</span>
+      </section>
+
+      <section class="scene tall" data-mood="void" data-label="The Void">
+        <p class="reveal">Not chaos as we know it, but a vast, silent emptiness.</p>
+        <p class="whisper reveal">A darkness without shape, boundary, or time.</p>
+      </section>
+
+      <section class="scene" data-mood="gaia" data-label="Gaia">
+        <p class="reveal">And from that endless void emerged</p>
+        <p class="name reveal">Gaia</p>
+        <p class="reveal">the Earth. Ancient, powerful, and alive.</p>
+      </section>
+
+      <section class="scene" data-mood="uranus" data-label="Uranus">
+        <p class="reveal">From Gaia came</p>
+        <p class="name reveal">Uranus</p>
+        <p class="reveal">the star-filled Sky, stretching himself across the heavens.</p>
+      </section>
+
+      <section class="scene" data-mood="children" data-label="Their children">
+        <p class="reveal">Together, Earth and Sky gave birth to mighty beings:</p>
+        <div class="brood reveal"><span>the Titans</span><span>the Cyclopes</span><span>the Hundred-Handed Ones</span></div>
+      </section>
+
+      <section class="scene tall" data-mood="prison" data-label="The prison">
+        <p class="reveal">But Uranus feared the power of his own children</p>
+        <p class="big reveal">and imprisoned them deep within the Earth.</p>
+      </section>
+
+      <section class="scene" data-mood="grief" data-label="Gaia's plea">
+        <p class="reveal">Gaia, tormented by their suffering, turned to her Titan son,</p>
+        <p class="name reveal">Cronus</p>
+      </section>
+
+      <section class="scene" data-mood="cronus" data-label="The sickle">
+        <svg class="sickle reveal-svg" viewBox="0 0 200 240" aria-hidden="true">
+          <path d="M62 150 C 30 70, 110 0, 190 70 C 140 38, 86 60, 78 150 Z" />
+          <path class="handle" d="M70 156 L 70 236" />
+        </svg>
+        <p class="reveal">Armed with a great sickle, Cronus overthrew his father</p>
+        <p class="big reveal">and seized control of creation.</p>
+      </section>
+
+      <section class="scene tall" data-mood="fear" data-label="The prophecy">
+        <p class="big reveal">But power brought fear.</p>
+        <p class="reveal">A prophecy warned Cronus that one of his own children would overthrow him,</p>
+        <p class="whisper reveal">just as he had overthrown Uranus.</p>
+      </section>
+
+      <section class="scene" data-mood="swallow" data-label="The swallowing">
+        <p class="big reveal">So Cronus swallowed each child at birth.</p>
+      </section>
+
+      <section class="scene tall" data-mood="hush" data-label="One escaped">
+        <p class="big reveal">Until one escaped.</p>
+      </section>
+
+      <section class="scene" data-mood="zeus" data-label="Zeus">
+        <p class="reveal">Hidden away by his mother, a child named</p>
+        <p class="name reveal">Zeus</p>
+        <svg class="eye reveal-svg" viewBox="0 0 300 120" aria-hidden="true">
+          <defs>
+            <radialGradient id="irisGrad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#ffffff" />
+              <stop offset="25%" stop-color="#bfe0ff" />
+              <stop offset="70%" stop-color="#3a78c9" />
+              <stop offset="100%" stop-color="#0c1a33" />
+            </radialGradient>
+            <clipPath id="eyeClip">
+              <path d="M10 60 Q150 -20 290 60 Q150 140 10 60 Z" />
+            </clipPath>
+          </defs>
+          <g class="lid">
+            <path d="M10 60 Q150 -20 290 60 Q150 140 10 60 Z" fill="#0b0d14" stroke="#d9b56a" stroke-width="2" />
+            <g clip-path="url(#eyeClip)">
+              <circle class="iris" cx="150" cy="60" r="38" />
+              <circle cx="150" cy="60" r="12" fill="#02030a" />
+              <circle cx="162" cy="48" r="5" fill="#fff" opacity=".85" />
+            </g>
+          </g>
+        </svg>
+        <p class="big reveal">opened his eyes.</p>
+      </section>
+
+      <section class="scene" data-mood="olympus" data-label="Olympus">
+        <p class="reveal">And soon&hellip;</p>
+        <h1 class="reveal">the age of the Olympian gods would begin.</h1>
+        <p class="reveal" style="margin-top:2em"><a class="end-link" href="#chaos">Return to Chaos</a></p>
+      </section>
+    </main>
+
+    <script>
+      (() => {
+        const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const canvas = document.getElementById("sky");
+        const ctx = canvas.getContext("2d");
+        const flashEl = document.querySelector(".flash");
+        const scenes = [...document.querySelectorAll(".scene")];
+        const rail = document.querySelector("nav.rail");
+
+        // Each mood is a set of targets; the renderer eases the live state toward them.
+        // top/bot: sky gradient colours; stars/motes/earth/ember/gold: 0..1 layer strengths.
+        const MOODS = {
+          chaos:    { top: [5, 5, 8],    bot: [5, 5, 8],    stars: 0,    motes: .35, earth: 0,  ember: 0,   gold: 0,  storm: 0 },
+          void:     { top: [2, 2, 4],    bot: [8, 6, 14],   stars: 0,    motes: .8,  earth: 0,  ember: 0,   gold: 0,  storm: 0 },
+          gaia:     { top: [6, 8, 10],   bot: [34, 46, 26], stars: 0,    motes: .2,  earth: 1,  ember: 0,   gold: .2, storm: 0 },
+          uranus:   { top: [8, 12, 38],  bot: [24, 34, 26], stars: 1,    motes: 0,   earth: .6, ember: 0,   gold: 0,  storm: 0 },
+          children: { top: [14, 12, 40], bot: [40, 34, 22], stars: .9,   motes: 0,   earth: .7, ember: .15, gold: .5, storm: 0 },
+          prison:   { top: [6, 6, 16],   bot: [30, 8, 6],   stars: .35,  motes: 0,   earth: .2, ember: .8,  gold: 0,  storm: 0 },
+          grief:    { top: [10, 10, 20], bot: [36, 30, 30], stars: .4,   motes: .3,  earth: .5, ember: .3,  gold: 0,  storm: 0 },
+          cronus:   { top: [26, 6, 6],   bot: [60, 16, 6],  stars: .2,   motes: 0,   earth: 0,  ember: 1,   gold: .2, storm: 0 },
+          fear:     { top: [6, 4, 8],    bot: [22, 6, 8],   stars: .15,  motes: .5,  earth: 0,  ember: .35, gold: 0,  storm: 0 },
+          swallow:  { top: [2, 1, 2],    bot: [8, 2, 2],    stars: 0,    motes: .2,  earth: 0,  ember: .15, gold: 0,  storm: 0 },
+          hush:     { top: [1, 1, 2],    bot: [2, 2, 4],    stars: 0,    motes: .05, earth: 0,  ember: 0,   gold: 0,  storm: 0 },
+          zeus:     { top: [8, 14, 36],  bot: [20, 30, 60], stars: .6,   motes: 0,   earth: 0,  ember: 0,   gold: .3, storm: 1 },
+          olympus:  { top: [28, 38, 80], bot: [120, 96, 60],stars: .5,   motes: 0,   earth: .3, ember: 0,   gold: 1,  storm: .15 },
+        };
+        const live = structuredClone(MOODS.chaos);
+        let target = MOODS.chaos;
+
+        let W = 0, H = 0, dpr = 1;
+        let stars = [], motes = [], sparks = [];
+        function resize() {
+          dpr = Math.min(window.devicePixelRatio || 1, 2);
+          W = innerWidth; H = innerHeight;
+          canvas.width = W * dpr; canvas.height = H * dpr;
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const n = Math.round((W * H) / 3200);
+          stars = Array.from({ length: n }, () => ({
+            x: Math.random() * W, y: Math.random() * H * 0.85,
+            r: Math.random() * 1.3 + 0.2, tw: Math.random() * Math.PI * 2, s: Math.random() * 0.02 + 0.005,
+            born: Math.random(), // stars appear left-to-right as Uranus "stretches" across the sky
+          }));
+          motes = Array.from({ length: Math.round(n / 3) }, () => ({
+            x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - .5) * .15, vy: (Math.random() - .5) * .15,
+            r: Math.random() * 2 + .5,
+          }));
+          sparks = Array.from({ length: Math.round(n / 4) }, () => newSpark(true));
+        }
+        function newSpark(anyY) {
+          return { x: Math.random() * W, y: anyY ? Math.random() * H : H + 10, vy: -(Math.random() * .8 + .2),
+            vx: (Math.random() - .5) * .3, r: Math.random() * 1.8 + .4, life: Math.random() };
+        }
+
+        const lerp = (a, b, t) => a + (b - a) * t;
+        const rgb = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+
+        let nextBolt = 0, flash = 0, bolt = null;
+        function makeBolt() {
+          const pts = []; let x = W * (0.2 + Math.random() * 0.6), y = 0;
+          while (y < H * (0.55 + Math.random() * 0.3)) { pts.push([x, y]); x += (Math.random() - .5) * 60; y += 20 + Math.random() * 30; }
+          return { pts, life: 1 };
+        }
+
+        function frame(t) {
+          const k = reduced ? 1 : 0.025;
+          for (const key of ["stars", "motes", "earth", "ember", "gold", "storm"]) live[key] = lerp(live[key], target[key], k);
+          for (let i = 0; i < 3; i++) { live.top[i] = lerp(live.top[i], target.top[i], k); live.bot[i] = lerp(live.bot[i], target.bot[i], k); }
+
+          const g = ctx.createLinearGradient(0, 0, 0, H);
+          g.addColorStop(0, rgb(live.top)); g.addColorStop(1, rgb(live.bot));
+          ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+          // Gaia: a warm living glow swelling from below
+          if (live.earth > 0.01) {
+            const pulse = reduced ? 1 : 1 + Math.sin(t / 1800) * 0.06;
+            const rg = ctx.createRadialGradient(W / 2, H * 1.25, 0, W / 2, H * 1.25, Math.max(W, H) * 0.9 * pulse);
+            rg.addColorStop(0, `rgba(120,150,70,${0.55 * live.earth})`);
+            rg.addColorStop(0.45, `rgba(70,90,40,${0.3 * live.earth})`);
+            rg.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+          }
+          // Olympus: golden dawn
+          if (live.gold > 0.01) {
+            const rg = ctx.createRadialGradient(W / 2, H * 0.1, 0, W / 2, H * 0.1, Math.max(W, H) * 0.8);
+            rg.addColorStop(0, `rgba(255,220,150,${0.35 * live.gold})`);
+            rg.addColorStop(1, "rgba(0,0,0,0)");
+            ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+          }
+          // Stars, revealed across the sky from left to right
+          if (live.stars > 0.01) {
+            for (const s of stars) {
+              const vis = Math.max(0, Math.min(1, (live.stars * 1.4 - s.x / W * 0.4 - s.born * 0.3) * 2));
+              if (vis <= 0) continue;
+              if (!reduced) s.tw += s.s;
+              ctx.fillStyle = `rgba(235,238,255,${vis * (0.55 + Math.sin(s.tw) * 0.45)})`;
+              ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+          // The void: faint drifting motes of nothing
+          if (live.motes > 0.01) {
+            for (const m of motes) {
+              if (!reduced) {
+                m.x += m.vx; m.y += m.vy;
+                if (m.x < 0) m.x += W; if (m.x > W) m.x -= W; if (m.y < 0) m.y += H; if (m.y > H) m.y -= H;
+              }
+              ctx.fillStyle = `rgba(150,140,190,${0.18 * live.motes})`;
+              ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+          // Embers rising from the depths of the Earth
+          if (live.ember > 0.01) {
+            for (let i = 0; i < sparks.length; i++) {
+              const p = sparks[i];
+              if (!reduced) { p.x += p.vx; p.y += p.vy; p.life += 0.003; }
+              if (p.y < -10 || p.life > 1) { sparks[i] = newSpark(false); sparks[i].life = 0; continue; }
+              const a = Math.sin(p.life * Math.PI) * live.ember;
+              ctx.fillStyle = `rgba(255,${120 + (p.r * 30) | 0},60,${a * 0.8})`;
+              ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+          // Zeus: distant lightning
+          if (!reduced && live.storm > 0.3 && t > nextBolt) {
+            bolt = makeBolt(); flash = 0.35 * live.storm;
+            nextBolt = t + 2500 + Math.random() * 4000 / live.storm;
+          }
+          if (bolt) {
+            ctx.strokeStyle = `rgba(220,230,255,${bolt.life})`; ctx.lineWidth = 2;
+            ctx.shadowColor = "rgba(160,190,255,.9)"; ctx.shadowBlur = 18;
+            ctx.beginPath(); bolt.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+            ctx.shadowBlur = 0;
+            bolt.life -= 0.06; if (bolt.life <= 0) bolt = null;
+          }
+          flashEl.style.opacity = flash.toFixed(3); flash *= 0.85;
+
+          if (!reduced) requestAnimationFrame(frame);
+        }
+
+        // Chapter rail
+        scenes.forEach((s, i) => {
+          if (!s.id) s.id = "scene-" + i;
+          const a = document.createElement("a");
+          a.href = "#" + s.id; a.setAttribute("aria-label", s.dataset.label || "Chapter " + (i + 1));
+          rail.appendChild(a);
+        });
+        const dots = [...rail.children];
+
+        // The scene nearest the viewport centre sets the mood.
+        const moodObs = new IntersectionObserver((entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            const i = scenes.indexOf(e.target);
+            target = MOODS[e.target.dataset.mood] || target;
+            dots.forEach((d, j) => d.classList.toggle("on", j === i));
+            if (reduced) frame(performance.now());
+          }
+        }, { rootMargin: "-45% 0px -45% 0px" });
+        scenes.forEach((s) => moodObs.observe(s));
+
+        // Lines fade in one after another as they enter.
+        const revealObs = new IntersectionObserver((entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            e.target.classList.add("in");
+            revealObs.unobserve(e.target);
+          }
+        }, { threshold: 0.35 });
+        document.querySelectorAll(".reveal, .reveal-svg").forEach((el) => {
+          const siblings = [...el.parentElement.querySelectorAll(":scope > .reveal, :scope > .reveal-svg")];
+          el.style.transitionDelay = `${siblings.indexOf(el) * 0.45}s`;
+          revealObs.observe(el);
+        });
+        // The eyelid has its own delay; keep the SVG's own reveal instant.
+        document.querySelectorAll(".reveal-svg").forEach((el) => (el.style.transitionDelay = ""));
+
+        addEventListener("resize", () => { resize(); if (reduced) frame(performance.now()); });
+        resize();
+        requestAnimationFrame(frame);
+      })();
+    </script>
+  </body>
+</html>
