@@ -127,6 +127,17 @@
   animation: garden-sway 5.5s ease-in-out infinite;
 }
 
+/* Plants are cropped glyph images (emojiSprite), so they sway from their
+   true base. A faint drop shadow gives them a little volume against the sky;
+   the contact shadow is where the plant meets the dirt, darkest at the stem. */
+.garden-plant { filter: drop-shadow(0.8px 1.2px 0.8px rgba(40, 24, 10, .28)); }
+.garden-plant.garden-sway { transform-origin: 50% 100%; }
+.garden-contact-shadow {
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(20, 10, 2, .55), rgba(20, 10, 2, .22) 55%, transparent);
+  pointer-events: none;
+}
+
 /* While the focus timer runs, growing plants pulse with a soft green glow —
    the garden is visibly "taking in" the study time. A plant that reaches a
    new stage mid-block gets a brief sparkle. */

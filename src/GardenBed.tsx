@@ -21,9 +21,10 @@
 // Live growth is provisional: it banks when the focus block is recorded (a
 // block abandoned early isn't saved, so its growth falls away again).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { fmtMinutes, growthFromMinutes, growthFromSessions, growthLabel, type Growth } from "./petCatalog";
 import type { GardenPlant } from "./gamification";
+import { emojiSprite } from "./emojiSprite";
 
 // Rain streaks. Deterministic offsets keep the shower stable across renders
 // instead of reshuffling every time the timer ticks.
@@ -48,12 +49,12 @@ function fitLayout(count: number, w: number, h: number): Layout | null {
     const cols = Math.max(1, Math.floor(w / (size + 10)));
     const rows = Math.ceil(count / cols);
     const rowH = Math.round(size * 1.4);
-    if (rows * rowH <= h) return { size, cols, rows, rowH, soilH: Math.max(7, Math.round(rowH * 0.3)) };
+    if (rows * rowH <= h) return { size, cols, rows, rowH, soilH: Math.max(9, Math.round(rowH * 0.34)) };
   }
   // Denser than we can honour — use the floor size and let the box scroll.
   const cols = Math.max(1, Math.floor(w / (MIN_PLANT + 10)));
   const rowH = Math.round(MIN_PLANT * 1.4);
-  return { size: MIN_PLANT, cols, rows: Math.ceil(count / cols), rowH, soilH: Math.max(6, Math.round(rowH * 0.3)) };
+  return { size: MIN_PLANT, cols, rows: Math.ceil(count / cols), rowH, soilH: Math.max(7, Math.round(rowH * 0.34)) };
 }
 
 // A plant's growth with the live block folded in.
@@ -65,6 +66,124 @@ export function growthCaption(p: GardenPlant, g: Growth): string {
   if (p.minutes === null) return growthLabel(g.stage);
   if (g.toNext <= 0) return `${growthLabel(g.stage)} · ${fmtMinutes(g.minutes)} grown`;
   return `${growthLabel(g.stage)} · ${fmtMinutes(g.toNext)} to ${growthLabel(g.stage + 1)}`;
+}
+
+// ---- Ground ----
+// Deterministic pseudo-random in [0, 1) from integers, so the dirt's bumps and
+// pebbles are stable between renders (no reshuffling on every timer tick).
+const rnd = (a: number, b = 0) => {
+  const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+// One strip of dirt per row: an uneven top edge with a lighter rim where the
+// light catches it, topsoil that darkens with depth, fine grain from an SVG
+// noise filter (clipped to the strip), a scatter of pebbles and clods, and a
+// wet sheen when it rains.
+function SoilRows({ rows, rowH, soilH, width, wet }: { rows: number; rowH: number; soilH: number; width: number; wet: boolean }) {
+  const uid = useId().replace(/:/g, "");
+  if (width <= 0) return null;
+  const height = rows * rowH;
+  const strips = Array.from({ length: rows }, (_, r) => {
+    const top = r * rowH + (rowH - soilH);
+    const bottom = (r + 1) * rowH;
+    const edge: [number, number][] = [];
+    for (let x = 0; x <= width + 6; x += 6) {
+      const y = top + Math.sin(x * 0.083 + r * 1.7) * 0.7 + Math.sin(x * 0.029 + r * 4.1) * 1.1 + (rnd(x, r) - 0.5) * 0.9;
+      edge.push([Math.min(x, width), y]);
+    }
+    const line = edge.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+    const d = `M0 ${bottom} L${edge.map(([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`).join(" L")} L${width} ${bottom} Z`;
+    const pebbles = Array.from({ length: Math.max(3, Math.floor(width / 22)) }, (_, k) => {
+      const px = (k + rnd(k, r + 9)) * (width / Math.max(3, Math.floor(width / 22)));
+      // Upper rows fade out at the bottom, so keep their pebbles in the solid part.
+      const py = top + soilH * (0.35 + (r === rows - 1 ? 0.55 : 0.3) * rnd(k, r + 3));
+      const rx = 0.7 + rnd(k, r + 5) ** 2 * 2.6; // mostly grit, the odd stone
+      const light = rnd(k, r + 7) > 0.55;
+      return { px, py, rx, ry: rx * (0.55 + rnd(k, r + 11) * 0.25), fill: light ? "#8a7058" : "#2c1a0d", o: light ? 0.75 : 0.6 };
+    });
+    return { top, bottom, d, line, pebbles };
+  });
+  return (
+    <svg className="absolute inset-0" width={width} height={height} aria-hidden="true">
+      <defs>
+        <linearGradient id={`${uid}-soil`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#74502f" />
+          <stop offset="0.3" stopColor="#5b3c23" />
+          <stop offset="1" stopColor="#3a2414" />
+        </linearGradient>
+        {/* Rows above the front one fade out at the bottom, so stacked rows
+            read as terraces rather than shelves with a hard lower edge. */}
+        <linearGradient id={`${uid}-soilfade`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#74502f" />
+          <stop offset="0.3" stopColor="#5b3c23" />
+          <stop offset="0.7" stopColor="#4a2f1b" />
+          <stop offset="1" stopColor="#3a2414" stopOpacity="0" />
+        </linearGradient>
+        {/* Grain: fractal noise, thresholded into dark crumbs and light grit,
+            clipped to the strip's own shape. */}
+        <filter id={`${uid}-grain`} x="0" y="0" width="1" height="1" filterUnits="objectBoundingBox">
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" result="n" />
+          <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.1  0 0 0 0 0.06  0 0 0 0 0.02  3.2 0 0 0 -1.55" result="dark" />
+          <feColorMatrix in="n" type="matrix" values="0 0 0 0 0.52  0 0 0 0 0.4  0 0 0 0 0.28  0 2.8 0 0 -2.05" result="light" />
+          {/* Low-frequency, horizontally stretched noise: damp darker patches
+              and faint layering, so the ground isn't one flat brown. */}
+          <feTurbulence type="fractalNoise" baseFrequency="0.018 0.22" numOctaves="2" seed="11" result="s" />
+          <feColorMatrix in="s" type="matrix" values="0 0 0 0 0.09  0 0 0 0 0.05  0 0 0 0 0.02  1.5 0 0 0 -0.55" result="damp" />
+          <feMerge result="crumbs"><feMergeNode in="damp" /><feMergeNode in="dark" /><feMergeNode in="light" /></feMerge>
+          <feComposite in="crumbs" in2="SourceAlpha" operator="in" />
+        </filter>
+      </defs>
+      {strips.map((st, r) => (
+        <g key={r}>
+          <path d={st.d} fill={`url(#${uid}-${r === rows - 1 ? "soil" : "soilfade"})`} />
+          {/* The grain takes its alpha from this path, so on faded rows it fades too. */}
+          <path d={st.d} fill={r === rows - 1 ? "#000" : `url(#${uid}-soilfade)`} filter={`url(#${uid}-grain)`} />
+          {st.pebbles.map((pb, k) => (
+            <ellipse key={k} cx={pb.px} cy={pb.py} rx={pb.rx} ry={pb.ry} fill={pb.fill} opacity={pb.o} />
+          ))}
+          {/* Lit rim on the crest, and a soft shade just under it. */}
+          <polyline points={st.line} fill="none" stroke="#9b7650" strokeWidth={1.3} strokeLinejoin="round" opacity={0.9} />
+          <polyline points={st.line} fill="none" stroke="#2a180b" strokeWidth={2} opacity={0.18} transform="translate(0 2)" />
+          {/* Rain darkens the dirt (with a soft fade in and out). */}
+          <path d={st.d} fill="#0d0703" style={{ opacity: wet ? 0.28 : 0, transition: "opacity 1.2s" }} />
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+// A small heap of dirt banked up in front of a plant's stem.
+function DirtMound({ width, height, wet, style }: { width: number; height: number; wet: boolean; style: CSSProperties }) {
+  const uid = useId().replace(/:/g, "");
+  const crest = `M0 ${height} Q ${width * 0.2} ${height * 0.3} ${width / 2} ${height * 0.1} Q ${width * 0.8} ${height * 0.3} ${width} ${height}`;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ ...style, overflow: "visible" }} aria-hidden="true">
+      <defs>
+        {/* Lit from the upper left, matching the soil rim; the low edges fade
+            into the ground so the heap has no hard outline. */}
+        <radialGradient id={`${uid}-m`} cx="40%" cy="10%" r="95%">
+          <stop offset="0" stopColor="#87603d" />
+          <stop offset="0.5" stopColor="#64432a" />
+          <stop offset="1" stopColor="#4d321d" />
+        </radialGradient>
+        <linearGradient id={`${uid}-f`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="#fff" stopOpacity="0" />
+          <stop offset="0.18" stopColor="#fff" stopOpacity="1" />
+          <stop offset="0.82" stopColor="#fff" stopOpacity="1" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </linearGradient>
+        <mask id={`${uid}-k`}><rect width={width} height={height} fill={`url(#${uid}-f)`} /></mask>
+      </defs>
+      <g mask={`url(#${uid}-k)`}>
+      <path d={`${crest} Z`} fill={`url(#${uid}-m)`} />
+      <circle cx={width * 0.32} cy={height * 0.62} r={Math.max(0.6, height * 0.09)} fill="#2c1a0d" opacity={0.55} />
+      <circle cx={width * 0.64} cy={height * 0.5} r={Math.max(0.5, height * 0.07)} fill="#8a7058" opacity={0.7} />
+      <circle cx={width * 0.78} cy={height * 0.78} r={Math.max(0.5, height * 0.08)} fill="#2c1a0d" opacity={0.45} />
+      <path d={`${crest} Z`} fill="#0d0703" style={{ opacity: wet ? 0.28 : 0, transition: "opacity 1.2s" }} />
+      </g>
+    </svg>
+  );
 }
 
 const SPARKLE_MS = 2400;
@@ -95,6 +214,8 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
 
   const layout = useMemo(() => fitLayout(plants.length, box.w, box.h), [plants.length, box.w, box.h]);
   const growths = plants.map((p) => plantGrowth(p, liveMinutes));
+  // Cropped glyph images (cached per emoji); null falls back to plain text.
+  const sprites = useMemo(() => plants.map((p) => emojiSprite(p.emoji)), [plants]);
 
   // Sparkle a plant when the live block pushes it up a stage. Only live
   // stage-ups count: a fresh load or a sync just sets the baseline.
@@ -137,24 +258,8 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
       ) : (
         // Bottom-anchored so the bed grows upward from the base of the card.
         <div className="absolute inset-x-0 bottom-0" style={{ height: layout.rows * layout.rowH }}>
-          {/* One soil band per row, so every row is actual ground rather than
-              the single strip at the bottom the old layout had. */}
-          <div className="absolute inset-0" aria-hidden="true" style={{
-            background: `repeating-linear-gradient(180deg,` +
-              `transparent 0 ${layout.rowH - layout.soilH}px,` +
-              `#7a5236 ${layout.rowH - layout.soilH}px ${layout.rowH - layout.soilH * 0.45}px,` +
-              `#573823 ${layout.rowH - layout.soilH * 0.45}px ${layout.rowH}px)`,
-          }} />
-          {/* Furrows and grit, masked to the soil bands — unmasked, the vertical
-              furrow lines painted straight up through the sky. */}
-          <div className="absolute inset-0 opacity-30" aria-hidden="true" style={{
-            backgroundImage:
-              "repeating-linear-gradient(90deg,rgba(0,0,0,.18) 0 2px,transparent 2px 22px)," +
-              "radial-gradient(circle at 22% 40%,rgba(0,0,0,.22) 0 2px,transparent 3px)," +
-              "radial-gradient(circle at 71% 70%,rgba(255,255,255,.12) 0 1.5px,transparent 2px)",
-            WebkitMaskImage: `repeating-linear-gradient(180deg,transparent 0 ${layout.rowH - layout.soilH}px,#000 ${layout.rowH - layout.soilH}px ${layout.rowH}px)`,
-            maskImage: `repeating-linear-gradient(180deg,transparent 0 ${layout.rowH - layout.soilH}px,#000 ${layout.rowH - layout.soilH}px ${layout.rowH}px)`,
-          }} />
+          {/* Real ground: one textured strip of dirt per row (see SoilRows). */}
+          <SoilRows rows={layout.rows} rowH={layout.rowH} soilH={layout.soilH} width={box.w} wet={raining} />
 
           <ul className="absolute inset-0 grid" style={{
             gridTemplateColumns: `repeat(${layout.cols}, minmax(0, 1fr))`,
@@ -171,25 +276,44 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
               // a long empty stretch of bed beside it.
               const lastRowCount = plants.length % layout.cols;
               const startsLastRow = lastRowCount > 0 && i === plants.length - lastRowCount;
+              const sprite = sprites[i];
+              // Cropped sprite: its bottom edge is the bottom of the plant, so
+              // it stands exactly on the soil line instead of floating.
+              const plantW = sprite ? sprite.w * size : size * 0.8;
+              const plantH = sprite ? sprite.h * size : size;
+              // The plant stands on the soil line; the mound in front hides
+              // the cut-off base so it reads as growing out of the dirt.
+              const moundW = Math.max(12, plantW * 0.72);
+              const moundH = Math.max(4, Math.min(layout.soilH * 0.8, moundW * 0.24));
+              const shadowW = Math.max(14, plantW * 0.95);
+              const surface = layout.soilH; // distance from the row's bottom to the soil line
               return (
-                <li key={p.id} className="flex flex-col items-center justify-end"
-                  style={{
-                    paddingBottom: layout.soilH * 0.55,
-                    gridColumnStart: startsLastRow ? Math.floor((layout.cols - lastRowCount) / 2) + 1 : undefined,
-                  }}
+                <li key={p.id} className="relative"
+                  style={{ gridColumnStart: startsLastRow ? Math.floor((layout.cols - lastRowCount) / 2) + 1 : undefined }}
                   title={`${p.name} — ${growthCaption(p, g)}`}>
-                  <span aria-hidden="true" className={`relative ${growing && !full && !reduceMotion ? "garden-growing" : ""}`}>
-                    <span className={`inline-block transition-[font-size] duration-700 ${reduceMotion ? "" : "garden-sway"}`}
-                      style={{ fontSize: `${size}px`, lineHeight: 1, animationDelay: `${(p.id.length % 5) * 0.4}s` }}>
-                      {p.emoji}
-                    </span>
+                  {/* Contact shadow, cast down-right (light from upper left). */}
+                  <span aria-hidden="true" className="garden-contact-shadow absolute left-1/2"
+                    style={{ width: shadowW, height: Math.max(4, shadowW * 0.2), bottom: surface - Math.max(2, shadowW * 0.08), marginLeft: -shadowW / 2 + plantW * 0.08 }} />
+                  <span aria-hidden="true" className={`absolute left-1/2 -translate-x-1/2 ${growing && !full && !reduceMotion ? "garden-growing" : ""}`}
+                    style={{ bottom: surface - 1 }}>
+                    {sprite ? (
+                      <img src={sprite.src} alt="" draggable={false}
+                        className={`garden-plant block max-w-none transition-[width,height] duration-700 ${reduceMotion ? "" : "garden-sway"}`}
+                        style={{ width: plantW, height: plantH, animationDelay: `${(p.id.length % 5) * 0.4}s` }} />
+                    ) : (
+                      <span className={`inline-block transition-[font-size] duration-700 ${reduceMotion ? "" : "garden-sway"}`}
+                        style={{ fontSize: `${size}px`, lineHeight: 1, animationDelay: `${(p.id.length % 5) * 0.4}s` }}>
+                        {p.emoji}
+                      </span>
+                    )}
                     {sparkle[p.id] !== undefined && (
                       <span className={`absolute -right-2 -top-2 text-[11px] ${reduceMotion ? "" : "garden-sparkle"}`}>✨</span>
                     )}
                   </span>
-                  {/* A little mound so each plant looks rooted in its row. */}
-                  <span aria-hidden="true" className="mt-[1px] h-[5px] shrink-0 rounded-[50%] bg-black/30"
-                    style={{ width: `${Math.max(9, size * 0.5)}px` }} />
+                  {/* A little heap of dirt banked up in front of the stem, so the
+                      plant reads as planted rather than set down on top. */}
+                  <DirtMound width={moundW} height={moundH} wet={raining}
+                    style={{ position: "absolute", left: "50%", marginLeft: -moundW / 2, bottom: surface - moundH * 0.55 }} />
                 </li>
               );
             })}
