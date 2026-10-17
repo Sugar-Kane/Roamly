@@ -34,6 +34,7 @@
 import { useEffect, useRef } from "react";
 import { BALL_PLAYERS, PET_ART, PET_GLYPH_FACING, STAGE_THEMES, type AccessorySlot, type PetSpecies } from "./petCatalog";
 import { RIVE_PETS } from "./petRive";
+import { placeFace, placeHat, type WearDraw } from "./petWear";
 
 export type StagePet = { id: string; species: string };
 export type StageAccessory = { slot: AccessorySlot; emoji: string };
@@ -49,6 +50,7 @@ type RiveHandle = {
 
 type Actor = {
   id0: string; // the owning pet id, so actors track active-pet toggles
+  species: string;
   emoji: string;
   riv: RiveHandle | null; // null = emoji rendering
   x: number;
@@ -189,6 +191,7 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         const pad = 24;
         actors.push({
           id0: p.id,
+          species: p.species,
           emoji: petEmoji(p.species),
           // Rive only animates; the static reduce-motion frame stays emoji.
           riv: stateRef.current.reduceMotion ? null : createRiveHandle(p.species as PetSpecies),
@@ -293,6 +296,21 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       ctx!.fillText(toy, ball.x, floor - ball.y);
     }
 
+    // Draw a worn glyph at its fitted spot (pet-local coordinates).
+    function drawWorn(glyph: string, at: WearDraw) {
+      ctx!.save();
+      if (at.rot) {
+        ctx!.translate(at.cx, at.cy);
+        ctx!.rotate(at.rot);
+        ctx!.translate(-at.cx, -at.cy);
+      }
+      ctx!.font = `${at.font.toFixed(2)}px ${EMOJI_FONT}`;
+      ctx!.textAlign = "center";
+      ctx!.textBaseline = "alphabetic";
+      ctx!.fillText(glyph, at.x, at.y);
+      ctx!.restore();
+    }
+
     function drawActor(a: Actor, moving: boolean) {
       const size = petSize();
       const floor = height - 6;
@@ -325,18 +343,28 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         ctx!.fillText(a.emoji, 0, 0);
       }
       // Worn accessories ride the same transform, so they flip and bob with
-      // the pet — a hat sits on the head, shades sit on the eye line.
+      // the pet. Emoji pets use per-species anchors (petWear.ts) so a hat sits
+      // on the head and glasses cover the eyes whatever the glyph's framing;
+      // Rive art (and a missing emoji font) keeps the generic head/eye line.
       const hat = slotEmoji("hat");
       if (hat) {
-        ctx!.font = `${Math.round(size * 0.48)}px ${EMOJI_FONT}`;
-        ctx!.textAlign = "center";
-        ctx!.fillText(hat, 0, -size * 0.82);
+        const at = useRive ? null : placeHat(a.species, a.emoji, hat, size, EMOJI_FONT);
+        if (at) drawWorn(hat, at);
+        else {
+          ctx!.font = `${Math.round(size * 0.48)}px ${EMOJI_FONT}`;
+          ctx!.textAlign = "center";
+          ctx!.fillText(hat, 0, -size * 0.82);
+        }
       }
       const face = slotEmoji("face");
       if (face) {
-        ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
-        ctx!.textAlign = "center";
-        ctx!.fillText(face, 0, -size * 0.42);
+        const at = useRive ? null : placeFace(a.species, a.emoji, face, size, EMOJI_FONT);
+        if (at) drawWorn(face, at);
+        else {
+          ctx!.font = `${Math.round(size * 0.4)}px ${EMOJI_FONT}`;
+          ctx!.textAlign = "center";
+          ctx!.fillText(face, 0, -size * 0.42);
+        }
       }
       ctx!.restore();
       if (a.mode === "sleep") {
