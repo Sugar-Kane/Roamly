@@ -148,6 +148,16 @@
   animation: garden-sparkle 2.4s ease-out forwards;
 }
 
+/* The journey timeline's board: a dark slate with a fine woven texture, so
+   the path and plants pop in light and dark themes alike. */
+.journey-board {
+  background-color: #2f3432;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 1px, transparent 1px 4px),
+    radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.06), transparent 70%);
+}
+
 /* Break-time rain over the garden — the plants are getting watered.
    `top` is animated in percentages of the rain layer, which is exactly the
    sky band above the soil, so a drop always lands ON the dirt line no matter

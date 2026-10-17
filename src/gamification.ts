@@ -15,11 +15,12 @@ import {
 } from "./petCatalog";
 
 export type GamAchievement = { id: string; name: string; hint: string; xp: number; sort: number; earned: boolean; earned_at: string | null };
-export type GamPet = { id: string; species: string; name: string; unlock_sessions: number; sort: number; owned: boolean; is_active: boolean };
+export type GamPet = { id: string; species: string; name: string; unlock_sessions: number; sort: number; owned: boolean; is_active: boolean; earned_at?: string | null };
 export type GamReward = { id: string; kind: RewardKind; name: string; unlock_level: number; meta: { emoji?: string; slot?: AccessorySlot }; sort: number; owned: boolean; is_active: boolean; growth_points: number;
   // Focus minutes since planting. Absent from servers older than the
   // time-based-growth migration, which only report session-count growth_points.
-  growth_minutes?: number };
+  growth_minutes?: number;
+  earned_at?: string | null }; // unlock time (release 19+); absent on older servers and in guest mode
 
 export type Gamification = {
   xp: number;

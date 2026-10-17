@@ -237,7 +237,9 @@ $$;
 revoke execute on function public.sync_my_gamification() from public, anon;
 grant execute on function public.sync_my_gamification() to authenticated;
 
--- ============ read: expose growth_minutes ============
+-- ============ read: expose growth_minutes, and unlock dates for pets/rewards ============
+-- earned_at lets the Garden page's journey timeline place every unlock on the
+-- day it happened (achievements already carried it).
 create or replace function public.get_my_gamification()
 returns jsonb language sql stable security definer set search_path = '' as $$
   with u as (select (select auth.uid()) as uid),
@@ -264,7 +266,8 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       select coalesce(jsonb_agg(jsonb_build_object(
         'id', c.id, 'species', c.species, 'name', c.name,
         'unlock_sessions', c.unlock_sessions, 'sort', c.sort,
-        'owned', up.user_id is not null, 'is_active', coalesce(up.is_active, false)) order by c.sort), '[]'::jsonb)
+        'owned', up.user_id is not null, 'is_active', coalesce(up.is_active, false),
+        'earned_at', up.earned_at) order by c.sort), '[]'::jsonb)
       from public.pet_catalog c
       left join public.user_pets up
         on up.pet_id = c.id and up.user_id = (select uid from u)
@@ -275,7 +278,8 @@ returns jsonb language sql stable security definer set search_path = '' as $$
         'meta', c.meta, 'sort', c.sort,
         'owned', ur.user_id is not null, 'is_active', coalesce(ur.is_active, false),
         'growth_points', coalesce(ur.growth_points, 0),
-        'growth_minutes', coalesce(ur.growth_minutes, 0)) order by c.sort), '[]'::jsonb)
+        'growth_minutes', coalesce(ur.growth_minutes, 0),
+        'earned_at', ur.earned_at) order by c.sort), '[]'::jsonb)
       from public.reward_catalog c
       left join public.user_rewards ur
         on ur.reward_id = c.id and ur.user_id = (select uid from u)

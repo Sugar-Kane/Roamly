@@ -13,6 +13,8 @@ import { Sprout, PawPrint, Trophy, Lock, Check, Star, Sparkles, Flower2 } from "
 import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
 import { GardenBed, growthCaption, plantGrowth } from "./GardenBed";
+import { GardenJourney } from "./GardenJourney";
+import type { FocusSession } from "./streaks";
 import { stageProps, isGrowable, type Gamification, type GamSyncResult, type GardenPlant } from "./gamification";
 import { ACHIEVEMENT_CATALOG, ACHIEVEMENT_CATEGORY_LABEL, ACHIEVEMENT_CATEGORY_ORDER, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, MAX_ACTIVE_PETS, SLOT_HINT, PLANT_STAGE_MINUTES, fmtMinutes, growthFromMinutes, growthFromSessions, growthLabel, stageMinutes, type AchievementCategory, type PetSpecies } from "./petCatalog";
 
@@ -44,7 +46,7 @@ const SECTION_ORDER: AchievementSection[] = [...ACHIEVEMENT_CATEGORY_ORDER, OTHE
 const SECTION_LABEL: Record<AchievementSection, string> = { ...ACHIEVEMENT_CATEGORY_LABEL, [OTHER_SECTION]: "More" };
 const achievementCategory = (id: string): AchievementSection => ACH_CATEGORY.get(id) ?? OTHER_SECTION;
 
-export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, liveMinutes = 0, growing = false, gardenProgressOn = true, onToggleGardenProgress }: {
+export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, liveMinutes = 0, growing = false, gardenProgressOn = true, onToggleGardenProgress, sessions }: {
   gamification: Gamification;
   session: Session | null;
   reduceMotion: boolean;
@@ -58,6 +60,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
   growing?: boolean; // the focus timer is running
   gardenProgressOn?: boolean; // progress bars + live chip on the garden bed (device pref)
   onToggleGardenProgress?: () => void;
+  sessions?: FocusSession[]; // per-day focus history, for the journey timeline
 }) {
   const g = gamification;
   const stage = stageProps(g);
@@ -141,6 +144,9 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
           <p className="mt-3 text-xs text-muted-foreground">Garden hidden. Flip the switch to see what you've grown.</p>
         )}
       </div>
+
+      {/* Journey — every study day and unlock along one winding path */}
+      {sessions && <GardenJourney gamification={g} sessions={sessions} />}
 
       {/* Achievements */}
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">

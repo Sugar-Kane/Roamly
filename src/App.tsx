@@ -1159,7 +1159,8 @@ export default function App() {
                   companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
                   gardenOn={gardenOn} onToggleGarden={toggleGarden}
                   liveMinutes={liveFocusMinutes} growing={gardenGrowing}
-                  gardenProgressOn={gardenProgressOn} onToggleGardenProgress={toggleGardenProgress} />
+                  gardenProgressOn={gardenProgressOn} onToggleGardenProgress={toggleGardenProgress}
+                  sessions={sessions} />
               ) : (
                 <GardenLock onSignIn={onSignIn} />
               )}
