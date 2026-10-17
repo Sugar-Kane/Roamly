@@ -126,6 +126,10 @@ export default function App() {
   // The garden is its own area with its own switch; shown by default.
   const [gardenOn, setGardenOn] = useState(() => loadPref("roamly-garden") !== "0");
   const toggleGarden = () => setGardenOn((v) => { savePref("roamly-garden", v ? "0" : "1"); return !v; });
+  // Growth progress on the garden (per-plant bars + the live "growing" chip).
+  // On by default; a device pref like the garden switch itself.
+  const [gardenProgressOn, setGardenProgressOn] = useState(() => loadPref("roamly-garden-progress") !== "0");
+  const toggleGardenProgress = () => setGardenProgressOn((v) => { savePref("roamly-garden-progress", v ? "0" : "1"); return !v; });
   // Completion confetti is ON by default; opt out per device (persisted).
   const [confettiOn, setConfettiOn] = useState(() => loadPref("roamly-confetti") !== "0");
   const toggleConfetti = () => setConfettiOn((v) => { savePref("roamly-confetti", v ? "0" : "1"); return !v; });
@@ -435,7 +439,7 @@ export default function App() {
     + countUp.elapsedSeconds / 60 + bankingMinutes;
   const gardenGrowing = (timer.running && timer.phase === "focus") || countUp.running;
   const gardenNode = showGarden ? (
-    <GardenBed plants={companionStage.plants} raining={onBreak} liveMinutes={liveFocusMinutes} growing={gardenGrowing} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
+    <GardenBed plants={companionStage.plants} raining={onBreak} liveMinutes={liveFocusMinutes} growing={gardenGrowing} showProgress={gardenProgressOn} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
   ) : null;
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
 
@@ -1154,7 +1158,8 @@ export default function App() {
                   onSignIn={onSignIn} onToggle={onToggleCompanion}
                   companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
                   gardenOn={gardenOn} onToggleGarden={toggleGarden}
-                  liveMinutes={liveFocusMinutes} growing={gardenGrowing} />
+                  liveMinutes={liveFocusMinutes} growing={gardenGrowing}
+                  gardenProgressOn={gardenProgressOn} onToggleGardenProgress={toggleGardenProgress} />
               ) : (
                 <GardenLock onSignIn={onSignIn} />
               )}
@@ -1289,6 +1294,7 @@ export default function App() {
         <CustomizeSession onClose={() => setShowCustomize(false)}
           companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
           gardenOn={gardenOn} onToggleGarden={toggleGarden}
+          gardenProgressOn={gardenProgressOn} onToggleGardenProgress={toggleGardenProgress}
           confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
           autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow}
           alerts={alerts} />

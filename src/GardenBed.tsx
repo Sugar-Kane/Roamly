@@ -69,12 +69,13 @@ export function growthCaption(p: GardenPlant, g: Growth): string {
 
 const SPARKLE_MS = 2400;
 
-export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes = 0, growing = false, className = "" }: {
+export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes = 0, growing = false, showProgress = true, className = "" }: {
   plants: GardenPlant[];
   reduceMotion: boolean;
   raining?: boolean; // breaks water the garden
   liveMinutes?: number; // focus minutes in the block running now, not yet recorded
   growing?: boolean; // the focus timer is running right now
+  showProgress?: boolean; // per-plant progress bars + the live growth chip (user pref, default on)
   className?: string;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -121,6 +122,9 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stage list
   }, [stageKey]);
   const liveShown = Math.floor(Math.max(0, liveMinutes));
+  // The plant closest to its next stage, for the chip's "next stage in" hint.
+  const soonest = growths.reduce<number | null>((min, g, i) =>
+    plants[i]!.minutes !== null && g.toNext > 0 && (min === null || g.toNext < min) ? g.toNext : min, null);
   // Reduced motion still gets the "it's raining" cue, just without falling
   // streaks — an overcast wash and the caption carry the meaning.
   const showStreaks = raining && !reduceMotion;
@@ -167,7 +171,7 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
               // plant visibly grows minute by minute instead of in four jumps.
               const g = growths[i]!;
               const size = layout.size * (0.5 + 0.5 * g.overall);
-              const showBar = p.minutes !== null && layout.size >= 18;
+              const showBar = showProgress && p.minutes !== null && layout.size >= 18;
               const full = g.toNext <= 0 && p.minutes !== null;
               // Centre a partial last row instead of leaving it hard left with
               // a long empty stretch of bed beside it.
@@ -194,7 +198,7 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
                     style={{ width: `${Math.max(9, size * 0.5)}px` }} />
                   {/* Progress to the next stage — the "it's growing" readout. */}
                   {showBar && (
-                    <span aria-hidden="true" className="mt-[2px] h-[4px] shrink-0 overflow-hidden rounded-full bg-black/25"
+                    <span aria-hidden="true" className="mt-[2px] h-[5px] shrink-0 overflow-hidden rounded-full bg-white/35 ring-1 ring-black/20"
                       style={{ width: `${Math.max(16, layout.size * 0.8)}px` }}>
                       <span className={`block h-full rounded-full transition-[width] duration-700 ${full ? "bg-amber-300" : "bg-lime-300"}`}
                         style={{ width: `${(g.progress * 100).toFixed(1)}%` }} />
@@ -225,10 +229,12 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
           Watering 💧
         </span>
       )}
-      {plants.length > 0 && liveShown > 0 && !raining && (
-        <span className="absolute left-2 top-1.5 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-medium text-white/90"
+      {showProgress && plants.length > 0 && liveShown > 0 && !raining && (
+        <span className="absolute left-2 top-1.5 max-w-[calc(100%-1rem)] truncate rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-medium text-white/90"
+          data-testid="garden-live-chip"
           title="Focus time from the block you're in. It's added to your garden when the block is recorded.">
           {growing ? "🌱 Growing" : "⏸ Paused"} · +{fmtMinutes(liveShown)}
+          {soonest !== null && <span className="font-normal text-white/75"> · next stage in {fmtMinutes(Math.ceil(soonest))}</span>}
         </span>
       )}
 

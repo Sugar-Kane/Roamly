@@ -44,7 +44,7 @@ const SECTION_ORDER: AchievementSection[] = [...ACHIEVEMENT_CATEGORY_ORDER, OTHE
 const SECTION_LABEL: Record<AchievementSection, string> = { ...ACHIEVEMENT_CATEGORY_LABEL, [OTHER_SECTION]: "More" };
 const achievementCategory = (id: string): AchievementSection => ACH_CATEGORY.get(id) ?? OTHER_SECTION;
 
-export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, liveMinutes = 0, growing = false }: {
+export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, liveMinutes = 0, growing = false, gardenProgressOn = true, onToggleGardenProgress }: {
   gamification: Gamification;
   session: Session | null;
   reduceMotion: boolean;
@@ -56,6 +56,8 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
   onToggleGarden: () => void;
   liveMinutes?: number; // focus minutes in the running block (not yet recorded)
   growing?: boolean; // the focus timer is running
+  gardenProgressOn?: boolean; // progress bars + live chip on the garden bed (device pref)
+  onToggleGardenProgress?: () => void;
 }) {
   const g = gamification;
   const stage = stageProps(g);
@@ -120,7 +122,13 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
         </div>
         {gardenOn ? (
           <>
-            <GardenBed plants={stage.plants} liveMinutes={liveMinutes} growing={growing} reduceMotion={reduceMotion} className="mt-3 h-40 bg-secondary/30" />
+            <GardenBed plants={stage.plants} liveMinutes={liveMinutes} growing={growing} showProgress={gardenProgressOn} reduceMotion={reduceMotion} className="mt-3 h-40 bg-secondary/30" />
+            {onToggleGardenProgress && (
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-[11px] text-muted-foreground">Show growth progress on the garden (here and on the focus timer)</p>
+                <Switch on={gardenProgressOn} label="Show growth progress on the garden" onToggle={onToggleGardenProgress} />
+              </div>
+            )}
             <GardenProgress plants={stage.plants} liveMinutes={liveMinutes} growing={growing} />
             <p className="mt-2 text-[11px] text-muted-foreground">
               Plants grow with the time you run on the focus timer: full grown after{" "}
