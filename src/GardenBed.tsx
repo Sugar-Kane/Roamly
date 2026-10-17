@@ -11,12 +11,18 @@
 // (The previous flex-wrap version bottom-aligned each row independently, which
 // left every row but the last floating in mid-air.)
 //
-// Growth is earned, not decorative: each plant's stage comes from the
-// growth_points the server accrues per completed session, so planting more
-// things is a reason to keep studying.
+// Growth is earned, not decorative: each plant grows with the focus minutes
+// run on the timer since it was planted (server growth_minutes), and the
+// block running right now is added live, so the bed visibly grows while you
+// study. Each plant carries a progress bar toward its next stage, and a chip
+// shows how much the current block has grown the garden. A stage reached
+// mid-block gets a little sparkle.
+//
+// Live growth is provisional: it banks when the focus block is recorded (a
+// block abandoned early isn't saved, so its growth falls away again).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { GROWTH_STAGES, growthLabel } from "./petCatalog";
+import { fmtMinutes, growthFromMinutes, growthFromSessions, growthLabel, type Growth } from "./petCatalog";
 import type { GardenPlant } from "./gamification";
 
 // Rain streaks. Deterministic offsets keep the shower stable across renders
@@ -50,10 +56,25 @@ function fitLayout(count: number, w: number, h: number): Layout | null {
   return { size: MIN_PLANT, cols, rows: Math.ceil(count / cols), rowH, soilH: Math.max(6, Math.round(rowH * 0.3)) };
 }
 
-export function GardenBed({ plants, reduceMotion, raining = false, className = "" }: {
+// A plant's growth with the live block folded in.
+export function plantGrowth(p: GardenPlant, liveMinutes = 0): Growth {
+  return p.minutes === null ? growthFromSessions(p.growth_points) : growthFromMinutes(p.minutes + Math.max(0, liveMinutes), p.kind);
+}
+
+export function growthCaption(p: GardenPlant, g: Growth): string {
+  if (p.minutes === null) return growthLabel(g.stage);
+  if (g.toNext <= 0) return `${growthLabel(g.stage)} · ${fmtMinutes(g.minutes)} grown`;
+  return `${growthLabel(g.stage)} · ${fmtMinutes(g.toNext)} to ${growthLabel(g.stage + 1)}`;
+}
+
+const SPARKLE_MS = 2400;
+
+export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes = 0, growing = false, className = "" }: {
   plants: GardenPlant[];
   reduceMotion: boolean;
   raining?: boolean; // breaks water the garden
+  liveMinutes?: number; // focus minutes in the block running now, not yet recorded
+  growing?: boolean; // the focus timer is running right now
   className?: string;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -73,6 +94,33 @@ export function GardenBed({ plants, reduceMotion, raining = false, className = "
   }, []);
 
   const layout = useMemo(() => fitLayout(plants.length, box.w, box.h), [plants.length, box.w, box.h]);
+  const growths = plants.map((p) => plantGrowth(p, liveMinutes));
+
+  // Sparkle a plant when the live block pushes it up a stage. Only live
+  // stage-ups count: a fresh load or a sync just sets the baseline.
+  const lastStage = useRef(new Map<string, number>());
+  const [sparkle, setSparkle] = useState<Record<string, number>>({});
+  const stageKey = growths.map((g, i) => `${plants[i]!.id}:${g.stage}`).join(",");
+  useEffect(() => {
+    const now = Date.now();
+    const up: Record<string, number> = {};
+    plants.forEach((p, i) => {
+      const prev = lastStage.current.get(p.id);
+      const cur = growths[i]!.stage;
+      if (prev !== undefined && cur > prev && liveMinutes > 0) up[p.id] = now;
+      lastStage.current.set(p.id, cur);
+    });
+    if (Object.keys(up).length === 0) return;
+    setSparkle((s) => ({ ...s, ...up }));
+    const t = window.setTimeout(() => setSparkle((s) => {
+      const next = { ...s };
+      for (const id of Object.keys(up)) if (next[id] === up[id]) delete next[id];
+      return next;
+    }), SPARKLE_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stage list
+  }, [stageKey]);
+  const liveShown = Math.floor(Math.max(0, liveMinutes));
   // Reduced motion still gets the "it's raining" cue, just without falling
   // streaks — an overcast wash and the caption carry the meaning.
   const showStreaks = raining && !reduceMotion;
@@ -115,8 +163,12 @@ export function GardenBed({ plants, reduceMotion, raining = false, className = "
           }}>
             {plants.map((p, i) => {
               // Seedling → full grown, scaled to whatever size fits the box.
-              const grow = p.stage / Math.max(1, GROWTH_STAGES - 1);
-              const size = layout.size * (0.5 + 0.5 * grow);
+              // Sized from overall progress rather than whole stages, so a
+              // plant visibly grows minute by minute instead of in four jumps.
+              const g = growths[i]!;
+              const size = layout.size * (0.5 + 0.5 * g.overall);
+              const showBar = p.minutes !== null && layout.size >= 18;
+              const full = g.toNext <= 0 && p.minutes !== null;
               // Centre a partial last row instead of leaving it hard left with
               // a long empty stretch of bed beside it.
               const lastRowCount = plants.length % layout.cols;
@@ -127,15 +179,27 @@ export function GardenBed({ plants, reduceMotion, raining = false, className = "
                     paddingBottom: layout.soilH * 0.55,
                     gridColumnStart: startsLastRow ? Math.floor((layout.cols - lastRowCount) / 2) + 1 : undefined,
                   }}
-                  title={`${p.name} — ${growthLabel(p.stage)}`}>
-                  <span aria-hidden="true"
-                    className={reduceMotion ? "" : "garden-sway"}
-                    style={{ fontSize: `${size}px`, lineHeight: 1, animationDelay: `${(p.id.length % 5) * 0.4}s` }}>
-                    {p.emoji}
+                  title={`${p.name} — ${growthCaption(p, g)}`}>
+                  <span aria-hidden="true" className={`relative ${growing && !full && !reduceMotion ? "garden-growing" : ""}`}>
+                    <span className={`inline-block transition-[font-size] duration-700 ${reduceMotion ? "" : "garden-sway"}`}
+                      style={{ fontSize: `${size}px`, lineHeight: 1, animationDelay: `${(p.id.length % 5) * 0.4}s` }}>
+                      {p.emoji}
+                    </span>
+                    {sparkle[p.id] !== undefined && (
+                      <span className={`absolute -right-2 -top-2 text-[11px] ${reduceMotion ? "" : "garden-sparkle"}`}>✨</span>
+                    )}
                   </span>
                   {/* A little mound so each plant looks rooted in its row. */}
                   <span aria-hidden="true" className="mt-[1px] h-[5px] shrink-0 rounded-[50%] bg-black/30"
                     style={{ width: `${Math.max(9, size * 0.5)}px` }} />
+                  {/* Progress to the next stage — the "it's growing" readout. */}
+                  {showBar && (
+                    <span aria-hidden="true" className="mt-[2px] h-[4px] shrink-0 overflow-hidden rounded-full bg-black/25"
+                      style={{ width: `${Math.max(16, layout.size * 0.8)}px` }}>
+                      <span className={`block h-full rounded-full transition-[width] duration-700 ${full ? "bg-amber-300" : "bg-lime-300"}`}
+                        style={{ width: `${(g.progress * 100).toFixed(1)}%` }} />
+                    </span>
+                  )}
                 </li>
               );
             })}
@@ -161,9 +225,15 @@ export function GardenBed({ plants, reduceMotion, raining = false, className = "
           Watering 💧
         </span>
       )}
+      {plants.length > 0 && liveShown > 0 && !raining && (
+        <span className="absolute left-2 top-1.5 rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-medium text-white/90"
+          title="Focus time from the block you're in. It's added to your garden when the block is recorded.">
+          {growing ? "🌱 Growing" : "⏸ Paused"} · +{fmtMinutes(liveShown)}
+        </span>
+      )}
 
       <ul className="sr-only">
-        {plants.map((p) => <li key={p.id}>{p.name}, {growthLabel(p.stage)}</li>)}
+        {plants.map((p, i) => <li key={p.id}>{p.name}, {growthCaption(p, growths[i]!)}</li>)}
       </ul>
       {raining && <p className="sr-only">Break time — your garden is getting watered.</p>}
     </div>

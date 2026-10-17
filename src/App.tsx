@@ -308,6 +308,11 @@ export default function App() {
   // Recompute server-side gamification after a completed session and surface
   // any newly-unlocked achievements/pets/rewards as a toast. No-op for guests —
   // their state is derived live from local history in `gamification`.
+  // Focus minutes from a just-finished block that are on their way to the
+  // server. The garden keeps counting them until the re-sync lands, so plants
+  // don't shrink back for a beat between "block done" and "growth saved".
+  const [bankingMinutes, setBankingMinutes] = useState(0);
+
   const bumpGamification = useCallback(async () => {
     if (!session?.user.id) return;
     const res = await syncGamification();
@@ -377,7 +382,13 @@ export default function App() {
     setSessions((prev) => addSession(prev, method.focus));
     const event = newStudyEvent(method.focus, current, "countdown");
     setStudyEvents((prev) => [...prev, event]);
-    if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown").then((ok) => { if (ok) void bumpGamification(); });
+    if (session?.user.id) {
+      const banked = method.focus;
+      setBankingMinutes((b) => b + banked);
+      void recordFocusSession(dateKey(), banked, current, "countdown")
+        .then(async (ok) => { if (ok) await bumpGamification(); })
+        .finally(() => setBankingMinutes((b) => Math.max(0, b - banked)));
+    }
   }, [alerts.notify, celebrateFocusComplete, session?.user.id, method.focus, activeTask, tasks, autoCompleteEstimates, bumpGamification]);
 
   // Auto-flow: roll straight from focus into break (and back) like rooms do,
@@ -417,8 +428,14 @@ export default function App() {
   // inert so a stray click can't start a game of fetch, but once the break
   // starts the ball is yours to throw.
   const petsInteractive = onBreak;
+  // Focus time in the block running right now (countdown or count-up), not yet
+  // recorded. The garden adds it live so plants grow while you study; it banks
+  // when the block is recorded and the gamification state re-syncs.
+  const liveFocusMinutes = (timer.phase === "focus" ? Math.max(0, method.focus * 60 - timer.secondsLeft) : 0) / 60
+    + countUp.elapsedSeconds / 60 + bankingMinutes;
+  const gardenGrowing = (timer.running && timer.phase === "focus") || countUp.running;
   const gardenNode = showGarden ? (
-    <GardenBed plants={companionStage.plants} raining={onBreak} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
+    <GardenBed plants={companionStage.plants} raining={onBreak} liveMinutes={liveFocusMinutes} growing={gardenGrowing} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
   ) : null;
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
 
@@ -440,7 +457,12 @@ export default function App() {
         const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
         setSessions((prev) => addSession(prev, minutes));
         setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
-        if (session?.user.id) void recordFocusSession(dateKey(), minutes, current, "count_up").then((ok) => { if (ok) void bumpGamification(); });
+        if (session?.user.id) {
+          setBankingMinutes((b) => b + minutes);
+          void recordFocusSession(dateKey(), minutes, current, "count_up")
+            .then(async (ok) => { if (ok) await bumpGamification(); })
+            .finally(() => setBankingMinutes((b) => Math.max(0, b - minutes)));
+        }
         track("count_up_complete", String(minutes));
       },
     });
@@ -1131,7 +1153,8 @@ export default function App() {
                 <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
                   onSignIn={onSignIn} onToggle={onToggleCompanion}
                   companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
-                  gardenOn={gardenOn} onToggleGarden={toggleGarden} />
+                  gardenOn={gardenOn} onToggleGarden={toggleGarden}
+                  liveMinutes={liveFocusMinutes} growing={gardenGrowing} />
               ) : (
                 <GardenLock onSignIn={onSignIn} />
               )}
