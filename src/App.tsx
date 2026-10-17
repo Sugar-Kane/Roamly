@@ -42,7 +42,7 @@ import { loadGuestStudyEvents, newStudyEvent, saveGuestStudyEvents, type Planned
 import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
 import { computeLocalGamification, fetchGamification, syncGamification, setPetActive, setRewardActive, stageProps, type Gamification, type GamSyncResult } from "./gamification";
 import { MAX_ACTIVE_PETS } from "./petCatalog";
-import { GardenBed } from "./GardenBed";
+import { GardenBed, GardenGrowthBar } from "./GardenBed";
 import { GamificationView, UnlockToast } from "./GamificationView";
 import { ThemedSelect } from "./ThemedSelect";
 import { usePetSleep } from "./usePetSleep";
@@ -126,6 +126,10 @@ export default function App() {
   // The garden is its own area with its own switch; shown by default.
   const [gardenOn, setGardenOn] = useState(() => loadPref("roamly-garden") !== "0");
   const toggleGarden = () => setGardenOn((v) => { savePref("roamly-garden", v ? "0" : "1"); return !v; });
+  // Growth progress on the garden (per-plant bars + the live "growing" chip).
+  // On by default; a device pref like the garden switch itself.
+  const [gardenProgressOn, setGardenProgressOn] = useState(() => loadPref("roamly-garden-progress") !== "0");
+  const toggleGardenProgress = () => setGardenProgressOn((v) => { savePref("roamly-garden-progress", v ? "0" : "1"); return !v; });
   // Completion confetti is ON by default; opt out per device (persisted).
   const [confettiOn, setConfettiOn] = useState(() => loadPref("roamly-confetti") !== "0");
   const toggleConfetti = () => setConfettiOn((v) => { savePref("roamly-confetti", v ? "0" : "1"); return !v; });
@@ -308,6 +312,11 @@ export default function App() {
   // Recompute server-side gamification after a completed session and surface
   // any newly-unlocked achievements/pets/rewards as a toast. No-op for guests —
   // their state is derived live from local history in `gamification`.
+  // Focus minutes from a just-finished block that are on their way to the
+  // server. The garden keeps counting them until the re-sync lands, so plants
+  // don't shrink back for a beat between "block done" and "growth saved".
+  const [bankingMinutes, setBankingMinutes] = useState(0);
+
   const bumpGamification = useCallback(async () => {
     if (!session?.user.id) return;
     const res = await syncGamification();
@@ -377,7 +386,13 @@ export default function App() {
     setSessions((prev) => addSession(prev, method.focus));
     const event = newStudyEvent(method.focus, current, "countdown");
     setStudyEvents((prev) => [...prev, event]);
-    if (session?.user.id) void recordFocusSession(dateKey(), method.focus, current, "countdown").then((ok) => { if (ok) void bumpGamification(); });
+    if (session?.user.id) {
+      const banked = method.focus;
+      setBankingMinutes((b) => b + banked);
+      void recordFocusSession(dateKey(), banked, current, "countdown")
+        .then(async (ok) => { if (ok) await bumpGamification(); })
+        .finally(() => setBankingMinutes((b) => Math.max(0, b - banked)));
+    }
   }, [alerts.notify, celebrateFocusComplete, session?.user.id, method.focus, activeTask, tasks, autoCompleteEstimates, bumpGamification]);
 
   // Auto-flow: roll straight from focus into break (and back) like rooms do,
@@ -417,8 +432,18 @@ export default function App() {
   // inert so a stray click can't start a game of fetch, but once the break
   // starts the ball is yours to throw.
   const petsInteractive = onBreak;
+  // Focus time in the block running right now (countdown or count-up), not yet
+  // recorded. The garden adds it live so plants grow while you study; it banks
+  // when the block is recorded and the gamification state re-syncs.
+  const liveFocusMinutes = (timer.phase === "focus" ? Math.max(0, method.focus * 60 - timer.secondsLeft) : 0) / 60
+    + countUp.elapsedSeconds / 60 + bankingMinutes;
+  const gardenGrowing = (timer.running && timer.phase === "focus") || countUp.running;
   const gardenNode = showGarden ? (
-    <GardenBed plants={companionStage.plants} raining={onBreak} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
+    <GardenBed plants={companionStage.plants} raining={onBreak} liveMinutes={liveFocusMinutes} growing={gardenGrowing} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
+  ) : null;
+  // The big growth bar under the garden (Show growth progress, on by default).
+  const gardenBarNode = showGarden && gardenProgressOn ? (
+    <GardenGrowthBar plants={companionStage.plants} liveMinutes={liveFocusMinutes} growing={gardenGrowing} />
   ) : null;
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
 
@@ -440,7 +465,12 @@ export default function App() {
         const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
         setSessions((prev) => addSession(prev, minutes));
         setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
-        if (session?.user.id) void recordFocusSession(dateKey(), minutes, current, "count_up").then((ok) => { if (ok) void bumpGamification(); });
+        if (session?.user.id) {
+          setBankingMinutes((b) => b + minutes);
+          void recordFocusSession(dateKey(), minutes, current, "count_up")
+            .then(async (ok) => { if (ok) await bumpGamification(); })
+            .finally(() => setBankingMinutes((b) => Math.max(0, b - minutes)));
+        }
         track("count_up_complete", String(minutes));
       },
     });
@@ -1085,7 +1115,7 @@ export default function App() {
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
-              garden={gardenNode} petsInteractive={petsInteractive}
+              garden={gardenNode} gardenBar={gardenBarNode} petsInteractive={petsInteractive}
               dockClosed={dockClosed} onReopenDock={reopenDock}
               onOpenCustomize={() => setShowCustomize(true)}
               pipSupported={pipSupported} pipActive={!!pipWindow}
@@ -1131,7 +1161,10 @@ export default function App() {
                 <GamificationView gamification={gamification} session={session} reduceMotion={a11y.reduceMotion}
                   onSignIn={onSignIn} onToggle={onToggleCompanion}
                   companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
-                  gardenOn={gardenOn} onToggleGarden={toggleGarden} />
+                  gardenOn={gardenOn} onToggleGarden={toggleGarden}
+                  liveMinutes={liveFocusMinutes} growing={gardenGrowing}
+                  gardenProgressOn={gardenProgressOn} onToggleGardenProgress={toggleGardenProgress}
+                  sessions={sessions} />
               ) : (
                 <GardenLock onSignIn={onSignIn} />
               )}
@@ -1235,7 +1268,7 @@ export default function App() {
         }
         companions={petStageNode}
         companionsInteractive={petsInteractive}
-        garden={gardenNode}
+        garden={gardenNode} gardenBar={gardenBarNode}
         motivation={timer.phase === "focus" ? motivation : null}
         extra={
           // Order per user feedback: 1) Tasks, 2) built-in Music, 3) the
@@ -1266,6 +1299,7 @@ export default function App() {
         <CustomizeSession onClose={() => setShowCustomize(false)}
           companionsOn={companionsOn} onToggleCompanions={toggleCompanions}
           gardenOn={gardenOn} onToggleGarden={toggleGarden}
+          gardenProgressOn={gardenProgressOn} onToggleGardenProgress={toggleGardenProgress}
           confettiOn={confettiOn} onToggleConfetti={toggleConfetti}
           autoFlow={autoFlow} onToggleAutoFlow={toggleAutoFlow}
           alerts={alerts} />
@@ -1777,7 +1811,7 @@ function PomodoroExplainerPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, petsInteractive, garden, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, petsInteractive, garden, gardenBar, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1831,6 +1865,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               <div className="mb-4 w-full overflow-hidden rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Garden</span>
                 <div className="pointer-events-none h-20 w-full overflow-hidden rounded-xl">{garden}</div>
+                {gardenBar && <div className="pb-1.5 pt-2">{gardenBar}</div>}
               </div>
             )}
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>

@@ -340,3 +340,48 @@ export function growthStage(growthPoints: number): number {
 const GROWTH_LABELS = ["Seedling", "Sprouting", "Growing", "Thriving", "Full grown"];
 export const growthLabel = (stage: number): string =>
   GROWTH_LABELS[Math.max(0, Math.min(GROWTH_LABELS.length - 1, stage))]!;
+
+// Time-based growth: a plant grows with the focus minutes you've run on the
+// timer since it was planted (server column user_rewards.growth_minutes).
+// Minutes to REACH each stage; trees take twice as long as plants, so a full
+// grown oak is a 10-hour project and a full grown fern a 5-hour one.
+export const PLANT_STAGE_MINUTES = [0, 30, 90, 180, 300] as const;
+const TREE_STAGE_MINUTES = PLANT_STAGE_MINUTES.map((m) => m * 2);
+export const stageMinutes = (kind: RewardKind | undefined): readonly number[] =>
+  kind === "tree" ? TREE_STAGE_MINUTES : PLANT_STAGE_MINUTES;
+
+export type Growth = {
+  stage: number; // 0..GROWTH_STAGES-1
+  progress: number; // 0..1 toward the next stage (1 when full grown)
+  minutes: number; // focus minutes grown so far
+  toNext: number; // minutes left to the next stage (0 when full grown)
+  nextAt: number; // total minutes at which the next stage is reached
+  overall: number; // 0..1 from seedling to full grown, for smooth sizing
+};
+
+export function growthFromMinutes(minutes: number, kind?: RewardKind): Growth {
+  const m = Math.max(0, minutes);
+  const steps = stageMinutes(kind);
+  const last = steps[steps.length - 1]!;
+  let stage = 0;
+  while (stage < steps.length - 1 && m >= steps[stage + 1]!) stage++;
+  if (stage >= steps.length - 1) return { stage, progress: 1, minutes: m, toNext: 0, nextAt: last, overall: 1 };
+  const from = steps[stage]!, to = steps[stage + 1]!;
+  const progress = (m - from) / (to - from);
+  return { stage, progress, minutes: m, toNext: to - m, nextAt: to, overall: (stage + progress) / (steps.length - 1) };
+}
+
+// Fallback for a server that predates growth_minutes: whole stages from
+// session counts, no in-between progress.
+export function growthFromSessions(points: number): Growth {
+  const stage = growthStage(points);
+  return { stage, progress: stage >= GROWTH_STAGES - 1 ? 1 : 0, minutes: 0, toNext: 0, nextAt: 0, overall: stage / (GROWTH_STAGES - 1) };
+}
+
+// "1 h 05 min" style, for growth captions.
+export function fmtMinutes(min: number): string {
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? `${h} h ${String(r).padStart(2, "0")} min` : `${h} h`;
+}

@@ -12,9 +12,11 @@ import { lazyChunk } from "./lazyChunk";
 import { Sprout, PawPrint, Trophy, Lock, Check, Star, Sparkles, Flower2 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
-import { GardenBed } from "./GardenBed";
-import { stageProps, isGrowable, type Gamification, type GamSyncResult } from "./gamification";
-import { ACHIEVEMENT_CATALOG, ACHIEVEMENT_CATEGORY_LABEL, ACHIEVEMENT_CATEGORY_ORDER, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, MAX_ACTIVE_PETS, SLOT_HINT, growthStage, type AchievementCategory, type PetSpecies } from "./petCatalog";
+import { GardenBed, GardenGrowthBar, growthCaption, plantGrowth } from "./GardenBed";
+import { GardenJourney } from "./GardenJourney";
+import type { FocusSession } from "./streaks";
+import { stageProps, isGrowable, type Gamification, type GamSyncResult, type GardenPlant } from "./gamification";
+import { ACHIEVEMENT_CATALOG, ACHIEVEMENT_CATEGORY_LABEL, ACHIEVEMENT_CATEGORY_ORDER, PET_CATALOG, REWARD_CATALOG, PET_ART, GROWTH_STAGES, MAX_ACTIVE_PETS, SLOT_HINT, PLANT_STAGE_MINUTES, fmtMinutes, growthFromMinutes, growthFromSessions, growthLabel, stageMinutes, type AchievementCategory, type PetSpecies } from "./petCatalog";
 
 const PetStage = lazyChunk(() => import("./PetCanvas").then((m) => ({ default: m.PetStage })));
 
@@ -44,7 +46,7 @@ const SECTION_ORDER: AchievementSection[] = [...ACHIEVEMENT_CATEGORY_ORDER, OTHE
 const SECTION_LABEL: Record<AchievementSection, string> = { ...ACHIEVEMENT_CATEGORY_LABEL, [OTHER_SECTION]: "More" };
 const achievementCategory = (id: string): AchievementSection => ACH_CATEGORY.get(id) ?? OTHER_SECTION;
 
-export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden }: {
+export function GamificationView({ gamification, session, reduceMotion, onSignIn, onToggle, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, liveMinutes = 0, growing = false, gardenProgressOn = true, onToggleGardenProgress, sessions }: {
   gamification: Gamification;
   session: Session | null;
   reduceMotion: boolean;
@@ -54,6 +56,11 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
   onToggleCompanions: () => void;
   gardenOn: boolean;
   onToggleGarden: () => void;
+  liveMinutes?: number; // focus minutes in the running block (not yet recorded)
+  growing?: boolean; // the focus timer is running
+  gardenProgressOn?: boolean; // progress bars + live chip on the garden bed (device pref)
+  onToggleGardenProgress?: () => void;
+  sessions?: FocusSession[]; // per-day focus history, for the journey timeline
 }) {
   const g = gamification;
   const stage = stageProps(g);
@@ -118,10 +125,19 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
         </div>
         {gardenOn ? (
           <>
-            <GardenBed plants={stage.plants} reduceMotion={reduceMotion} className="mt-3 h-40 bg-secondary/30" />
+            <GardenBed plants={stage.plants} liveMinutes={liveMinutes} growing={growing} reduceMotion={reduceMotion} className="mt-3 h-40 bg-secondary/30" />
+            {gardenProgressOn && <GardenGrowthBar plants={stage.plants} liveMinutes={liveMinutes} growing={growing} className="mt-3" />}
+            {onToggleGardenProgress && (
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-[11px] text-muted-foreground">Show the growth progress bar under the garden (here and on the focus timer)</p>
+                <Switch on={gardenProgressOn} label="Show growth progress on the garden" onToggle={onToggleGardenProgress} />
+              </div>
+            )}
+            <GardenProgress plants={stage.plants} liveMinutes={liveMinutes} growing={growing} />
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Every plant grows a stage for each {" "}
-              <span className="font-medium text-foreground">{GROWTH_STAGES}</span>-stage run of study sessions. Plant as many as you like — the bed makes room.
+              Plants grow with the time you run on the focus timer: full grown after{" "}
+              <span className="font-medium text-foreground">{fmtMinutes(PLANT_STAGE_MINUTES[PLANT_STAGE_MINUTES.length - 1]!)}</span> of focus, trees after{" "}
+              <span className="font-medium text-foreground">{fmtMinutes(stageMinutes("tree")[GROWTH_STAGES - 1]!)}</span>. Plant as many as you like — the bed makes room.
               {plantable > 0 && ` You have ${plantable} unplanted ${plantable === 1 ? "reward" : "rewards"} waiting below.`}
             </p>
           </>
@@ -129,6 +145,9 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
           <p className="mt-3 text-xs text-muted-foreground">Garden hidden. Flip the switch to see what you've grown.</p>
         )}
       </div>
+
+      {/* Journey — every study day and unlock along one winding path */}
+      {sessions && <GardenJourney gamification={g} sessions={sessions} />}
 
       {/* Achievements */}
       <div className="mt-6 rounded-2xl border border-border bg-card/80 p-5 shadow-sm">
@@ -224,7 +243,7 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
           {g.rewards.map((r) => {
             const growable = isGrowable(r);
             const usable = (r.kind === "accessory" && !!r.meta.slot) || r.kind === "theme";
-            const stg = growable ? growthStage(r.growth_points) : 0;
+            const gr = growable ? (typeof r.growth_minutes === "number" ? growthFromMinutes(r.growth_minutes + (r.is_active ? liveMinutes : 0), r.kind) : growthFromSessions(r.growth_points)) : null;
             return (
               <div key={r.id} className={`flex items-center gap-3 rounded-xl border p-2.5 ${r.owned ? "border-border bg-card/60" : "border-border bg-card/40 opacity-70"}`}>
                 <span className={`text-xl ${r.owned ? "" : "grayscale"}`} aria-hidden="true">{r.meta.emoji ?? "🎁"}</span>
@@ -233,11 +252,21 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
                   {usable && r.meta.slot && (
                     <p className="mt-0.5 text-[10px] text-muted-foreground">{SLOT_HINT[r.meta.slot]}</p>
                   )}
-                  {r.owned && growable && (
-                    <div className="mt-1 flex gap-0.5" aria-label={`Growth ${stg + 1} of ${GROWTH_STAGES}`}>
-                      {Array.from({ length: GROWTH_STAGES }).map((_, i) => (
-                        <span key={i} className={`h-1.5 w-4 rounded-full ${i <= stg ? "bg-roamly-green" : "bg-border"}`} />
-                      ))}
+                  {r.owned && gr && (
+                    <div className="mt-1 flex items-center gap-2">
+                      <div className="flex gap-0.5" role="img" aria-label={`Growth stage ${gr.stage + 1} of ${GROWTH_STAGES}${gr.toNext > 0 ? `, ${Math.round(gr.progress * 100)}% to the next` : ""}`}>
+                        {Array.from({ length: GROWTH_STAGES }).map((_, i) => (
+                          // Reached stages are full; the next one fills as you study toward it.
+                          <span key={i} className="h-1.5 w-4 overflow-hidden rounded-full bg-border">
+                            <span className="block h-full rounded-full bg-roamly-green" style={{ width: i <= gr.stage ? "100%" : i === gr.stage + 1 ? `${(gr.progress * 100).toFixed(0)}%` : "0%" }} />
+                          </span>
+                        ))}
+                      </div>
+                      {typeof r.growth_minutes === "number" && (
+                        <span className="text-[10px] text-muted-foreground">
+                          {!r.is_active ? "Plant it to start growing" : gr.toNext > 0 ? `${fmtMinutes(gr.toNext)} to ${growthLabel(gr.stage + 1)}` : "Full grown"}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -321,5 +350,44 @@ export function UnlockToast({ result, onClose, onPlant, planted = [] }: {
         <button onClick={onClose} className="mt-5 w-full rounded-full gradient-primary py-2.5 text-sm font-semibold text-white shadow-glow">Awesome</button>
       </div>
     </Modal>
+  );
+}
+
+// Per-plant growth readout under the bed: what each plant has grown and how
+// far it is from its next stage, with the running block added live.
+function GardenProgress({ plants, liveMinutes, growing }: { plants: GardenPlant[]; liveMinutes: number; growing: boolean }) {
+  const timed = plants.filter((p) => p.minutes !== null);
+  if (timed.length === 0) return null;
+  const live = Math.floor(Math.max(0, liveMinutes));
+  return (
+    <div className="mt-3 space-y-2" data-testid="garden-progress">
+      {live > 0 && (
+        <p className="text-[11px] font-medium text-roamly-green">
+          {growing ? "🌱 Your garden is growing" : "⏸ Timer paused"} · +{fmtMinutes(live)} this block
+          <span className="font-normal text-muted-foreground"> (saved when the block finishes)</span>
+        </p>
+      )}
+      <ul className="grid gap-x-4 gap-y-2 sm:grid-cols-2">
+        {timed.map((p) => {
+          const g = plantGrowth(p, liveMinutes);
+          return (
+            <li key={p.id} className="flex items-center gap-2">
+              <span className="text-lg leading-none" aria-hidden="true">{p.emoji}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="truncate text-xs font-medium">{p.name}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{fmtMinutes(g.minutes)} grown</span>
+                </div>
+                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-border" role="progressbar"
+                  aria-label={`${p.name}: ${growthCaption(p, g)}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(g.progress * 100)}>
+                  <div className={`h-full rounded-full transition-[width] duration-700 ${g.toNext > 0 ? "bg-roamly-green" : "bg-amber-400"}`} style={{ width: `${(g.progress * 100).toFixed(1)}%` }} />
+                </div>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">{growthCaption(p, g)}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }

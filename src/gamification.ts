@@ -11,12 +11,16 @@ import type { StudyEvent } from "./release3";
 import { type FocusSession, computeStreak } from "./streaks";
 import {
   ACHIEVEMENT_CATALOG, PET_CATALOG, REWARD_CATALOG, MAX_ACTIVE_PETS,
-  earnedAchievementIds, growthStage, type AccessorySlot, type RewardKind, type StudyMetrics,
+  earnedAchievementIds, growthFromMinutes, growthStage, type AccessorySlot, type RewardKind, type StudyMetrics,
 } from "./petCatalog";
 
 export type GamAchievement = { id: string; name: string; hint: string; xp: number; sort: number; earned: boolean; earned_at: string | null };
-export type GamPet = { id: string; species: string; name: string; unlock_sessions: number; sort: number; owned: boolean; is_active: boolean };
-export type GamReward = { id: string; kind: RewardKind; name: string; unlock_level: number; meta: { emoji?: string; slot?: AccessorySlot }; sort: number; owned: boolean; is_active: boolean; growth_points: number };
+export type GamPet = { id: string; species: string; name: string; unlock_sessions: number; sort: number; owned: boolean; is_active: boolean; earned_at?: string | null };
+export type GamReward = { id: string; kind: RewardKind; name: string; unlock_level: number; meta: { emoji?: string; slot?: AccessorySlot }; sort: number; owned: boolean; is_active: boolean; growth_points: number;
+  // Focus minutes since planting. Absent from servers older than the
+  // time-based-growth migration, which only report session-count growth_points.
+  growth_minutes?: number;
+  earned_at?: string | null }; // unlock time (release 19+); absent on older servers and in guest mode
 
 export type Gamification = {
   xp: number;
@@ -44,7 +48,9 @@ export type GamSyncResult = {
 //  * the garden bed (every plant/tree the user has planted, at its own growth
 //    stage) — unbounded, because planting is additive rather than one-at-a-time
 export type StageAccessory = { slot: AccessorySlot; emoji: string };
-export type GardenPlant = { id: string; name: string; emoji: string; stage: number; growth_points: number };
+// `minutes` is focus time grown since planting, or null when the server only
+// reports session-based growth (then `stage` is all there is).
+export type GardenPlant = { id: string; name: string; emoji: string; kind: RewardKind; stage: number; growth_points: number; minutes: number | null };
 export type StageProps = {
   pets: { id: string; species: string }[];
   plants: GardenPlant[];
@@ -66,8 +72,10 @@ export function stageProps(g: Gamification): StageProps {
       id: r.id,
       name: r.name,
       emoji: r.meta.emoji ?? "🌱",
-      stage: growthStage(r.growth_points),
+      kind: r.kind,
+      stage: typeof r.growth_minutes === "number" ? growthFromMinutes(r.growth_minutes, r.kind).stage : growthStage(r.growth_points),
       growth_points: r.growth_points,
+      minutes: typeof r.growth_minutes === "number" ? r.growth_minutes : null,
     }));
   const accessories = g.rewards
     .filter((r) => r.owned && r.is_active && r.kind === "accessory" && r.meta.slot)
@@ -180,6 +188,7 @@ export function computeLocalGamification(sessions: FocusSession[], events: Study
     return {
       ...r, owned: isOwned, is_active: isActivePlant || autoEquipped.has(r.id),
       growth_points: isActivePlant ? m.sessionCount : 0,
+      growth_minutes: isActivePlant ? m.totalMinutes : 0,
     };
   });
 

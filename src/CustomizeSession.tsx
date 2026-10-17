@@ -23,12 +23,14 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick: () => void; labe
   );
 }
 
-export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, confettiOn, onToggleConfetti, autoFlow, onToggleAutoFlow, alerts }: {
+export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, gardenOn, onToggleGarden, gardenProgressOn, onToggleGardenProgress, confettiOn, onToggleConfetti, autoFlow, onToggleAutoFlow, alerts }: {
   onClose: () => void;
   companionsOn: boolean;
   onToggleCompanions: () => void;
   gardenOn: boolean;
   onToggleGarden: () => void;
+  gardenProgressOn: boolean;
+  onToggleGardenProgress: () => void;
   confettiOn: boolean;
   onToggleConfetti: () => void;
   autoFlow: boolean;
@@ -55,6 +57,11 @@ export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, ga
         <DrawerRow label="Show garden during focus" hint="Your planted garden on the timer. It rains on breaks — the plants are getting watered.">
           <Toggle on={gardenOn} onClick={onToggleGarden} label="Show garden during focus" />
         </DrawerRow>
+        {gardenOn && (
+          <DrawerRow label="Show growth progress" hint="A progress bar under your garden showing how close your next plant is to growing, and how much this block is adding.">
+            <Toggle on={gardenProgressOn} onClick={onToggleGardenProgress} label="Show growth progress" />
+          </DrawerRow>
+        )}
         <DrawerRow label="Completion confetti" hint="Celebrate finished focus sessions. Reduce motion also turns it off.">
           <Toggle on={confettiOn} onClick={onToggleConfetti} label="Completion confetti" />
         </DrawerRow>
