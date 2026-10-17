@@ -148,6 +148,16 @@
   animation: garden-sparkle 2.4s ease-out forwards;
 }
 
+/* The live part of the garden growth bar: this block's minutes, striped and
+   drifting so it reads as "in progress, not saved yet". */
+.garden-live-fill {
+  background-color: rgb(163 230 53);
+  background-image: repeating-linear-gradient(135deg, rgba(255,255,255,.45) 0 6px, transparent 6px 12px);
+  background-size: 17px 17px;
+  animation: garden-live-drift 1.2s linear infinite;
+}
+@keyframes garden-live-drift { to { background-position: 17px 0; } }
+
 /* The journey timeline's board: a dark slate with a fine woven texture, so
    the path and plants pop in light and dark themes alike. */
 .journey-board {

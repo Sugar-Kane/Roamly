@@ -14,9 +14,9 @@
 // Growth is earned, not decorative: each plant grows with the focus minutes
 // run on the timer since it was planted (server growth_minutes), and the
 // block running right now is added live, so the bed visibly grows while you
-// study. Each plant carries a progress bar toward its next stage, and a chip
-// shows how much the current block has grown the garden. A stage reached
-// mid-block gets a little sparkle.
+// study, and a stage reached mid-block gets a little sparkle. The numbers live
+// in GardenGrowthBar, a full-width progress bar shown UNDER the bed (it was
+// too small to read as per-plant bars inside it).
 //
 // Live growth is provisional: it banks when the focus block is recorded (a
 // block abandoned early isn't saved, so its growth falls away again).
@@ -69,13 +69,12 @@ export function growthCaption(p: GardenPlant, g: Growth): string {
 
 const SPARKLE_MS = 2400;
 
-export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes = 0, growing = false, showProgress = true, className = "" }: {
+export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes = 0, growing = false, className = "" }: {
   plants: GardenPlant[];
   reduceMotion: boolean;
   raining?: boolean; // breaks water the garden
   liveMinutes?: number; // focus minutes in the block running now, not yet recorded
   growing?: boolean; // the focus timer is running right now
-  showProgress?: boolean; // per-plant progress bars + the live growth chip (user pref, default on)
   className?: string;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
@@ -121,10 +120,6 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the stage list
   }, [stageKey]);
-  const liveShown = Math.floor(Math.max(0, liveMinutes));
-  // The plant closest to its next stage, for the chip's "next stage in" hint.
-  const soonest = growths.reduce<number | null>((min, g, i) =>
-    plants[i]!.minutes !== null && g.toNext > 0 && (min === null || g.toNext < min) ? g.toNext : min, null);
   // Reduced motion still gets the "it's raining" cue, just without falling
   // streaks — an overcast wash and the caption carry the meaning.
   const showStreaks = raining && !reduceMotion;
@@ -171,7 +166,6 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
               // plant visibly grows minute by minute instead of in four jumps.
               const g = growths[i]!;
               const size = layout.size * (0.5 + 0.5 * g.overall);
-              const showBar = showProgress && p.minutes !== null && layout.size >= 18;
               const full = g.toNext <= 0 && p.minutes !== null;
               // Centre a partial last row instead of leaving it hard left with
               // a long empty stretch of bed beside it.
@@ -196,14 +190,6 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
                   {/* A little mound so each plant looks rooted in its row. */}
                   <span aria-hidden="true" className="mt-[1px] h-[5px] shrink-0 rounded-[50%] bg-black/30"
                     style={{ width: `${Math.max(9, size * 0.5)}px` }} />
-                  {/* Progress to the next stage — the "it's growing" readout. */}
-                  {showBar && (
-                    <span aria-hidden="true" className="mt-[2px] h-[5px] shrink-0 overflow-hidden rounded-full bg-white/35 ring-1 ring-black/20"
-                      style={{ width: `${Math.max(16, layout.size * 0.8)}px` }}>
-                      <span className={`block h-full rounded-full transition-[width] duration-700 ${full ? "bg-amber-300" : "bg-lime-300"}`}
-                        style={{ width: `${(g.progress * 100).toFixed(1)}%` }} />
-                    </span>
-                  )}
                 </li>
               );
             })}
@@ -229,19 +215,73 @@ export function GardenBed({ plants, reduceMotion, raining = false, liveMinutes =
           Watering 💧
         </span>
       )}
-      {showProgress && plants.length > 0 && liveShown > 0 && !raining && (
-        <span className="absolute left-2 top-1.5 max-w-[calc(100%-1rem)] truncate rounded-full bg-black/35 px-2 py-0.5 text-[10px] font-medium text-white/90"
-          data-testid="garden-live-chip"
-          title="Focus time from the block you're in. It's added to your garden when the block is recorded.">
-          {growing ? "🌱 Growing" : "⏸ Paused"} · +{fmtMinutes(liveShown)}
-          {soonest !== null && <span className="font-normal text-white/75"> · next stage in {fmtMinutes(Math.ceil(soonest))}</span>}
-        </span>
-      )}
 
       <ul className="sr-only">
         {plants.map((p, i) => <li key={p.id}>{p.name}, {growthCaption(p, growths[i]!)}</li>)}
       </ul>
       {raining && <p className="sr-only">Break time — your garden is getting watered.</p>}
+    </div>
+  );
+}
+
+// The big growth readout under the garden: one wide bar for the plant that's
+// closest to its next stage (the next thing you'll see happen), with the block
+// you're in shown as a striped live segment on top of what's already banked.
+export function GardenGrowthBar({ plants, liveMinutes = 0, growing = false, className = "" }: {
+  plants: GardenPlant[];
+  liveMinutes?: number;
+  growing?: boolean;
+  className?: string;
+}) {
+  const timed = plants.filter((p) => p.minutes !== null);
+  if (timed.length === 0) return null; // server without time-based growth
+  const live = Math.max(0, liveMinutes);
+  const rows = timed.map((p) => ({ p, now: plantGrowth(p, live), banked: plantGrowth(p, 0) }));
+  const growingRows = rows.filter((r) => r.now.toNext > 0);
+  const liveLine = live >= 1
+    ? `${growing ? "🌱 Growing" : "⏸ Paused"} · +${fmtMinutes(Math.floor(live))} this block`
+    : "Run the focus timer to grow your garden";
+
+  if (growingRows.length === 0) {
+    return (
+      <div className={className} data-testid="garden-growth-bar">
+        <div className="flex items-baseline justify-between gap-2 text-xs">
+          <span className="font-semibold">🌳 Your garden is fully grown</span>
+          <span className="text-muted-foreground">{fmtMinutes(Math.round(rows.reduce((m, r) => m + r.now.minutes, 0)))} grown</span>
+        </div>
+        <div className="mt-1.5 h-3.5 overflow-hidden rounded-full bg-amber-400" role="progressbar" aria-label="Garden fully grown" aria-valuemin={0} aria-valuemax={100} aria-valuenow={100} />
+        <p className="mt-1 text-[11px] text-muted-foreground">Plant something new from your rewards to keep it growing.</p>
+      </div>
+    );
+  }
+
+  const next = growingRows.reduce((a, b) => (b.now.toNext < a.now.toNext ? b : a));
+  const { p, now, banked } = next;
+  // Banked part, then the live part. If the live block already pushed the
+  // plant into a new stage, everything in this stage came from the block.
+  const bankedPct = banked.stage === now.stage ? banked.progress * 100 : 0;
+  const nowPct = now.progress * 100;
+  const label = `${p.name} grows to ${growthLabel(now.stage + 1)} in ${fmtMinutes(Math.ceil(now.toNext))}`;
+  return (
+    <div className={className} data-testid="garden-growth-bar">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="min-w-0 truncate font-semibold">
+          <span aria-hidden="true">{p.emoji}</span> {p.name} <span className="font-normal text-muted-foreground">→ {growthLabel(now.stage + 1)}</span>
+        </span>
+        <span className="shrink-0 font-medium">{fmtMinutes(Math.ceil(now.toNext))} to go</span>
+      </div>
+      <div className="relative mt-1.5 h-3.5 overflow-hidden rounded-full bg-border" role="progressbar"
+        aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(nowPct)}>
+        <div className="absolute inset-y-0 left-0 rounded-full bg-roamly-green transition-[width] duration-700" style={{ width: `${bankedPct.toFixed(1)}%` }} />
+        {nowPct > bankedPct && (
+          <div className="garden-live-fill absolute inset-y-0 rounded-r-full transition-[width] duration-700"
+            style={{ left: `${bankedPct.toFixed(1)}%`, width: `${(nowPct - bankedPct).toFixed(1)}%`, minWidth: 8 }} />
+        )}
+      </div>
+      <p className="mt-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
+        <span className={live >= 1 ? "font-medium text-roamly-green" : ""}>{liveLine}</span>
+        {timed.length > 1 && <span className="shrink-0">{timed.length - growingRows.length}/{timed.length} full grown</span>}
+      </p>
     </div>
   );
 }

@@ -58,7 +58,7 @@ export function CustomizeSession({ onClose, companionsOn, onToggleCompanions, ga
           <Toggle on={gardenOn} onClick={onToggleGarden} label="Show garden during focus" />
         </DrawerRow>
         {gardenOn && (
-          <DrawerRow label="Show growth progress" hint="Progress bars under your plants, and a live readout of how much this block is growing them.">
+          <DrawerRow label="Show growth progress" hint="A progress bar under your garden showing how close your next plant is to growing, and how much this block is adding.">
             <Toggle on={gardenProgressOn} onClick={onToggleGardenProgress} label="Show growth progress" />
           </DrawerRow>
         )}

@@ -12,7 +12,7 @@ import { lazyChunk } from "./lazyChunk";
 import { Sprout, PawPrint, Trophy, Lock, Check, Star, Sparkles, Flower2 } from "lucide-react";
 import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
-import { GardenBed, growthCaption, plantGrowth } from "./GardenBed";
+import { GardenBed, GardenGrowthBar, growthCaption, plantGrowth } from "./GardenBed";
 import { GardenJourney } from "./GardenJourney";
 import type { FocusSession } from "./streaks";
 import { stageProps, isGrowable, type Gamification, type GamSyncResult, type GardenPlant } from "./gamification";
@@ -125,10 +125,11 @@ export function GamificationView({ gamification, session, reduceMotion, onSignIn
         </div>
         {gardenOn ? (
           <>
-            <GardenBed plants={stage.plants} liveMinutes={liveMinutes} growing={growing} showProgress={gardenProgressOn} reduceMotion={reduceMotion} className="mt-3 h-40 bg-secondary/30" />
+            <GardenBed plants={stage.plants} liveMinutes={liveMinutes} growing={growing} reduceMotion={reduceMotion} className="mt-3 h-40 bg-secondary/30" />
+            {gardenProgressOn && <GardenGrowthBar plants={stage.plants} liveMinutes={liveMinutes} growing={growing} className="mt-3" />}
             {onToggleGardenProgress && (
               <div className="mt-3 flex items-center justify-between gap-3">
-                <p className="text-[11px] text-muted-foreground">Show growth progress on the garden (here and on the focus timer)</p>
+                <p className="text-[11px] text-muted-foreground">Show the growth progress bar under the garden (here and on the focus timer)</p>
                 <Switch on={gardenProgressOn} label="Show growth progress on the garden" onToggle={onToggleGardenProgress} />
               </div>
             )}

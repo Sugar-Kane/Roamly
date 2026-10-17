@@ -42,7 +42,7 @@ import { loadGuestStudyEvents, newStudyEvent, saveGuestStudyEvents, type Planned
 import { PlannedStudyPanel, StudyInsights } from "./StudyInsights";
 import { computeLocalGamification, fetchGamification, syncGamification, setPetActive, setRewardActive, stageProps, type Gamification, type GamSyncResult } from "./gamification";
 import { MAX_ACTIVE_PETS } from "./petCatalog";
-import { GardenBed } from "./GardenBed";
+import { GardenBed, GardenGrowthBar } from "./GardenBed";
 import { GamificationView, UnlockToast } from "./GamificationView";
 import { ThemedSelect } from "./ThemedSelect";
 import { usePetSleep } from "./usePetSleep";
@@ -439,7 +439,11 @@ export default function App() {
     + countUp.elapsedSeconds / 60 + bankingMinutes;
   const gardenGrowing = (timer.running && timer.phase === "focus") || countUp.running;
   const gardenNode = showGarden ? (
-    <GardenBed plants={companionStage.plants} raining={onBreak} liveMinutes={liveFocusMinutes} growing={gardenGrowing} showProgress={gardenProgressOn} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
+    <GardenBed plants={companionStage.plants} raining={onBreak} liveMinutes={liveFocusMinutes} growing={gardenGrowing} reduceMotion={a11y.reduceMotion} className="h-full w-full border-0" />
+  ) : null;
+  // The big growth bar under the garden (Show growth progress, on by default).
+  const gardenBarNode = showGarden && gardenProgressOn ? (
+    <GardenGrowthBar plants={companionStage.plants} liveMinutes={liveFocusMinutes} growing={gardenGrowing} />
   ) : null;
   const toggleSleep = () => (petSleep.asleep ? petSleep.wake() : petSleep.sleep());
 
@@ -1111,7 +1115,7 @@ export default function App() {
               session={session} onSignIn={onSignIn} sounds={sounds}
               enterFocus={() => { setImmersive(true); track("focus_mode_enter"); }}
               companions={petStageNode} showCompanions={showCompanions} petsAsleep={petSleep.asleep} onToggleSleep={toggleSleep}
-              garden={gardenNode} petsInteractive={petsInteractive}
+              garden={gardenNode} gardenBar={gardenBarNode} petsInteractive={petsInteractive}
               dockClosed={dockClosed} onReopenDock={reopenDock}
               onOpenCustomize={() => setShowCustomize(true)}
               pipSupported={pipSupported} pipActive={!!pipWindow}
@@ -1264,7 +1268,7 @@ export default function App() {
         }
         companions={petStageNode}
         companionsInteractive={petsInteractive}
-        garden={gardenNode}
+        garden={gardenNode} gardenBar={gardenBarNode}
         motivation={timer.phase === "focus" ? motivation : null}
         extra={
           // Order per user feedback: 1) Tasks, 2) built-in Music, 3) the
@@ -1807,7 +1811,7 @@ function PomodoroExplainerPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
-function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, petsInteractive, garden, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
+function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeTask, setActiveTask, toggleTask, custom, setCustom, isPremium, gateThen, exams, addExam, editExam, removeExam, session, onSignIn, sounds, enterFocus, embed, shownEmbed, playEmbed, onPickService, runSolo, onOpenTasks, onAdvertise, onGoPremium, countUp, onCompleteCountUp, companions, showCompanions, petsAsleep, onToggleSleep, petsInteractive, garden, gardenBar, dockClosed, onReopenDock, onOpenCustomize, pipSupported, pipActive, onPopOut, onClosePip, motivation, onOpenHowItWorks }: any) {
   const phaseLabel = timer.phase === "focus" ? "Focus" : timer.phase === "short" ? "Short break" : "Long break";
   const task = tasks.find((t: Task) => t.id === activeTask);
   const ring = timer.phase === "focus" ? theme.ring : theme.rest;
@@ -1861,6 +1865,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
               <div className="mb-4 w-full overflow-hidden rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Garden</span>
                 <div className="pointer-events-none h-20 w-full overflow-hidden rounded-xl">{garden}</div>
+                {gardenBar && <div className="pb-1.5 pt-2">{gardenBar}</div>}
               </div>
             )}
             <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
