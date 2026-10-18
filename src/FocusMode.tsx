@@ -150,7 +150,7 @@ export function FocusMode({
       {/* soft accent wash so the phase reads at a glance */}
       <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ background: `radial-gradient(60% 50% at 50% 30%, ${ring}, transparent)` }} />
 
-      <div className="relative flex items-center justify-between px-5 py-4">
+      <div className="relative flex items-center justify-between px-5 py-4 short:py-3 ls:py-2">
         <span className="font-mono text-[11px] uppercase tracking-[0.25em]" style={{ color: ring }}>
           {focusing ? "Focus mode" : "On a break"}
         </span>
@@ -164,12 +164,17 @@ export function FocusMode({
           content top-aligns — with justify-center the top half (the timer!)
           gets pushed above the scrollport on phones. From lg the content
           splits into two columns (timer left, music + tasks right) so a whole
-          session fits one desktop screen with no page scroll. */}
-      <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-6 lg:overflow-hidden">
-        <div className="m-auto flex w-full flex-col items-center gap-6 lg:max-w-6xl lg:flex-row lg:items-stretch lg:justify-center lg:gap-10">
+          session fits one desktop screen with no page scroll. A phone on its
+          side (ls) gets the same idea one level down: companions + garden on
+          the left, the timer and its controls on the right, so the timer is
+          on screen without scrolling; music/tasks follow below. */}
+      <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-6 tiny:pb-3 ls:pb-3 lg:overflow-hidden">
+        <div className="m-auto flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:gap-4 lg:max-w-6xl lg:flex-row lg:items-stretch lg:justify-center lg:gap-10">
 
-        {/* LEFT: timer, progress, controls */}
-        <div className="flex w-full flex-col items-center gap-6 lg:flex-1 lg:justify-center">
+        {/* LEFT: companions + garden, then timer, progress, controls */}
+        <div className="flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:flex-row ls:items-center ls:justify-center ls:gap-6 lg:flex-1 lg:justify-center lgshort:gap-3">
+        {(companions || garden || (focusing && showNudge)) && (
+        <div className="flex w-full flex-col items-center gap-6 short:gap-3 tiny:gap-2 lgshort:gap-3 ls:w-auto ls:max-w-[46%] ls:flex-1 ls:gap-2">
         {focusing && showNudge && (
           <div className="flex max-w-md items-start gap-2 rounded-2xl border border-border bg-card/70 px-4 py-3 text-left">
             <Moon size={16} className="mt-0.5 shrink-0 text-primary" />
@@ -187,25 +192,30 @@ export function FocusMode({
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Companions</span>
             {/* Rounded + clipped so an active theme's wallpaper follows the
                 card's corners instead of painting a hard-edged rectangle. */}
-            <div className={`h-16 w-full overflow-hidden rounded-xl sm:h-20 ${companionsInteractive ? "" : "pointer-events-none"}`}>{companions}</div>
+            <div className={`h-16 w-full overflow-hidden rounded-xl sm:h-20 short:h-14 tiny:h-12 ls:h-14 ${companionsInteractive ? "" : "pointer-events-none"}`}>{companions}</div>
           </div>
         )}
 
         {garden && (
           <div className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card/70 px-3 pb-1 pt-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Garden</span>
-            <div className="pointer-events-none h-20 w-full overflow-hidden rounded-xl sm:h-24">{garden}</div>
-            {gardenBar && <div className="pb-1.5 pt-2">{gardenBar}</div>}
+            <div className="pointer-events-none h-20 w-full overflow-hidden rounded-xl sm:h-24 short:h-[4.5rem] tiny:h-14 ls:h-[4.5rem] lgshort:h-20">{garden}</div>
+            {gardenBar && <div className="pb-1.5 pt-2 ls:pt-1.5">{gardenBar}</div>}
           </div>
         )}
+        </div>
+        )}
 
+        {/* Timer, progress, controls. The digits are sized by width AND
+            height (min of vw/vh) so they never outgrow a short screen. */}
+        <div className="flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:w-auto ls:flex-1 ls:gap-3 lgshort:gap-3">
         <div className="flex flex-col items-center">
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
-          <TimeDisplay value={timeText} className="font-display text-[20vw] font-medium tracking-tight sm:text-[15vw] lg:text-[8.5rem] xl:text-[10rem]" />
-          {title && <span className="mt-2 max-w-[80vw] truncate text-base text-foreground">{title}</span>}
+          <TimeDisplay value={timeText} className="font-display text-[min(20vw,13vh)] font-medium tracking-tight sm:text-[min(15vw,13vh)] tiny:text-[min(18vw,11vh)] ls:text-[min(12vw,25vh)] lg:text-[min(8.5rem,16vh)] xl:text-[min(10rem,17vh)]" />
+          {title && <span className="mt-2 max-w-[80vw] truncate text-base text-foreground ls:mt-1 ls:max-w-[40vw]">{title}</span>}
           {subtitle && <span className="mt-0.5 text-sm text-muted-foreground">{subtitle}</span>}
           {motivation && (
-            <p data-testid="focus-motivation" className="mt-2 max-w-sm px-4 text-center text-xs leading-relaxed text-muted-foreground">
+            <p data-testid="focus-motivation" className="mt-2 max-w-sm px-4 text-center text-xs leading-relaxed text-muted-foreground tiny:hidden ls:hidden">
               {motivation}
             </p>
           )}
@@ -225,12 +235,13 @@ export function FocusMode({
               ))}
             </div>
           )}
-          <p className="mt-3 text-center text-xs text-muted-foreground">
+          <p className="mt-3 text-center text-xs text-muted-foreground short:hidden ls:hidden lgshort:hidden">
             {focusing ? "Eyes here. Notifications quiet themselves in your device's Focus mode." : "Break time. Look away, stretch, breathe. Your alerts are back on."}
           </p>
         </div>
 
         {controls && <div className="flex flex-wrap items-center justify-center gap-3">{controls}</div>}
+        </div>
         </div>
 
         {/* RIGHT: music + tasks/panels. On desktop this column caps to the
