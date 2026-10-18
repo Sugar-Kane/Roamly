@@ -53,6 +53,9 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
   const [items, setItems] = useState<AppNotification[]>([]);
   const [actors, setActors] = useState<Map<string, PublicProfile>>(new Map());
   const [roomInfo, setRoomInfo] = useState<Map<string, { name: string; mine: boolean }>>(new Map());
+  // Whether roomInfo reflects a fetch yet: before that, an unknown room is
+  // "loading", after it "ended" (or no longer accessible).
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
   const [open, setOpen] = useState(false);
   // Browser-alert permission for timer notifications, surfaced as a footer row
   // so a blocked state is discoverable somewhere users actually look.
@@ -72,8 +75,7 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
       setItems(rows);
       const actorIds = [...new Set(rows.map((n) => n.actor_id).filter(Boolean))] as string[];
       setActors(await getPublicProfiles(actorIds));
-      const rooms = await fetchRooms();
-      if (!cancelled) setRoomInfo(new Map(rooms.map((r) => [r.id, { name: r.name, mine: r.host_id === userId }])));
+      await refreshRooms(() => cancelled);
     };
     load();
 
@@ -104,9 +106,20 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
+  // Room names/liveness, re-read whenever the panel opens: an invite that
+  // arrived while the app was open (realtime insert) would otherwise have no
+  // room info, so its Join button never showed.
+  const refreshRooms = async (isCancelled: () => boolean = () => false) => {
+    const rooms = await fetchRooms();
+    if (isCancelled()) return;
+    setRoomInfo(new Map(rooms.map((r) => [r.id, { name: r.name, mine: r.host_id === userId }])));
+    setRoomsLoaded(true);
+  };
+
   const toggle = () => {
     const next = !open;
     setOpen(next);
+    if (next) void refreshRooms();
     // Re-read on each open: the user may have changed the site setting since.
     if (next && "Notification" in window) setAlertPerm(Notification.permission);
     if (next && unread > 0) {
@@ -115,7 +128,21 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
     }
   };
 
+  // A room invite whose room has ended (room_id cleared, or not visible any
+  // more) can't be joined.
+  const inviteEnded = (n: AppNotification) =>
+    n.kind === "room_invite" && (!n.room_id || (roomsLoaded && !roomInfo.has(n.room_id)));
+
+  const joinInvite = (n: AppNotification) => {
+    if (!n.room_id) return;
+    setOpen(false);
+    onOpenRoom(n.room_id);
+  };
+
   const activate = (n: AppNotification) => {
+    // Room invites are answered with their own Join / Not now buttons, so a
+    // tap on the row never joins (or opens Friends) by surprise.
+    if (n.kind === "room_invite") return;
     setOpen(false);
     if (n.room_id) onOpenRoom(n.room_id);
     else if (n.kind === "planned_study_invite") onOpenPlannedStudy();
@@ -166,18 +193,18 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
             {items.map((n) => {
               const Icon = KIND_ICON[n.kind];
               const room = n.room_id ? roomInfo.get(n.room_id) : undefined;
+              const canJoin = n.kind === "room_invite" && !!n.room_id && !inviteEnded(n);
               return (
-                <div key={n.id} className="group flex items-start gap-1 rounded-xl transition hover:bg-primary/5">
+                <div key={n.id} className="rounded-xl transition hover:bg-primary/5">
+                <div className="group flex items-start gap-1">
                   <button onClick={() => activate(n)}
                     className="flex min-w-0 flex-1 items-start gap-2.5 rounded-xl px-2.5 py-2 text-left">
                     <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-primary"><Icon size={13} /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block break-words text-sm leading-snug">{label(n, n.actor_id ? actors.get(n.actor_id) : undefined, room)}</span>
                       <span className="block text-[11px] text-muted-foreground">{timeAgo(n.created_at)}</span>
-                      {n.kind === "room_invite" && n.room_id && room && (
-                        <span className="mt-1 inline-block rounded-full gradient-primary px-3 py-1 text-[11px] font-semibold text-white shadow-glow">
-                          Accept & join
-                        </span>
+                      {n.kind === "room_invite" && inviteEnded(n) && (
+                        <span className="mt-1 block text-[11px] text-muted-foreground">This room has ended.</span>
                       )}
                     </span>
                   </button>
@@ -185,6 +212,19 @@ export function NotificationsBell({ session, onOpenRoom, onOpenFriends, onOpenPl
                     className="mr-1 mt-1.5 grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive sm:mt-2 sm:h-7 sm:w-7">
                     <X size={13} />
                   </button>
+                </div>
+                {canJoin && (
+                  <div className="flex gap-2 pb-2 pl-12 pr-2.5">
+                    <button onClick={() => joinInvite(n)}
+                      className="rounded-full gradient-primary px-3.5 py-1.5 text-xs font-semibold text-white shadow-glow transition active:scale-95">
+                      Join room
+                    </button>
+                    <button onClick={() => clearOne(n.id)}
+                      className="rounded-full border border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:text-foreground">
+                      Not now
+                    </button>
+                  </div>
+                )}
                 </div>
               );
             })}

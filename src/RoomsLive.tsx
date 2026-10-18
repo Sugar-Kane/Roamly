@@ -304,6 +304,7 @@ function LiveLobby({ session, profile, isPremium, gateThen, onNeedUsername, onOp
     const room = rooms.find((r) => r.id === targetRoomId);
     onTargetConsumed();
     if (room) join(room);
+    else setJoinError("That room has ended. Ask your friend to invite you to a new one.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetRoomId, rooms]);
 
