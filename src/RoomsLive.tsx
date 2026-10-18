@@ -9,7 +9,7 @@ import {
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
 import { fmt } from "./useTimer";
-import { startFocusSound, stopFocusSound, unlockAudio, playChime, duckFocusSound, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
+import { startFocusSound, stopFocusSound, unlockAudio, playChime, duckFocusSound, onAudioBlocked, resumeBlockedAudio, FOCUS_SOUNDS, type FocusSoundId } from "./focusSounds";
 import { FocusMode, TimeDisplay, InfoTip } from "./FocusMode";
 import { PipTimer } from "./PipTimer";
 import { Modal } from "./Modal";
@@ -635,7 +635,19 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   const chat = useRoomChat(room.id);
   // Local, per-listener music mute — silences the background music just for you,
   // completely separate from the voice controls (muting a mic / people talking).
-  const [musicMuted, setMusicMuted] = useState(() => loadPref("roamly-room-music-muted") === "on");
+  // The room's Music on / muted button is the one control for room music. A
+  // listener who never touched it starts muted only if they turned off "Play
+  // with timer" for their own timer, and the button then says so honestly
+  // (it used to read "Music on" while that switch silently kept rooms quiet).
+  const [musicMuted, setMusicMuted] = useState(() => {
+    const saved = loadPref("roamly-room-music-muted");
+    return saved ? saved === "on" : !soundAuto;
+  });
+  // iOS refused to start the music (no recent tap, or the phone was locked):
+  // surface a "tap to play" cue; any tap resumes it anyway.
+  const [audioBlocked, setAudioBlockedState] = useState(false);
+  useEffect(() => onAudioBlocked(setAudioBlockedState), []);
+  const musicBlocked = audioBlocked && info.phase === "focus" && !musicMuted;
   const [showAd, setShowAd] = useState(false);
 
   // The room owns the audio engine while you're in it: tell App to stand down
@@ -651,13 +663,13 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   useEffect(() => () => onClosePip(), [onClosePip]);
 
   // Room music follows the shared timer: the room's track plays during focus
-  // blocks and stops for breaks (honoring the global "Play with timer" switch
-  // and this listener's local mute). Deps only change at phase boundaries, when
-  // the host swaps the track, or when you mute — not every tick. Stop on leave.
+  // blocks and stops for breaks, unless this listener muted it. Deps only
+  // change at phase boundaries, when the host swaps the track, or when you
+  // mute — not every tick. Stop on leave.
   useEffect(() => {
-    if (soundAuto && !musicMuted && info.phase === "focus") startFocusSound(music);
+    if (!musicMuted && info.phase === "focus") startFocusSound(music);
     else stopFocusSound();
-  }, [info.phase, soundAuto, music, musicMuted]);
+  }, [info.phase, music, musicMuted]);
   useEffect(() => () => { stopFocusSound(); }, []);
 
   // Dim the room music over the last ~5s of a focus block (once per block).
@@ -982,7 +994,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
                   <button key={s.id} onClick={() => chooseMusic(s.id)}
                     className={`relative rounded-xl border px-3 py-1.5 text-left text-sm transition sm:py-2 ${active ? "border-primary bg-primary/5 font-medium shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
                     <span className="flex items-center gap-1.5">{s.name}
-                      {active && info.phase === "focus" && soundAuto && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
+                      {active && info.phase === "focus" && !musicMuted && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
                     </span>
                     <span className="mt-0.5 hidden truncate text-[11px] text-muted-foreground sm:block">{s.hint}</span>
                   </button>
@@ -994,6 +1006,12 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           <p className="mt-1 text-xs text-muted-foreground">
             {room.is_system ? "Always-on rooms cycle the music stations automatically — a new one each focus block, the same for everyone." : "The host sets this room's music."}
           </p>
+        )}
+        {musicBlocked && (
+          <button onClick={resumeBlockedAudio}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl gradient-primary px-3 py-2 text-xs font-semibold text-white shadow-glow transition active:scale-[0.98]">
+            <Volume2 size={13} /> Tap to play music
+          </button>
         )}
       </section>
 
@@ -1038,6 +1056,12 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
               </button>
             </div>
             <p className="mt-1 text-xs text-muted-foreground ls:hidden">{musicName}{room.is_system ? " · rotates each block" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
+            {musicBlocked && (
+              <button onClick={resumeBlockedAudio}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl gradient-primary px-3 py-2 text-xs font-semibold text-white shadow-glow transition active:scale-[0.98]">
+                <Volume2 size={13} /> Tap to play music
+              </button>
+            )}
           </div>
         }
         extra={

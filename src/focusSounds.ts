@@ -223,6 +223,78 @@ function audioCtx(): AudioContext | null {
   return ctx;
 }
 
+// ---- recovering playback the browser refused ----
+// iOS Safari only starts audio inside a tap. Music that begins later (a
+// room's music when the join request returns, a break ending, a station
+// change) or after the phone was locked / the app switched (iOS suspends the
+// AudioContext) can be refused, and nothing used to retry it: the room just
+// stayed silent. Now a refusal arms a one-shot listener so the very next tap
+// anywhere resumes playback, and the UI can show a "tap to play" cue.
+let audioBlocked = false;
+const blockedListeners = new Set<(blocked: boolean) => void>();
+function setAudioBlocked(blocked: boolean) {
+  if (audioBlocked === blocked) return;
+  audioBlocked = blocked;
+  blockedListeners.forEach((cb) => cb(blocked));
+}
+export function onAudioBlocked(cb: (blocked: boolean) => void): () => void {
+  blockedListeners.add(cb);
+  cb(audioBlocked);
+  return () => { blockedListeners.delete(cb); };
+}
+
+const GESTURES = ["pointerdown", "touchend", "keydown"] as const;
+let gestureArmed = false;
+function armGestureResume() {
+  setAudioBlocked(true);
+  if (gestureArmed || typeof document === "undefined") return;
+  gestureArmed = true;
+  const onGesture = () => {
+    gestureArmed = false;
+    GESTURES.forEach((t) => document.removeEventListener(t, onGesture, true));
+    resumeBlockedAudio();
+  };
+  GESTURES.forEach((t) => document.addEventListener(t, onGesture, true));
+}
+
+// Call from inside a tap. Restarts whatever is supposed to be playing.
+export function resumeBlockedAudio() {
+  unlockAudio();
+  if (!masterGain) { setAudioBlocked(false); return; } // nothing should be playing
+  const el = musicEl;
+  if (el && el.src && !el.src.startsWith("data:") && el.paused) {
+    el.play().then(() => setAudioBlocked(false)).catch((err: unknown) => {
+      if ((err as { name?: string })?.name === "NotAllowedError") armGestureResume();
+    });
+  } else {
+    setAudioBlocked(false);
+  }
+}
+
+// After resume() the context should be running; on iOS, without a gesture it
+// stays suspended (and the promise may never settle), so check shortly after.
+function ensureContextRunning(audio: AudioContext) {
+  if (audio.state === "running") return;
+  void audio.resume().catch(() => {});
+  window.setTimeout(() => {
+    if (masterGain && audio.state !== "running") armGestureResume();
+  }, 600);
+}
+
+if (typeof document !== "undefined") {
+  // Coming back to the tab with music that should be playing: re-check, since
+  // iOS suspends the context (and pauses the element) while away.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !masterGain || !ctx) return;
+    ensureContextRunning(ctx);
+    if (musicEl && musicEl.src && !musicEl.src.startsWith("data:") && musicEl.paused) {
+      musicEl.play().catch((err: unknown) => {
+        if ((err as { name?: string })?.name === "NotAllowedError") armGestureResume();
+      });
+    }
+  });
+}
+
 // ---- OS media-session signaling + full release ----
 // iOS promotes any playing <audio> element to a lock-screen "Now Playing"
 // tile. While a session is active we give that tile honest metadata; when
@@ -826,7 +898,11 @@ function buildMusic(
     const track = order.pop()!;
     rememberTrack(track.file);
     el.src = track.file;
-    void el.play().catch(() => { /* resumes on the next user gesture */ });
+    el.play().then(() => setAudioBlocked(false)).catch((err: unknown) => {
+      // Refused (no recent tap): the next tap anywhere resumes it. An
+      // AbortError just means the src changed again first; ignore that.
+      if ((err as { name?: string })?.name === "NotAllowedError") armGestureResume();
+    });
     announcePlayback(track.title, track.artist);
   };
   el.onended = nextTrack;
@@ -852,6 +928,7 @@ function buildMusic(
 // ---- public controls ----
 
 export function stopFocusSound(fadeSeconds = 0.6) {
+  setAudioBlocked(false); // nothing to resume once it's stopped
   if (!ctx || !masterGain) return;
   const g = masterGain;
   const td = teardown;
@@ -1110,6 +1187,7 @@ export function startFocusSound(id: FocusSoundId, volume = currentVolume) {
 
   masterGain = gain;
   teardown = stop;
+  ensureContextRunning(audio);
   // Real-track stations overwrite this with per-track metadata as they play.
   announcePlayback(FOCUS_SOUNDS.find((s) => s.id === id)?.name ?? "Focus sounds");
   onPlaybackStart?.();
