@@ -1,0 +1,15 @@
+import { open, shot } from "./lib.mjs";
+const { b, p } = await open();
+await p.evaluate(() => document.querySelector("[data-exam-panel]")?.nextElementSibling?.scrollIntoView?.());
+await p.getByRole("button", { name: /Select timer/ }).scrollIntoViewIfNeeded();
+await p.mouse.wheel(0, 380); await p.waitForTimeout(500);
+await shot(p, "d0-timer-card");
+await p.getByRole("button", { name: /Select timer/ }).click(); await p.waitForTimeout(500);
+await shot(p, "d1-timer-menu");
+await p.mouse.wheel(0, 500); await p.waitForTimeout(400);
+await shot(p, "d2-timer-menu-scrolled");
+await p.getByRole("button", { name: /Count-up timer/ }).click(); await p.waitForTimeout(600);
+await shot(p, "d3-countup");
+await p.getByRole("button", { name: "Start count-up timer" }).click(); await p.waitForTimeout(3300);
+await shot(p, "d4-countup-running");
+await b.close();
