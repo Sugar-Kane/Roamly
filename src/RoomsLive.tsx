@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2, HelpCircle, PictureInPicture2 } from "lucide-react";
+import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as InfinityIcon, UserPlus, LogOut, Search, Heart, Music, Volume2, VolumeX, Maximize2, HelpCircle, PictureInPicture2, Copy, Check } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, roomStationAt, notifyFriendsOfRoom, inviteToRoom,
@@ -830,6 +830,14 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   // Ending is host-only and blocked during focus, so a host can't pull the room
   // out from under people who are mid-session.
   const canEnd = info.phase !== "focus";
+  const [codeCopied, setCodeCopied] = useState(false);
+  const copyCode = () => {
+    if (!room.invite_code) return;
+    void navigator.clipboard?.writeText(room.invite_code).then(() => {
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 1500);
+    }).catch(() => {});
+  };
   const endRoom = async () => {
     if (!canEnd) return;
     await deleteRoom(room.id);
@@ -840,11 +848,17 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
     <div className="mx-auto max-w-3xl">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="truncate font-display text-3xl font-semibold">{room.name}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className="truncate font-display text-2xl font-semibold sm:text-3xl">{room.name}</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground sm:mt-1">
             {room.is_system ? `Always on · ${room.focus_min}/${room.short_min} rhythm · study anything` : room.topic}
           </p>
-          {room.visibility === "private" && room.invite_code && <p className="mt-1 font-mono text-xs text-primary">Private invite code: {room.invite_code}</p>}
+          {room.visibility === "private" && room.invite_code && (
+            <button onClick={copyCode} aria-label={`Copy invite code ${room.invite_code}`}
+              className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 font-mono text-xs text-primary transition hover:bg-primary/10">
+              <span className="truncate">Invite code {room.invite_code}</span>
+              {codeCopied ? <Check size={12} className="shrink-0" /> : <Copy size={12} className="shrink-0" />}
+            </button>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <button onClick={() => setShowInvite(true)}
@@ -868,19 +882,19 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         <p className="mt-2 text-[11px] text-muted-foreground">You can end this room once the focus block reaches a break.</p>
       )}
 
-      <section className="mt-5 rounded-3xl border border-border bg-card/80 p-6 shadow-sm">
+      <section className="mt-4 rounded-3xl border border-border bg-card/80 p-4 shadow-sm sm:mt-5 sm:p-6">
         <div className="flex flex-col items-center">
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: phaseColor(info.phase) }}>
             {PHASE_LABEL[info.phase]} · block {info.focusIndex}/{room.cycles}
           </span>
-          <TimeDisplay value={fmt(info.secondsLeft)} className="font-display text-7xl font-medium tracking-tight" />
+          <TimeDisplay value={fmt(info.secondsLeft)} className="font-display text-6xl font-medium tracking-tight sm:text-7xl" />
           <div className="mt-3 h-2.5 w-full max-w-md overflow-hidden rounded-full" style={{ background: "hsl(var(--border))" }}>
             <div className="h-full rounded-full" style={{ width: `${(1 - info.secondsLeft / info.phaseTotal) * 100}%`, background: phaseColor(info.phase), transition: "width 1s linear" }} />
           </div>
           <p className="mt-2 text-xs text-muted-foreground">Everyone in this room sees the same timer.</p>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-1.5">
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5 sm:mt-5">
           {members.map((m) => (
             <span key={m.id} className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${m.id === userId ? "bg-primary/10 text-primary" : "bg-secondary text-secondary-foreground"}`}>
               <span className="grid h-4 place-items-center rounded-full bg-primary/15 px-1 text-[9px] font-semibold uppercase text-primary">{m.username.slice(0, 2)}</span>
@@ -890,7 +904,7 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
           {members.length === 0 && <span className="text-xs text-muted-foreground">Connecting…</span>}
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:mt-5">
           <button onClick={() => { unlockAudio(); track("room_focus_mode"); setRoomImmersive(true); }}
             className="flex items-center gap-2 rounded-full gradient-primary px-5 py-2.5 text-sm font-semibold text-white shadow-glow transition active:scale-95">
             <Maximize2 size={15} /> Focus mode
@@ -949,16 +963,16 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
         {canPickMusic ? (
           <>
             <p className="mt-1 text-xs text-muted-foreground">Your pick plays for everyone in the room, in sync with the timer.</p>
-            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2">
               {FOCUS_SOUNDS.map((s) => {
                 const active = music === s.id;
                 return (
                   <button key={s.id} onClick={() => chooseMusic(s.id)}
-                    className={`relative rounded-xl border px-3 py-2 text-left text-sm transition ${active ? "border-primary bg-primary/5 font-medium shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
+                    className={`relative rounded-xl border px-3 py-1.5 text-left text-sm transition sm:py-2 ${active ? "border-primary bg-primary/5 font-medium shadow-sm" : "border-border bg-card/70 hover:border-primary/40"}`}>
                     <span className="flex items-center gap-1.5">{s.name}
                       {active && info.phase === "focus" && soundAuto && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />}
                     </span>
-                    <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{s.hint}</span>
+                    <span className="mt-0.5 hidden truncate text-[11px] text-muted-foreground sm:block">{s.hint}</span>
                   </button>
                 );
               })}
@@ -1011,15 +1025,20 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
                 {musicMuted ? <VolumeX size={13} /> : <Volume2 size={13} />} {musicMuted ? "Music muted" : "Music on"}
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · rotates each block" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
+            <p className="mt-1 text-xs text-muted-foreground ls:hidden">{musicName}{room.is_system ? " · rotates each block" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
           </div>
         }
         extra={
-          <div className="space-y-3">
-            <HealthyBreakActivities compact active={info.phase !== "focus"} breakKey={`room-focus-${room.id}-${info.phase}-${info.focusIndex}`} />
+          // On a break the chat is the point of a group room, so it leads (in
+          // the tighter compact layout, so the input stays near the timer on a
+          // phone), then voice, then the optional break reset.
+          <div className="flex flex-col gap-3">
+            <div className="order-last">
+              <HealthyBreakActivities compact active={info.phase !== "focus"} breakKey={`room-focus-${room.id}-${info.phase}-${info.focusIndex}`} />
+            </div>
             <VoiceControls voice={voice} phase={info.phase} isPremium={isPremium} gateThen={gateThen} />
             {info.phase !== "focus"
-              ? <RoomChat chat={chat} room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />
+              ? <div className="order-first"><RoomChat compact chat={chat} room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} /></div>
               : <p className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 text-center text-xs text-muted-foreground">
                   <MessageCircle size={13} /> Chat opens when the focus block reaches a break.
                 </p>}
@@ -1147,7 +1166,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
   };
 
   return (
-    <section className={compact ? "w-full rounded-2xl border border-border bg-card/80 p-3.5 shadow-sm" : "mt-5 rounded-3xl border border-border bg-card/80 p-5 shadow-sm"}>
+    <section className={compact ? "w-full rounded-2xl border border-border bg-card/80 p-3.5 shadow-sm" : "mt-4 rounded-3xl border border-border bg-card/80 p-4 shadow-sm sm:mt-5 sm:p-5"}>
       <div className="flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold"><MessageCircle size={15} className="text-primary" /> Break-time chat</h2>
         {chatOpen ? (
@@ -1159,7 +1178,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
         )}
       </div>
 
-      <div ref={listRef} className={`mt-3 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3 ${compact ? "h-40" : "h-64"}`}>
+      <div ref={listRef} className={`mt-3 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3 ${compact ? "h-40 tiny:h-28 ls:h-20 lstiny:h-16 lsmicro:h-10" : "h-44 sm:h-64"}`}>
         {visible.length === 0 && (
           <p className="pt-4 text-center text-xs text-muted-foreground">No messages yet. Say hi at the next break.</p>
         )}
@@ -1190,7 +1209,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
         </button>
       </div>
       {error && <p className="mt-1.5 text-xs text-destructive">{error}</p>}
-      {!compact && <p className="mt-2 text-[11px] text-muted-foreground">Chat unlocks during short and long breaks, then locks again when focus starts.</p>}
+      {!compact && <p className="mt-2 hidden text-[11px] text-muted-foreground sm:block">Chat unlocks during short and long breaks, then locks again when focus starts.</p>}
     </section>
   );
 }

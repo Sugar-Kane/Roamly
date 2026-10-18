@@ -83,6 +83,18 @@
   transition-duration: 0.001s !important;
 }
 
+/* iOS Safari zooms the whole page in when a text field under 16px gets
+   focus, and leaves it zoomed and panned sideways afterwards (the room view
+   ended up shifted off the left edge after typing in chat). Touch screens get
+   16px text fields; desktop keeps the compact sizes. */
+@media (pointer: coarse) {
+  input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 /* Custom utilities */
 @layer utilities {
   .gradient-primary { background: linear-gradient(135deg, hsl(var(--roamly-purple)), hsl(var(--roamly-blue))); }
