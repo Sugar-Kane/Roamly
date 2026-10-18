@@ -1235,7 +1235,7 @@ export default function App() {
         controls={
           <>
             <button onClick={() => { if (timer.running) { timer.pause(); return; } runSolo(() => { countUp.reset(); unlockAudio(); timer.start(); }); }}
-              className="flex h-12 items-center justify-center gap-2 rounded-2xl px-8 font-semibold text-white shadow-glow transition active:scale-[0.98]"
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl px-8 font-semibold text-white shadow-glow transition active:scale-[0.98] short:px-6 ls:px-5"
               style={{ background: timer.phase === "focus" ? theme.ring : theme.rest }} aria-label={timer.running ? "Pause" : "Resume"}>
               {timer.running ? <><Pause size={20} fill="currentColor" /> Pause</> : <><Play size={20} fill="currentColor" /> Resume</>}
             </button>
@@ -1249,20 +1249,21 @@ export default function App() {
                 The garden toggle is deliberately drawer-only: it belongs with
                 the other session settings, not in the timer's control row. */}
             {showCompanions && (
-              <button onClick={toggleSleep} aria-pressed={petSleep.asleep}
-                className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition ${petSleep.asleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
-                <Moon size={14} /> {petSleep.asleep ? "Wake pets" : "Too distracting"}
+              <button onClick={toggleSleep} aria-pressed={petSleep.asleep} aria-label={petSleep.asleep ? "Wake pets" : "Too distracting"}
+                className={`flex h-12 items-center gap-1.5 rounded-2xl border px-4 text-xs font-medium transition short:w-12 short:justify-center short:px-0 ls:w-12 ls:justify-center ls:px-0 ${petSleep.asleep ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}>
+                <Moon size={14} /> <span className="short:hidden ls:hidden">{petSleep.asleep ? "Wake pets" : "Too distracting"}</span>
               </button>
             )}
             {pipSupported && (
               <button onClick={() => { setImmersive(false); openPip().then((pip) => { if (pip) track("pip_open", "from_focus"); }); }}
-                className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-                <PictureInPicture2 size={14} /> Pop out timer
+                aria-label="Pop out timer"
+                className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground short:w-12 short:justify-center short:px-0 ls:w-12 ls:justify-center ls:px-0">
+                <PictureInPicture2 size={14} /> <span className="short:hidden ls:hidden">Pop out timer</span>
               </button>
             )}
-            <button onClick={() => setShowCustomize(true)}
-              className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
-              <Settings2 size={14} /> Customize Session
+            <button onClick={() => setShowCustomize(true)} aria-label="Customize Session"
+              className="flex h-12 items-center gap-1.5 rounded-2xl border border-border bg-card px-4 text-xs font-medium text-muted-foreground transition hover:border-primary/40 hover:text-foreground short:w-12 short:justify-center short:px-0 ls:w-12 ls:justify-center ls:px-0">
+              <Settings2 size={14} /> <span className="short:hidden ls:hidden">Customize Session</span>
             </button>
           </>
         }
@@ -1277,7 +1278,9 @@ export default function App() {
           // FocusMode `music` slot gave them. Deliberately NOT the Focus tab's
           // order, where Music now leads: in here you have already committed to
           // a session, so the checklist is what you want in front of you.
-          <div className="space-y-4">
+          // On a phone on its side the tasks + music column sits beside the
+          // timer, so music moves to the top there to stay on screen.
+          <div className="flex flex-col gap-4 ls:gap-3">
             <AdBreakPrompt active={timer.phase !== "focus" && !isPremium}
               onAdvertise={() => (session ? setShowAd(true) : onSignIn())} onGoPremium={() => setShowUpsell(true)} />
             {/* During breaks the checklist itself carries the optional green
@@ -1287,8 +1290,10 @@ export default function App() {
               breakActive={timer.phase !== "focus"} breakKey={`solo-${timer.phase}-${timer.completedFocus}`} />
             {/* dockClosed/onReopenDock so a user who dismissed the mini-player
                 can bring it back without leaving focus mode. */}
-            <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed}
-              dockClosed={dockClosed} onReopenDock={reopenDock} sounds={sounds} />
+            <div className="ls:order-first">
+              <MusicPanel embed={embed} service={dockService} onServiceChange={pickDockService} onPlay={playEmbed}
+                dockClosed={dockClosed} onReopenDock={reopenDock} sounds={sounds} />
+            </div>
           </div>
         } />
       {/* Shared Customize Session drawer — opened from the normal timer's button
@@ -2366,7 +2371,7 @@ function FocusSoundsPanel({ sounds, bare = false }: any) {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Volume2 size={16} className="text-primary" />
-          <h2 className="font-display text-lg font-semibold">Focus sounds</h2>
+          <h2 className="font-display text-lg font-semibold ls:whitespace-nowrap ls:text-base">Focus sounds</h2>
         </div>
         <button onClick={sounds.toggle} disabled={!sounds.sound}
           aria-label={sounds.playing ? "Pause sound" : "Play sound"}
@@ -2376,7 +2381,7 @@ function FocusSoundsPanel({ sounds, bare = false }: any) {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 ls:grid-cols-2">
         {FOCUS_SOUNDS.map((s) => {
           const active = sounds.sound === s.id;
           return (
@@ -2454,8 +2459,8 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
   };
 
   return (
-    <div className="relative rounded-2xl border border-border bg-card/80 p-4 shadow-sm">
-      <div className={`flex items-center justify-between ${collapsed ? "" : "mb-3"}`}>
+    <div className="relative rounded-2xl border border-border bg-card/80 p-4 shadow-sm ls:p-3">
+      <div className={`flex items-center justify-between gap-2 ${collapsed ? "" : "mb-3"}`}>
         <div className="flex items-center gap-2">
           <Music size={16} className="text-primary" />
           <h2 className="font-display text-lg font-semibold">Music</h2>
@@ -2463,8 +2468,8 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
         <div className="flex items-center gap-1.5">
           {dockClosed && onReopenDock && (
             <button onClick={onReopenDock}
-              className="rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary transition hover:bg-primary/15">
-              Show mini-player
+              className="whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-[11px] font-medium text-primary transition hover:bg-primary/15">
+              <span className="ls:hidden">Show </span>mini-player
             </button>
           )}
           <button onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="focus-music-body"
@@ -2494,7 +2499,7 @@ function MusicPanel({ embed, service, onServiceChange, onPlay, dockClosed = fals
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 ls:grid-cols-1">
           {(service === "spotify" ? SPOTIFY_PRESETS : APPLE_MUSIC_PRESETS).map((p: any) => {
             const src = service === "spotify"
               ? toSpotifyEmbedSrc({ type: p.type, id: p.spotifyId })

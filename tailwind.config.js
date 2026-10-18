@@ -8,7 +8,9 @@ export default {
       screens: {
         // Phones on their side: wide but very short. Focus mode switches to
         // a side-by-side layout here so the timer isn't pushed off screen.
-        ls: { raw: "(orientation: landscape) and (max-height: 540px)" },
+        ls: { raw: "(orientation: landscape) and (max-height: 540px) and (max-width: 1023px)" },
+        // The shortest landscape (a phone on its side with Safari's bars).
+        lstiny: { raw: "(orientation: landscape) and (max-height: 360px) and (max-width: 1023px)" },
         // Shorter portrait phones (SE, mini, or with browser chrome showing).
         short: { raw: "(orientation: portrait) and (max-height: 780px)" },
         // Very short portrait (iPhone SE with Safari's toolbars showing).
