@@ -8,13 +8,21 @@ export default {
       screens: {
         // Phones on their side: wide but very short. Focus mode switches to
         // a side-by-side layout here so the timer isn't pushed off screen.
-        ls: { raw: "(orientation: landscape) and (max-height: 540px) and (max-width: 1023px)" },
+        // An aspect ratio rather than orientation:landscape: some Android
+        // browsers shrink the page for the on-screen keyboard, and a portrait
+        // phone typing in chat (~1:1) must not flip into this layout. Phones
+        // on their side are 1.8:1 to 3:1 (with or without browser bars).
+        ls: { raw: "(min-aspect-ratio: 3/2) and (max-height: 540px) and (max-width: 1023px)" },
         // The shortest landscape (a phone on its side with Safari's bars).
-        lstiny: { raw: "(orientation: landscape) and (max-height: 360px) and (max-width: 1023px)" },
+        lstiny: { raw: "(min-aspect-ratio: 3/2) and (max-height: 360px) and (max-width: 1023px)" },
+        // Samsung Internet on its side shows bars top AND bottom (~256px left).
+        lsmicro: { raw: "(min-aspect-ratio: 3/2) and (max-height: 280px) and (max-width: 1023px)" },
         // Shorter portrait phones (SE, mini, or with browser chrome showing).
-        short: { raw: "(orientation: portrait) and (max-height: 780px)" },
-        // Very short portrait (iPhone SE with Safari's toolbars showing).
-        tiny: { raw: "(orientation: portrait) and (max-height: 620px)" },
+        // ...and narrow ones (foldable cover screens, ~344px), where the control
+        // row would otherwise wrap however tall the screen is.
+        short: { raw: "(orientation: portrait) and (max-height: 780px), (orientation: portrait) and (max-width: 359px)" },
+        // Very short portrait (iPhone SE with Safari's toolbars, 720p Android).
+        tiny: { raw: "(orientation: portrait) and (max-height: 680px)" },
         // Desktop-width but short (iPad landscape, small laptops).
         lgshort: { raw: "(min-width: 1024px) and (max-height: 860px)" },
       },

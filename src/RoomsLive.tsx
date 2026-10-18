@@ -1178,7 +1178,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
         )}
       </div>
 
-      <div ref={listRef} className={`mt-3 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3 ${compact ? "h-40 ls:h-20 lstiny:h-16" : "h-44 sm:h-64"}`}>
+      <div ref={listRef} className={`mt-3 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3 ${compact ? "h-40 tiny:h-28 ls:h-20 lstiny:h-16 lsmicro:h-10" : "h-44 sm:h-64"}`}>
         {visible.length === 0 && (
           <p className="pt-4 text-center text-xs text-muted-foreground">No messages yet. Say hi at the next break.</p>
         )}
