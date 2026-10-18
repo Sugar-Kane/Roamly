@@ -142,6 +142,7 @@ export function FocusMode({
 
   if (!open) return null;
   const focusing = phase === "focus";
+  const hasStage = Boolean(companions || garden || (focusing && showNudge));
   const dismissNudge = () => { savePref("roamly-dnd-nudge-seen", "1"); setShowNudge(false); };
 
   return (
@@ -175,7 +176,7 @@ export function FocusMode({
 
         {/* LEFT: companions + garden, then timer, progress, controls */}
         <div className="flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:contents lg:flex-1 lg:justify-center lgshort:gap-3">
-        {(companions || garden || (focusing && showNudge)) && (
+        {hasStage && (
         <div className="flex w-full flex-col items-center gap-6 short:gap-3 tiny:gap-2 lgshort:gap-3 ls:col-start-2 ls:row-start-1 ls:min-w-0 ls:gap-2">
         {focusing && showNudge && (
           <div className="flex max-w-md items-start gap-2 rounded-2xl border border-border bg-card/70 px-4 py-3 text-left">
@@ -251,9 +252,9 @@ export function FocusMode({
             Spotify embed), so the page itself never scrolls; my-auto centers it
             when it fits. */}
         {(music || extra) && (
-          <div className="flex w-full max-w-md flex-col ls:col-start-2 ls:row-start-2 ls:min-w-0 ls:max-w-none lg:w-[26rem] lg:shrink-0 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto">
+          <div className={`flex w-full max-w-md flex-col ls:col-start-2 ${hasStage ? "ls:row-start-2" : "ls:row-start-1"} ls:min-w-0 ls:max-w-none lg:w-[26rem] lg:shrink-0 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto`}>
             <div className="flex flex-col gap-4 ls:gap-3 lg:my-auto">
-              {music && <div className="w-full rounded-2xl border border-border bg-card/70 p-3">{music}</div>}
+              {music && <div className="w-full rounded-2xl border border-border bg-card/70 p-3 ls:px-3 ls:py-2">{music}</div>}
               {extra && <div className="w-full">{extra}</div>}
             </div>
           </div>

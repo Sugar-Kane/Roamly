@@ -1025,15 +1025,20 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
                 {musicMuted ? <VolumeX size={13} /> : <Volume2 size={13} />} {musicMuted ? "Music muted" : "Music on"}
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">{musicName}{room.is_system ? " · rotates each block" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
+            <p className="mt-1 text-xs text-muted-foreground ls:hidden">{musicName}{room.is_system ? " · rotates each block" : ""}{canPickMusic ? " · change it back in the room view" : ""}</p>
           </div>
         }
         extra={
-          <div className="space-y-3">
-            <HealthyBreakActivities compact active={info.phase !== "focus"} breakKey={`room-focus-${room.id}-${info.phase}-${info.focusIndex}`} />
+          // On a break the chat is the point of a group room, so it leads (in
+          // the tighter compact layout, so the input stays near the timer on a
+          // phone), then voice, then the optional break reset.
+          <div className="flex flex-col gap-3">
+            <div className="order-last">
+              <HealthyBreakActivities compact active={info.phase !== "focus"} breakKey={`room-focus-${room.id}-${info.phase}-${info.focusIndex}`} />
+            </div>
             <VoiceControls voice={voice} phase={info.phase} isPremium={isPremium} gateThen={gateThen} />
             {info.phase !== "focus"
-              ? <RoomChat chat={chat} room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} />
+              ? <div className="order-first"><RoomChat compact chat={chat} room={room} userId={userId} phase={info.phase} secondsToBreak={0} phaseStartMs={now - (info.phaseTotal - info.secondsLeft) * 1000} /></div>
               : <p className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed border-border bg-card/50 px-4 py-3 text-center text-xs text-muted-foreground">
                   <MessageCircle size={13} /> Chat opens when the focus block reaches a break.
                 </p>}
@@ -1173,7 +1178,7 @@ function RoomChat({ chat, room, userId, phase, secondsToBreak, phaseStartMs, com
         )}
       </div>
 
-      <div ref={listRef} className={`mt-3 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3 ${compact ? "h-40" : "h-44 sm:h-64"}`}>
+      <div ref={listRef} className={`mt-3 space-y-2.5 overflow-y-auto rounded-xl border border-border bg-card/60 p-3 ${compact ? "h-40 ls:h-20 lstiny:h-16" : "h-44 sm:h-64"}`}>
         {visible.length === 0 && (
           <p className="pt-4 text-center text-xs text-muted-foreground">No messages yet. Say hi at the next break.</p>
         )}
