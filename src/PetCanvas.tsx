@@ -391,10 +391,13 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         ctx!.textAlign = "center";
         ctx!.fillText("💤", a.x + bedShift + size * 0.4, floor - size * 0.7);
       }
+      // Snacking reads as eating: a "yum" face (species-neutral, unlike a
+      // bone or a carrot) that bobs gently like munching.
       if (a.mode === "eat" && Math.abs(a.x - bowlX()) < 24) {
+        const munch = Math.sin(performance.now() / 160) * size * 0.03;
         ctx!.font = `${Math.round(size * 0.32)}px ${EMOJI_FONT}`;
         ctx!.textAlign = "center";
-        ctx!.fillText("♪", a.x + size * 0.35, floor - size * 0.8);
+        ctx!.fillText("😋", a.x + size * 0.35, floor - size * 0.8 + munch);
       }
     }
 
