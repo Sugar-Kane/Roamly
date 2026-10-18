@@ -391,10 +391,13 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         ctx!.textAlign = "center";
         ctx!.fillText("💤", a.x + bedShift + size * 0.4, floor - size * 0.7);
       }
+      // Snacking reads as eating: a "yum" face (species-neutral, unlike a
+      // bone or a carrot) that bobs gently like munching.
       if (a.mode === "eat" && Math.abs(a.x - bowlX()) < 24) {
+        const munch = Math.sin(performance.now() / 160) * size * 0.03;
         ctx!.font = `${Math.round(size * 0.32)}px ${EMOJI_FONT}`;
         ctx!.textAlign = "center";
-        ctx!.fillText("♪", a.x + size * 0.35, floor - size * 0.8);
+        ctx!.fillText("😋", a.x + size * 0.35, floor - size * 0.8 + munch);
       }
     }
 
@@ -492,6 +495,7 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       if (a.mode === "eat") {
         const dx = bowlX() - 16 - a.x; // stand just left of the bowl
         if (Math.abs(dx) > 3) { a.facing = dx < 0 ? -1 : 1; a.x += Math.sign(dx) * Math.min(Math.abs(dx), 60 * dt); a.hop += dt * 9; }
+        else a.facing = 1; // at the bowl: turn to it (it's on the right), even if we walked in from the right
       }
       // Deliberately NO incidental kick here. Pets used to boot the ball
       // whenever they wandered into it, which meant a resting ball never

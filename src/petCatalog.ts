@@ -303,13 +303,13 @@ export const PET_GLYPH_FACING: Record<PetSpecies, -1 | 0 | 1> = {
   fox: 0,       // 🦊 head-on
   penguin: -1,  // 🐧 beak left
   owl: 0,       // 🦉 head-on
-  turtle: 1,    // 🐢 head right
-  duck: 1,      // 🦆 mallard, bill right
+  turtle: -1,   // 🐢 head left (Apple and Google)
+  duck: -1,     // 🦆 mallard, bill left (Apple and Google)
   frog: 0,      // 🐸 head-on
   raccoon: -1,  // 🦝 full body, head left
   hedgehog: -1, // 🦔 full body, snout left
   koala: 0,     // 🐨 head-on
-  sloth: 1,     // 🦥 hanging, face right
+  sloth: -1,    // 🦥 hanging, face left (Apple; Google is head-on)
   panda: 0,     // 🐼 head-on
   dragon: -1,   // 🐉 head lower-left
   unicorn: -1,  // 🦄 three-quarter head, muzzle left
