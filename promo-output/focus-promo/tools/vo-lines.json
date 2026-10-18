@@ -4,6 +4,10 @@
     "text": "Your exam has a date."
   },
   {
+    "id": "f00",
+    "text": "Meet Roamly Flow, the focus timer built for P A school."
+  },
+  {
     "id": "f02",
     "text": "Add it, or create your own, and watch the countdown."
   },
@@ -34,5 +38,9 @@
   {
     "id": "f09",
     "text": "Roamly Flow. Study with flow."
+  },
+  {
+    "id": "f10",
+    "text": "Start free at Roamly Flow dot com."
   }
 ]

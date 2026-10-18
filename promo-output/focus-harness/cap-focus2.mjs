@@ -19,7 +19,7 @@ const only = process.argv[2];
 if (!only || only === "focus") {
   const { b, p } = await enterFocus();
   await p.clock.runFor(16000);
-  await frames(p, "focus", 150);
+  await frames(p, "focus", 300);
   // Customize Session drawer: pets on → off
   await p.getByTestId("focus-overlay").getByRole("button", { name: "Customize Session" }).first().click(); await p.clock.runFor(600);
   await shot(p, "f1-customize-on");
