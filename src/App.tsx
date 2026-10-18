@@ -23,7 +23,7 @@ import { ProfileMenu, loadA11y, type A11ySettings } from "./ProfileMenu";
 import { AccountSettings } from "./AccountSettings";
 import { SettingsModal } from "./SettingsModal";
 import { RoomsLive } from "./RoomsLive";
-import { FocusMode, TimeDisplay, InfoTip } from "./FocusMode";
+import { FocusMode, TimeDisplay, InfoTip, CompanionStage } from "./FocusMode";
 import { PipTimer } from "./PipTimer";
 import { useDocumentPip, applyThemeToPip } from "./useDocumentPip";
 import { useCountUpTimer } from "./useCountUpTimer";
@@ -1867,7 +1867,7 @@ function FocusView({ method, methodId, setMethodId, timer, theme, tasks, activeT
                 <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Companions</span>
                 {/* overflow-hidden + a rounded inner box so an active theme's
                     wallpaper is clipped to the card instead of squaring it off. */}
-                <div className={`h-16 w-full overflow-hidden rounded-xl ${petsInteractive ? "" : "pointer-events-none"}`}>{companions}</div>
+                <CompanionStage interactive={!!petsInteractive} className="h-16 w-full overflow-hidden rounded-xl">{companions}</CompanionStage>
               </div>
             )}
             {garden && (

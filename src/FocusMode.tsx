@@ -57,6 +57,36 @@ export function InfoTip({ text }: { text: string }) {
   );
 }
 
+// The pet stage during focus: pets keep you company but stay out of reach so
+// they don't become a distraction. A tap used to do nothing at all (it looked
+// broken), so now it shows a short hint that play opens on the break.
+export function CompanionStage({ interactive, className, children }: { interactive: boolean; className: string; children: ReactNode }) {
+  const [hint, setHint] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  // A break starting makes the stage live again, so drop any hint.
+  useEffect(() => { if (interactive) setHint(false); }, [interactive]);
+  if (interactive) return <div className={className}>{children}</div>;
+  const show = () => {
+    setHint(true);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setHint(false), 2400);
+  };
+  return (
+    <div className={`relative ${className}`}>
+      <div className="pointer-events-none h-full w-full">{children}</div>
+      <button type="button" onClick={show} aria-label="Your pets are resting until your break"
+        className="absolute inset-0 h-full w-full cursor-default" />
+      {hint && (
+        <span role="status"
+          className="pointer-events-none absolute inset-x-0 top-1.5 mx-auto w-max max-w-[90%] rounded-full bg-black/60 px-3 py-1 text-center text-[11px] font-medium text-white backdrop-blur-sm">
+          🎾 Play with your pets on your break
+        </span>
+      )}
+    </div>
+  );
+}
+
 // Renders each character in a fixed-width slot so the total width never
 // changes as digits tick (Fraunces digits aren't equal-width and
 // tabular-nums is unreliable there). Shared by every timer surface.
@@ -195,7 +225,7 @@ export function FocusMode({
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Companions</span>
             {/* Rounded + clipped so an active theme's wallpaper follows the
                 card's corners instead of painting a hard-edged rectangle. */}
-            <div className={`h-16 w-full overflow-hidden rounded-xl sm:h-20 short:h-14 tiny:h-12 ls:h-14 lstiny:h-11 ${companionsInteractive ? "" : "pointer-events-none"}`}>{companions}</div>
+            <CompanionStage interactive={!!companionsInteractive} className="h-16 w-full overflow-hidden rounded-xl sm:h-20 short:h-14 tiny:h-12 ls:h-14 lstiny:h-11">{companions}</CompanionStage>
           </div>
         )}
 
