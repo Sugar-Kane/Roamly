@@ -165,17 +165,18 @@ export function FocusMode({
           gets pushed above the scrollport on phones. From lg the content
           splits into two columns (timer left, music + tasks right) so a whole
           session fits one desktop screen with no page scroll. A phone on its
-          side (ls) gets the same idea one level down: companions + garden on
-          the left, the timer and its controls on the right, so the timer is
-          on screen without scrolling, and music + tasks get a third column
-          (music first) that scrolls on its own. */}
-      <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-6 tiny:pb-3 ls:overflow-hidden ls:px-4 ls:pb-3 lg:overflow-hidden">
-        <div className="m-auto flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:my-0 ls:h-full ls:flex-row ls:items-stretch ls:gap-3 lg:max-w-6xl lg:flex-row lg:items-stretch lg:justify-center lg:gap-10">
+          side (ls) puts the timer first: a big timer + controls pinned on the
+          left (sticky, so it never scrolls away), and everything else in one
+          column on the right that scrolls: companions, garden, then music
+          (first in the tasks slot) and tasks. LEFT turns into display:contents
+          there so its two halves can land in different grid columns. */}
+      <div className="relative flex flex-1 flex-col overflow-y-auto px-5 pb-6 tiny:pb-3 ls:px-4 ls:pb-3 lg:overflow-hidden">
+        <div className="m-auto flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:my-0 ls:grid ls:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] ls:items-start ls:gap-x-5 ls:gap-y-3 lg:max-w-6xl lg:flex-row lg:items-stretch lg:justify-center lg:gap-10">
 
         {/* LEFT: companions + garden, then timer, progress, controls */}
-        <div className="flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:min-w-0 ls:flex-1 ls:flex-row ls:items-center ls:justify-center ls:gap-3 lg:flex-1 lg:justify-center lgshort:gap-3">
+        <div className="flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:contents lg:flex-1 lg:justify-center lgshort:gap-3">
         {(companions || garden || (focusing && showNudge)) && (
-        <div className="flex w-full flex-col items-center gap-6 short:gap-3 tiny:gap-2 lgshort:gap-3 ls:w-auto ls:min-w-0 ls:flex-1 ls:gap-2">
+        <div className="flex w-full flex-col items-center gap-6 short:gap-3 tiny:gap-2 lgshort:gap-3 ls:col-start-2 ls:row-start-1 ls:min-w-0 ls:gap-2">
         {focusing && showNudge && (
           <div className="flex max-w-md items-start gap-2 rounded-2xl border border-border bg-card/70 px-4 py-3 text-left">
             <Moon size={16} className="mt-0.5 shrink-0 text-primary" />
@@ -209,10 +210,10 @@ export function FocusMode({
 
         {/* Timer, progress, controls. The digits are sized by width AND
             height (min of vw/vh) so they never outgrow a short screen. */}
-        <div className="flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:w-auto ls:min-w-0 ls:flex-1 ls:gap-2.5 lgshort:gap-3">
+        <div className="flex w-full flex-col items-center gap-6 short:gap-4 tiny:gap-2 ls:sticky ls:top-0 ls:col-start-1 ls:row-span-2 ls:row-start-1 ls:h-[calc(100dvh_-_3.75rem_-_env(safe-area-inset-top)_-_env(safe-area-inset-bottom))] ls:min-w-0 ls:justify-center ls:gap-3 lgshort:gap-3">
         <div className="flex flex-col items-center">
           <span className="font-mono text-xs uppercase tracking-[0.25em]" style={{ color: ring }}>{phaseLabel}</span>
-          <TimeDisplay value={timeText} className="font-display text-[min(20vw,13vh)] font-medium tracking-tight sm:text-[min(15vw,13vh)] tiny:text-[min(18vw,11vh)] ls:text-[min(8.5vw,22vh)] lg:text-[min(8.5rem,16vh)] xl:text-[min(10rem,17vh)]" />
+          <TimeDisplay value={timeText} className="font-display text-[min(20vw,13vh)] font-medium tracking-tight sm:text-[min(15vw,13vh)] tiny:text-[min(18vw,11vh)] ls:text-[min(13vw,30vh)] lg:text-[min(8.5rem,16vh)] xl:text-[min(10rem,17vh)]" />
           {title && <span className="mt-2 max-w-[80vw] truncate text-base text-foreground ls:mt-1 ls:max-w-full ls:text-sm">{title}</span>}
           {subtitle && <span className="mt-0.5 text-sm text-muted-foreground">{subtitle}</span>}
           {motivation && (
@@ -250,7 +251,7 @@ export function FocusMode({
             Spotify embed), so the page itself never scrolls; my-auto centers it
             when it fits. */}
         {(music || extra) && (
-          <div className="flex w-full max-w-md flex-col ls:h-full ls:w-[36%] ls:max-w-none ls:shrink-0 ls:overflow-y-auto ls:overscroll-contain lg:w-[26rem] lg:shrink-0 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto">
+          <div className="flex w-full max-w-md flex-col ls:col-start-2 ls:row-start-2 ls:min-w-0 ls:max-w-none lg:w-[26rem] lg:shrink-0 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto">
             <div className="flex flex-col gap-4 ls:gap-3 lg:my-auto">
               {music && <div className="w-full rounded-2xl border border-border bg-card/70 p-3">{music}</div>}
               {extra && <div className="w-full">{extra}</div>}
