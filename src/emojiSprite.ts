@@ -18,6 +18,35 @@ export type EmojiSprite = {
 const REF = 128; // render size; images are scaled down with CSS, so keep it crisp
 const cache = new Map<string, EmojiSprite | null>();
 
+// Bounds of a glyph's solid pixels in RGBA data, or null if there are none.
+//
+// Safari's fingerprinting protection adds random noise to getImageData, which
+// lights up the transparent padding around an emoji's bitmap — a plain
+// "alpha > small" scan then returns the whole emoji square, and a hat meant for
+// the top of a dog's head floats a sixth of the head above it. Emoji art is
+// opaque inside its outline, so only rows/columns with a few near-opaque
+// pixels count as ink; noise doesn't produce those.
+export function inkBounds(data: Uint8ClampedArray, w: number, h: number): { l: number; t: number; r: number; b: number } | null {
+  const SOLID = 200;
+  const MIN_RUN = 2;
+  const rows = new Uint16Array(h);
+  const cols = new Uint16Array(w);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3]! >= SOLID) {
+        rows[y]++;
+        cols[x]++;
+      }
+    }
+  }
+  let t = 0, b = h - 1, l = 0, r = w - 1;
+  while (t < h && rows[t]! < MIN_RUN) t++;
+  while (b >= t && rows[b]! < MIN_RUN) b--;
+  while (l < w && cols[l]! < MIN_RUN) l++;
+  while (r >= l && cols[r]! < MIN_RUN) r--;
+  return t <= b && l <= r ? { l, t, r, b } : null;
+}
+
 export function emojiSprite(glyph: string): EmojiSprite | null {
   if (cache.has(glyph)) return cache.get(glyph)!;
   let sprite: EmojiSprite | null = null;
@@ -33,18 +62,11 @@ export function emojiSprite(glyph: string): EmojiSprite | null {
         x.textBaseline = "middle";
         x.fillText(glyph, REF, REF);
         const { data } = x.getImageData(0, 0, c.width, c.height);
-        let l = c.width, t = c.height, r = -1, b = -1;
-        for (let y = 0; y < c.height; y++) {
-          for (let i = 0; i < c.width; i++) {
-            if (data[(y * c.width + i) * 4 + 3]! > 12) {
-              if (i < l) l = i;
-              if (i > r) r = i;
-              if (y < t) t = y;
-              if (y > b) b = y;
-            }
-          }
-        }
-        if (r >= l && b >= t) {
+        const box = inkBounds(data, c.width, c.height);
+        if (box) {
+          // One pixel of margin keeps the glyph's anti-aliased rim.
+          const l = Math.max(0, box.l - 1), t = Math.max(0, box.t - 1);
+          const r = Math.min(c.width - 1, box.r + 1), b = Math.min(c.height - 1, box.b + 1);
           const w = r - l + 1, h = b - t + 1;
           const out = document.createElement("canvas");
           out.width = w;

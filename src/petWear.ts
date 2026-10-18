@@ -15,6 +15,7 @@
 // the head width / eye span.
 
 import type { PetSpecies } from "./petCatalog";
+import { inkBounds } from "./emojiSprite";
 
 type Pt = [number, number];
 export type WearAnchors = {
@@ -23,47 +24,47 @@ export type WearAnchors = {
 } & ({ eyes: [Pt, Pt] } | { eye: Pt; front: -1 | 1 }); // head-on: both eyes; profile: the visible eye + which way the face points
 
 const APPLE: Record<PetSpecies, WearAnchors> = {
-  dog: { top: [0.5, -0.024], w: 0.55, eyes: [[0.36, 0.569], [0.64, 0.569]] },
-  cat: { top: [0.5, 0.177], w: 0.64, eyes: [[0.308, 0.671], [0.692, 0.671]] },
-  bird: { top: [0.593, 0.137], w: 0.497, eye: [0.527, 0.503], front: -1 },
-  rabbit: { top: [0.5, 0.37], w: 0.492, eyes: [[0.328, 0.65], [0.697, 0.65]] },
-  hamster: { top: [0.5, 0.255], w: 0.533, eyes: [[0.351, 0.681], [0.66, 0.681]] },
-  fox: { top: [0.5, 0.205], w: 0.516, eyes: [[0.345, 0.628], [0.645, 0.628]] },
-  penguin: { top: [0.585, 0.106], w: 0.587, eye: [0.425, 0.479], front: -1 },
-  owl: { top: [0.488, 0.08], w: 0.595, eyes: [[0.295, 0.25], [0.667, 0.25]] },
-  turtle: { top: [0.18, 0.003], w: 0.165, eye: [0.232, 0.065], front: -1 },
-  duck: { top: [0.274, 0.035], w: 0.142, eye: [0.264, 0.097], front: -1 },
-  frog: { top: [0.5, 0.094], w: 0.55, eyes: [[0.31, 0.37], [0.7, 0.37]] },
-  raccoon: { top: [0.203, 0.251], w: 0.142, eye: [0.183, 0.355], front: -1 },
-  hedgehog: { top: [0.17, 0.443], w: 0.14, eye: [0.14, 0.53], front: -1 },
-  koala: { top: [0.5, 0.124], w: 0.55, eyes: [[0.33, 0.601], [0.68, 0.601]] },
-  sloth: { top: [0.15, 0.43], w: 0.18, eyes: [[0.11, 0.51], [0.2, 0.49]] },
-  panda: { top: [0.5, 0.139], w: 0.587, eyes: [[0.34, 0.562], [0.649, 0.562]] },
-  dragon: { top: [0.17, 0.56], w: 0.14, eye: [0.18, 0.61], front: -1 },
-  unicorn: { top: [0.514, 0.276], w: 0.309, eye: [0.448, 0.439], front: -1 },
+  dog: { top: [0.508, -0.044], w: 0.577, eyes: [[0.361, 0.572], [0.655, 0.572]] },
+  cat: { top: [0.5, 0.165], w: 0.64, eyes: [[0.308, 0.677], [0.692, 0.677]] },
+  bird: { top: [0.596, 0.122], w: 0.515, eye: [0.528, 0.503], front: -1 },
+  rabbit: { top: [0.5, 0.372], w: 0.512, eyes: [[0.321, 0.666], [0.705, 0.666]] },
+  hamster: { top: [0.5, 0.251], w: 0.551, eyes: [[0.346, 0.699], [0.666, 0.699]] },
+  fox: { top: [0.492, 0.195], w: 0.542, eyes: [[0.329, 0.632], [0.644, 0.632]] },
+  penguin: { top: [0.588, 0.089], w: 0.607, eye: [0.422, 0.478], front: -1 },
+  owl: { top: [0.5, 0.066], w: 0.64, eyes: [[0.292, 0.242], [0.692, 0.242]] },
+  turtle: { top: [0.172, -0.017], w: 0.173, eye: [0.227, 0.047], front: -1 },
+  duck: { top: [0.267, 0.02], w: 0.147, eye: [0.256, 0.084], front: -1 },
+  frog: { top: [0.5, 0.096], w: 0.568, eyes: [[0.304, 0.377], [0.706, 0.377]] },
+  raccoon: { top: [0.193, 0.237], w: 0.147, eye: [0.173, 0.347], front: -1 },
+  hedgehog: { top: [0.159, 0.44], w: 0.145, eye: [0.128, 0.531], front: -1 },
+  koala: { top: [0.5, 0.11], w: 0.568, eyes: [[0.325, 0.605], [0.686, 0.605]] },
+  sloth: { top: [0.15, 0.437], w: 0.18, eyes: [[0.11, 0.518], [0.2, 0.498]] },
+  panda: { top: [0.5, 0.126], w: 0.607, eyes: [[0.334, 0.564], [0.654, 0.564]] },
+  dragon: { top: [0.159, 0.555], w: 0.145, eye: [0.17, 0.607], front: -1 },
+  unicorn: { top: [0.514, 0.253], w: 0.32, eye: [0.446, 0.426], front: -1 },
 };
 
 // Google / Noto Color Emoji (Android, ChromeOS, Linux). Also the fallback for
 // other emoji sets, whose framing is closer to Noto's than to Apple's.
 const GOOGLE: Record<PetSpecies, WearAnchors> = {
-  dog: { top: [0.5, 0.013], w: 0.533, eyes: [[0.351, 0.506], [0.671, 0.506]] },
-  cat: { top: [0.516, 0.178], w: 0.516, eyes: [[0.341, 0.551], [0.702, 0.551]] },
-  bird: { top: [0.393, 0.11], w: 0.32, eye: [0.329, 0.236], front: -1 },
-  rabbit: { top: [0.511, 0.393], w: 0.427, eyes: [[0.34, 0.607], [0.696, 0.607]] },
-  hamster: { top: [0.5, 0.194], w: 0.593, eyes: [[0.334, 0.508], [0.666, 0.508]] },
-  fox: { top: [0.511, 0.262], w: 0.427, eyes: [[0.415, 0.587], [0.617, 0.587]] },
-  penguin: { top: [0.452, 0.041], w: 0.352, eye: [0.468, 0.137], front: -1 },
-  owl: { top: [0.5, 0.101], w: 0.655, eyes: [[0.267, 0.318], [0.675, 0.318]] },
-  turtle: { top: [0.201, 0.317], w: 0.235, eyes: [[0.137, 0.434], [0.265, 0.434]] },
-  duck: { top: [0.434, 0.035], w: 0.209, eye: [0.388, 0.139], front: -1 },
-  frog: { top: [0.521, 0.078], w: 0.533, eyes: [[0.308, 0.235], [0.735, 0.235]] },
-  raccoon: { top: [0.5, 0.114], w: 0.48, eyes: [[0.34, 0.495], [0.66, 0.495]] },
-  hedgehog: { top: [0.255, 0.315], w: 0.171, eye: [0.233, 0.485], front: -1 },
-  koala: { top: [0.5, 0.108], w: 0.516, eyes: [[0.335, 0.503], [0.665, 0.503]] },
-  sloth: { top: [0.209, 0.403], w: 0.217, eyes: [[0.166, 0.508], [0.253, 0.508]] },
-  panda: { top: [0.5, 0.071], w: 0.568, eyes: [[0.355, 0.505], [0.655, 0.505]] },
-  dragon: { top: [0.278, 0.116], w: 0.222, eye: [0.217, 0.201], front: -1 },
-  unicorn: { top: [0.396, 0.297], w: 0.247, eye: [0.307, 0.479], front: -1 },
+  dog: { top: [0.5, -0.008], w: 0.551, eyes: [[0.346, 0.506], [0.677, 0.506]] },
+  cat: { top: [0.482, 0.163], w: 0.571, eyes: [[0.288, 0.543], [0.688, 0.543]] },
+  bird: { top: [0.389, 0.112], w: 0.331, eye: [0.323, 0.24], front: -1 },
+  rabbit: { top: [0.512, 0.389], w: 0.447, eyes: [[0.333, 0.611], [0.705, 0.611]] },
+  hamster: { top: [0.5, 0.182], w: 0.616, eyes: [[0.328, 0.508], [0.672, 0.508]] },
+  fox: { top: [0.511, 0.249], w: 0.442, eyes: [[0.412, 0.58], [0.621, 0.58]] },
+  penguin: { top: [0.449, 0.025], w: 0.371, eye: [0.466, 0.124], front: -1 },
+  owl: { top: [0.5, 0.087], w: 0.686, eyes: [[0.256, 0.312], [0.683, 0.312]] },
+  turtle: { top: [0.191, 0.309], w: 0.243, eyes: [[0.124, 0.431], [0.257, 0.431]] },
+  duck: { top: [0.424, 0.02], w: 0.213, eye: [0.377, 0.127], front: -1 },
+  frog: { top: [0.522, 0.061], w: 0.551, eyes: [[0.301, 0.225], [0.743, 0.225]] },
+  raccoon: { top: [0.5, 0.097], w: 0.497, eyes: [[0.334, 0.495], [0.666, 0.495]] },
+  hedgehog: { top: [0.247, 0.306], w: 0.177, eye: [0.224, 0.484], front: -1 },
+  koala: { top: [0.5, 0.091], w: 0.533, eyes: [[0.33, 0.503], [0.671, 0.503]] },
+  sloth: { top: [0.199, 0.4], w: 0.225, eyes: [[0.154, 0.508], [0.244, 0.508]] },
+  panda: { top: [0.5, 0.055], w: 0.587, eyes: [[0.35, 0.505], [0.66, 0.505]] },
+  dragon: { top: [0.254, 0.103], w: 0.236, eye: [0.189, 0.191], front: -1 },
+  unicorn: { top: [0.392, 0.265], w: 0.256, eye: [0.3, 0.46], front: -1 },
 };
 
 // Apple platforms render emoji with Apple Color Emoji (EMOJI_FONT lists it first).
@@ -126,18 +127,9 @@ export function inkBox(glyph: string, font: string): InkBox | null {
       x.textBaseline = "alphabetic";
       x.fillText(glyph, ox, oy);
       const { data } = x.getImageData(0, 0, c.width, c.height);
-      let l = c.width, t = c.height, r = -1, b = -1;
-      for (let y = 0; y < c.height; y++) {
-        for (let i = 0; i < c.width; i++) {
-          if (data[(y * c.width + i) * 4 + 3]! > 24) {
-            if (i < l) l = i;
-            if (i > r) r = i;
-            if (y < t) t = y;
-            if (y > b) b = y;
-          }
-        }
-      }
-      if (r >= l && b >= t) box = { l: (l - ox) / REF, t: (t - oy) / REF, r: (r + 1 - ox) / REF, b: (b + 1 - oy) / REF };
+      // Noise-tolerant scan — see inkBounds for why a plain alpha test fails on Safari.
+      const ink = inkBounds(data, c.width, c.height);
+      if (ink) box = { l: (ink.l - ox) / REF, t: (ink.t - oy) / REF, r: (ink.r + 1 - ox) / REF, b: (ink.b + 1 - oy) / REF };
     }
   } catch {
     box = null;
