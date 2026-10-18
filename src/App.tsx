@@ -1015,6 +1015,10 @@ export default function App() {
   // the document title. Search + hash are preserved: the Stripe return param
   // and Supabase email-link hash both ride along untouched.
   useEffect(() => {
+    // Every view opens at the top, so the browser restoring an old scroll
+    // offset on reload (mobile Safari does it after the first paint) only
+    // ever lands people mid-page.
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
     window.scrollTo(0, 0);
     track(`view_${view}`);
     const target = `/${view}`;

@@ -485,9 +485,19 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
     setMessage(null);
     if (editingId) {
       const updated = await onUpdatePlan(editingId, draft);
+      if (!updated) {
+        setSaving(false);
+        setMessage("Couldn't update that event. Try again.");
+        return;
+      }
+      // Friends ticked while editing get invited too (already-invited ones
+      // are reported, not re-sent); existing invitations stay attached.
+      const invited = selectedFriendIds.length;
+      const inviteError = await inviteFriendsToPlannedStudy(editingId, userId, selectedFriendIds);
       setSaving(false);
-      if (updated) resetForm();
-      else setMessage("Couldn't update that event. Try again.");
+      resetForm();
+      if (inviteError) setMessage(inviteError);
+      else if (invited) setMessage("Event updated and invitations sent.");
       return;
     }
     const created = await onCreatePlan(draft);
@@ -631,24 +641,22 @@ export function PlannedStudyPanel({ tasks, plans, userId, isPremium, onSignIn, o
       </label>
     )}
 
-    {!editingId && (
-      <div className="mt-3 rounded-xl border border-border bg-card/60 p-3">
-        <p className="flex items-center gap-1.5 text-xs font-medium"><Users size={13} className="text-primary" /> Invite friends</p>
-        {friends.length === 0 ? (
-          <p className="mt-1 text-[11px] text-muted-foreground">No accepted friends yet. Add friends from your profile menu, then return here to invite them.</p>
-        ) : (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {friends.map((friend) => {
-              const checked = selectedFriendIds.includes(friend.id);
-              return <label key={friend.id} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${checked ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
-                <input type="checkbox" checked={checked} onChange={() => setSelectedFriendIds((current) => checked ? current.filter((id) => id !== friend.id) : [...current, friend.id])} className="h-3.5 w-3.5 accent-primary" />
-                {personName(friend)}
-              </label>;
-            })}
-          </div>
-        )}
-      </div>
-    )}
+    <div className="mt-3 rounded-xl border border-border bg-card/60 p-3">
+      <p className="flex items-center gap-1.5 text-xs font-medium"><Users size={13} className="text-primary" /> {editingId ? "Invite more friends" : "Invite friends"}</p>
+      {friends.length === 0 ? (
+        <p className="mt-1 text-[11px] text-muted-foreground">No accepted friends yet. Add friends from your profile menu, then return here to invite them.</p>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {friends.map((friend) => {
+            const checked = selectedFriendIds.includes(friend.id);
+            return <label key={friend.id} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${checked ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
+              <input type="checkbox" checked={checked} onChange={() => setSelectedFriendIds((current) => checked ? current.filter((id) => id !== friend.id) : [...current, friend.id])} className="h-3.5 w-3.5 accent-primary" />
+              {personName(friend)}
+            </label>;
+          })}
+        </div>
+      )}
+    </div>
 
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <button onClick={save} disabled={!canSave || saving}

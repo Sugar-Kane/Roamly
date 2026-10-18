@@ -830,6 +830,17 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
   // Ending is host-only and blocked during focus, so a host can't pull the room
   // out from under people who are mid-session.
   const canEnd = info.phase !== "focus";
+
+  // A room always opens at its timer. Joining from the lobby keeps the
+  // lobby's scroll position (you scrolled down to find the room), and a
+  // reload lets the browser restore an old one, so both landed mid-page
+  // (music / chat). Reset now and once more after the first paint, which is
+  // when mobile Safari applies its own restoration.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+    const raf = requestAnimationFrame(() => window.scrollTo(0, 0));
+    return () => cancelAnimationFrame(raf);
+  }, [room.id]);
   const [codeCopied, setCodeCopied] = useState(false);
   const copyCode = () => {
     if (!room.invite_code) return;
