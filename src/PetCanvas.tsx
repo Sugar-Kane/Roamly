@@ -10,8 +10,9 @@
 //    floor (without one they just curl up where they stand).
 //  * toy — a ball sits on the floor; walking pets kick it and it rolls,
 //    decelerates, and bounces off the stage edges. It's also grabbable: drag
-//    it with a pointer and let go to throw it (release velocity carries into
-//    an arc), and every awake pet drops what it's doing to chase it down.
+//    it with a mouse, or press and hold it with a finger, and let go to throw
+//    it (release velocity carries into an arc); a quick tap pops it up. Every
+//    awake pet drops what it's doing to chase it down.
 //  * bowl — pets occasionally wander over to the snack bowl and pause to eat.
 //  * hat / face — drawn on every pet (head or eye-line), emoji and Rive alike.
 //
@@ -159,6 +160,9 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
     // there first claims it; everyone else stands down and the winner trots it
     // home to its bed before dropping it.
     const ball = { x: 0, y: 0, vx: 0, vy: 0, placed: false, held: false, interest: 0, carrier: null as string | null };
+    // A finger pressing on the ball, waiting out HOLD_MS before it picks it up.
+    const HOLD_MS = 220;
+    let hold: { id: number; x: number; y: number; sx: number; sy: number; t0: number; timer: ReturnType<typeof setTimeout> } | null = null;
 
     const slotEmoji = (slot: AccessorySlot): string | null =>
       stateRef.current.accessories.find((a) => a.slot === slot)?.emoji ?? null;
@@ -270,6 +274,7 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         ball.held = false;
         ball.interest = 0;
         ball.carrier = null;
+        if (hold) { clearTimeout(hold.timer); hold = null; }
         canvas!.style.touchAction = "";
         canvas!.style.cursor = "";
         return;
@@ -292,7 +297,21 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
         ctx!.fill();
         ctx!.restore();
       }
-      ctx!.font = `${ballSize}px ${EMOJI_FONT}`;
+      // Touch press-and-hold: a ring fills around the ball until it's picked up.
+      if (hold && !ball.held) {
+        const k = Math.min(1, (performance.now() - hold.t0) / HOLD_MS);
+        const c = ballCenter();
+        ctx!.save();
+        ctx!.strokeStyle = "rgba(255,255,255,.9)";
+        ctx!.lineWidth = 3;
+        ctx!.lineCap = "round";
+        ctx!.beginPath();
+        ctx!.arc(c.x, c.y, ballSize * 0.62, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2);
+        ctx!.stroke();
+        ctx!.restore();
+      }
+      // Held balls grow a touch, so it reads as "in your hand".
+      ctx!.font = `${Math.round(ballSize * (ball.held ? 1.18 : 1))}px ${EMOJI_FONT}`;
       ctx!.fillText(toy, ball.x, floor - ball.y);
     }
 
@@ -559,48 +578,104 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
     // The ball is the one interactive thing on the stage: press on it, drag it
     // anywhere in the pen, and release to throw. Release velocity comes from
     // the last two pointer samples, so a flick actually flings it.
+    //
+    // A mouse grabs on press. A finger presses and holds (a ring fills around
+    // the ball) to pick it up — or starts dragging, which picks it up at once
+    // — and a quick tap pops it into the air instead. Touch gets a bigger hit
+    // area, and the held ball rides above the fingertip so it isn't hidden
+    // under it.
     const floorY = () => height - 6;
     const ballCenter = () => ({ x: ball.x, y: floorY() - ball.y - petSize() * 0.14 });
-    const grabRadius = () => Math.max(22, petSize() * 0.45);
-    const localPoint = (e: PointerEvent) => {
+    const grabRadius = (touch: boolean) => (touch ? Math.max(36, petSize() * 0.7) : Math.max(22, petSize() * 0.45));
+    const localPoint = (e: { clientX: number; clientY: number }) => {
       const r = canvas!.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
-    const overBall = (p: { x: number; y: number }) => {
+    const overBall = (p: { x: number; y: number }, touch = false) => {
       const c = ballCenter();
-      return ball.placed && Math.hypot(p.x - c.x, p.y - c.y) <= grabRadius();
+      return ball.placed && Math.hypot(p.x - c.x, p.y - c.y) <= grabRadius(touch);
     };
+    const fingerLift = () => petSize() * 0.45;
 
     type Sample = { x: number; y: number; t: number };
-    let drag: { id: number; prev: Sample | null; last: Sample } | null = null;
+    let drag: { id: number; prev: Sample | null; last: Sample; lift: number } | null = null;
 
-    const onPointerDown = (e: PointerEvent) => {
-      const p = localPoint(e);
-      if (!overBall(p)) return;
-      drag = { id: e.pointerId, prev: null, last: { x: p.x, y: p.y, t: e.timeStamp } };
+    const pickUp = (id: number, p: { x: number; y: number }, t: number, lift: number) => {
+      if (hold?.timer) clearTimeout(hold.timer);
+      hold = null;
+      drag = { id, prev: null, last: { x: p.x, y: p.y, t }, lift };
       ball.held = true;
       ball.carrier = null; // taking it back out of a pet's mouth ends the fetch
       ball.vx = 0;
       ball.vy = 0;
-      canvas!.setPointerCapture(e.pointerId);
+      moveHeld(p, lift);
       canvas!.style.cursor = "grabbing";
+      if (lift) navigator.vibrate?.(12);
+    };
+    const moveHeld = (p: { x: number; y: number }, lift: number) => {
+      ball.x = Math.min(width - 16, Math.max(16, p.x));
+      ball.y = Math.min(Math.max(0, height - 14), Math.max(0, floorY() - p.y + lift));
+    };
+
+    const onPointerDown = (e: PointerEvent) => {
+      const touch = e.pointerType !== "mouse";
+      const p = localPoint(e);
+      if (!overBall(p, touch)) return;
+      canvas!.setPointerCapture(e.pointerId);
       e.preventDefault();
+      if (!touch) {
+        pickUp(e.pointerId, p, e.timeStamp, 0);
+        return;
+      }
+      if (ball.y === 0) ball.vx = 0; // a finger on a rolling ball stops it
+      const id = e.pointerId;
+      hold = {
+        id,
+        x: p.x,
+        y: p.y,
+        sx: p.x,
+        sy: p.y,
+        t0: performance.now(),
+        timer: setTimeout(() => {
+          if (hold?.id === id) pickUp(id, { x: hold.x, y: hold.y }, performance.now(), fingerLift());
+        }, HOLD_MS),
+      };
     };
 
     const onPointerMove = (e: PointerEvent) => {
       const p = localPoint(e);
-      if (!drag || drag.id !== e.pointerId) {
-        canvas!.style.cursor = overBall(p) ? "grab" : "";
+      if (hold && hold.id === e.pointerId) {
+        hold.x = p.x;
+        hold.y = p.y;
+        // Dragging before the hold completes is just as clear: pick it up now.
+        if (Math.hypot(p.x - hold.sx, p.y - hold.sy) > 8) pickUp(e.pointerId, p, e.timeStamp, fingerLift());
+        e.preventDefault();
         return;
       }
-      ball.x = Math.min(width - 16, Math.max(16, p.x));
-      ball.y = Math.min(Math.max(0, height - 14), Math.max(0, floorY() - p.y));
+      if (!drag || drag.id !== e.pointerId) {
+        if (e.pointerType === "mouse") canvas!.style.cursor = overBall(p) ? "grab" : "";
+        return;
+      }
+      moveHeld(p, drag.lift);
       drag.prev = drag.last;
       drag.last = { x: p.x, y: p.y, t: e.timeStamp };
       e.preventDefault();
     };
 
     const releaseBall = (e: PointerEvent) => {
+      if (hold && hold.id === e.pointerId) {
+        // A quick tap: bop the ball up into the air and get the pets curious.
+        clearTimeout(hold.timer);
+        hold = null;
+        if (e.type === "pointerup") {
+          ball.carrier = null;
+          ball.vy = 420;
+          ball.vx = (Math.random() - 0.5) * 160;
+          ball.interest = CHASE_INTEREST;
+        }
+        if (canvas!.hasPointerCapture(e.pointerId)) canvas!.releasePointerCapture(e.pointerId);
+        return;
+      }
       if (!drag || drag.id !== e.pointerId) return;
       const from = drag.prev ?? drag.last;
       const dt = Math.max(16, drag.last.t - from.t) / 1000;
@@ -614,6 +689,15 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       if (canvas!.hasPointerCapture(e.pointerId)) canvas!.releasePointerCapture(e.pointerId);
     };
 
+    // iOS starts a scroll, text-selection loupe or callout menu on a long
+    // press unless the touch itself is cancelled — only when it's on the ball.
+    const onTouchStart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (t && e.touches.length === 1 && overBall(localPoint(t), true)) e.preventDefault();
+    };
+    canvas.style.setProperty("-webkit-touch-callout", "none");
+    canvas.style.userSelect = "none";
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", releaseBall);
@@ -631,6 +715,8 @@ export function PetStage({ pets, accessories = [], theme = null, asleep, reduceM
       running = false;
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVisible);
+      if (hold) clearTimeout(hold.timer);
+      canvas.removeEventListener("touchstart", onTouchStart);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", releaseBall);
