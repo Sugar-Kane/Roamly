@@ -1,0 +1,155 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Before Olympus — original score (Tone.js, offline)</title>
+<script src="../node_modules/tone/build/Tone.js"></script>
+<script>
+/* Original score for the film, rendered offline. D minor with Phrygian colour (E♭) for the
+   dark acts, turning to D major when Zeus opens his eyes.
+   Sections follow the narration: drone (Chaos, Void) → lyre and choir (Gaia, Uranus) →
+   frame drums (the children) → low strings (prison, grief) → war drums and brass-like swells (Cronus)
+   → tremolo cluster (prophecy, swallowing) → near silence (one escaped) → D major lift (Zeus)
+   → full ensemble (Olympus). Sound effects are placed from the film's own cue sheet. */
+const SR = 48000;
+
+window.renderMusic = async function (cues, DUR) {
+  const buf = await Tone.Offline(async () => {
+    const master = new Tone.Gain(0.85).toDestination();
+    const comp = new Tone.Compressor({ threshold: -16, ratio: 3, attack: 0.02, release: 0.3 }).connect(master);
+    const hall = new Tone.Reverb({ decay: 6.5, preDelay: 0.04, wet: 1 }); await hall.generate();
+    hall.connect(comp);
+    const send = new Tone.Gain(0.45).connect(hall);
+    const bus = new Tone.Gain(1).connect(comp); bus.connect(send);
+
+    // --- instruments ---
+    const droneF = new Tone.Filter(260, 'lowpass').connect(bus);
+    const drone = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 3, spread: 14 }, envelope: { attack: 4, decay: 1, sustain: 1, release: 5 }, volume: -26 }).connect(droneF);
+    const choirF = new Tone.Filter(1300, 'lowpass').connect(bus);
+    const choirV = new Tone.Vibrato(4.5, 0.08).connect(choirF);
+    const choir = new Tone.PolySynth(Tone.AMSynth, { harmonicity: 2.01, oscillator: { type: 'fattriangle', count: 3, spread: 20 }, envelope: { attack: 1.8, decay: 0.5, sustain: 0.9, release: 3.5 }, volume: -25 }).connect(choirV);
+    choir.maxPolyphony = 32;
+    const stringsF = new Tone.Filter(900, 'lowpass').connect(bus);
+    const strings = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 4, spread: 22 }, envelope: { attack: 1.2, decay: 0.4, sustain: 0.85, release: 2.8 }, volume: -30 }).connect(stringsF);
+    strings.maxPolyphony = 32;
+    const lyreDelay = new Tone.FeedbackDelay({ delayTime: 0.43, feedback: 0.25, wet: 0.2 }).connect(bus);
+    const lyre = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 3, modulationIndex: 1.4, oscillator: { type: 'triangle' }, modulation: { type: 'sine' },
+      envelope: { attack: 0.002, decay: 1.8, sustain: 0, release: 1.6 }, modulationEnvelope: { attack: 0.002, decay: 0.3, sustain: 0, release: 0.3 }, volume: -17 }).connect(lyreDelay);
+    lyre.maxPolyphony = 24;
+    const bell = new Tone.PolySynth(Tone.FMSynth, { harmonicity: 5.1, modulationIndex: 8, envelope: { attack: 0.001, decay: 2.8, sustain: 0, release: 2.5 },
+      modulationEnvelope: { attack: 0.001, decay: 0.4, sustain: 0, release: 0.3 }, volume: -24 }).connect(bus);
+    bell.maxPolyphony = 16;
+    const brassF = new Tone.Filter({ frequency: 700, type: 'lowpass', rolloff: -24 }).connect(bus);
+    const brass = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'fatsawtooth', count: 3, spread: 10 }, envelope: { attack: 0.35, decay: 0.6, sustain: 0.7, release: 1.6 }, volume: -24 }).connect(brassF);
+    brass.maxPolyphony = 24;
+    const taiko = new Tone.MembraneSynth({ pitchDecay: 0.08, octaves: 4, envelope: { attack: 0.002, decay: 0.9, sustain: 0, release: 0.4 }, volume: -8 }).connect(comp);
+    taiko.connect(send);
+    const frameF = new Tone.Filter(1200, 'bandpass').connect(bus);
+    const frame = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.002, decay: 0.16, sustain: 0 }, volume: -22 }).connect(frameF);
+    // sound effects
+    const rumbleF = new Tone.Filter(140, 'lowpass').connect(comp);
+    const rumble = new Tone.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.4, decay: 2.5, sustain: 0.3, release: 2.5 }, volume: -2 }).connect(rumbleF);
+    const thunderF = new Tone.Filter(900, 'lowpass').connect(comp); thunderF.connect(send);
+    const thunder = new Tone.NoiseSynth({ noise: { type: 'brown' }, envelope: { attack: 0.005, decay: 3.5, sustain: 0, release: 2 }, volume: 2 }).connect(thunderF);
+    const crackF = new Tone.Filter(2500, 'highpass').connect(comp);
+    const crack = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.25, sustain: 0 }, volume: -8 }).connect(crackF);
+    const slashF = new Tone.Filter({ frequency: 800, type: 'bandpass', Q: 2 }).connect(bus);
+    const slash = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.02, decay: 0.35, sustain: 0 }, volume: -8 }).connect(slashF);
+    const riserF = new Tone.Filter(400, 'lowpass').connect(bus);
+    const riser = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 3, decay: 0.1, sustain: 1, release: 0.4 }, volume: -26 }).connect(riserF);
+
+    // --- helpers ---
+    // Monophonic voices (drums, noise) must be triggered in time order, so queue them and sort at the end.
+    const monoQ = [];
+    const mono = (inst, ...args) => monoQ.push([inst instanceof Tone.NoiseSynth ? args[1] : args[2], () => inst.triggerAttackRelease(...args)]);
+    const hold = (inst, notes, at, dur, vel = 0.7) => inst.triggerAttackRelease(notes, dur, at, vel);
+    const arp = (notes, t0, t1, step, vel = 0.55) => { let i = 0; for (let t = t0; t < t1 - 0.05; t += step, i++) lyre.triggerAttackRelease(notes[i % notes.length], 1.4, t, vel * (0.8 + 0.2 * ((i * 7) % 3) / 2)); };
+
+    // Chaos & Void: a drone that barely breathes
+    hold(drone, ['D1', 'A1', 'D2'], 0.6, 20.4, 0.8);
+    hold(choir, ['D3', 'A3'], 5.0, 7.5, 0.35);
+    hold(choir, ['D3', 'Eb3', 'A3'], 12.4, 8.0, 0.25);
+    bell.triggerAttackRelease('A5', 3, cues.K.chaosName, 0.35);
+
+    // Gaia: lyre and warm choir
+    const gaia = [[21.2, ['D3', 'F3', 'A3'], ['D4', 'F4', 'A4', 'D5']], [23.2, ['Bb2', 'D3', 'F3'], ['Bb3', 'D4', 'F4', 'Bb4']], [25.2, ['F2', 'C3', 'A3'], ['F4', 'A4', 'C5', 'A4']], [27.2, ['C3', 'E3', 'G3'], ['C4', 'E4', 'G4', 'C5']]];
+    gaia.forEach(([t, ch, ar], i) => { hold(choir, ch, t, 2.2, 0.55); hold(drone, [ch[0].replace(/\d/, d => d - 1)], t, 2.2, 0.6); arp(ar, t, t + 2.0, 0.25); });
+    // Uranus: the sky opens (higher voicing, bells as the stars appear)
+    const ur = [[29.2, ['F3', 'A3', 'C4', 'F4']], [31.0, ['C3', 'G3', 'C4', 'E4']], [32.8, ['D3', 'A3', 'D4', 'F4']], [34.6, ['A2', 'E3', 'A3', 'C4']]];
+    ur.forEach(([t, ch], i) => { hold(choir, ch, t, 1.9, 0.6); hold(strings, [ch[0].replace(/\d/, d => d - 1)], t, 1.9, 0.5); arp(ch.map(n => n.replace(/\d/, d => +d + 1)), t, t + 1.8, 0.2, 0.45); });
+    for (let i = 0; i < 12; i++) bell.triggerAttackRelease(['A5', 'D6', 'F5', 'C6', 'E6', 'A6'][i % 6], 2, 29.8 + i * 0.42, 0.18);
+
+    // The children: frame drums enter, 72 bpm
+    const beat = 60 / 72;
+    const kids = [[36.6, ['D3', 'F3', 'A3']], [38.6, ['Bb2', 'D3', 'F3']], [40.6, ['G2', 'Bb2', 'D3']], [42.6, ['A2', 'C#3', 'E3']]];
+    kids.forEach(([t, ch]) => { hold(strings, ch.concat(ch.map(n => n.replace(/\d/, d => +d + 1))), t, 2.0, 0.6); hold(drone, [ch[0].replace(/\d/, d => d - 1)], t, 2.0, 0.7); });
+    for (let t = 36.6; t < 45.2; t += beat) { mono(taiko, 'D1', 0.6, t, 0.35); mono(frame, 0.1, t + beat / 2, 0.4); }
+    for (const at of [cues.K.titans, cues.K.cyclopes, cues.K.hundred]) hold(brass, ['D3', 'A3', 'D4'], at, 1.0, 0.55);
+
+    // Prison and grief: low strings, Phrygian darkness
+    hold(strings, ['G2', 'Bb2', 'D3'], 45.6, 2.4, 0.6); hold(strings, ['Eb2', 'G2', 'Bb2', 'Eb3'], 48.0, 2.6, 0.65); hold(strings, ['D2', 'A2', 'D3', 'F3'], 50.6, 2.4, 0.6);
+    hold(drone, ['D1', 'A1'], 45.6, 7.2, 0.9);
+    hold(choir, ['Bb3', 'D4', 'F4'], 52.8, 2.6, 0.5); hold(choir, ['A3', 'C#4', 'E4'], 55.4, 3.0, 0.55);
+    hold(strings, ['Bb1', 'Bb2'], 52.8, 2.6, 0.6); hold(strings, ['A1', 'A2'], 55.4, 3.2, 0.7);
+
+    // Cronus: war drums, brass swells, the stroke
+    for (let t = 59.0; t < 66.2; t += beat / 2) mono(taiko, t % (beat * 2) < 0.05 ? 'C1' : 'D1', 0.5, t, t < cues.K.overthrew ? 0.25 + 0.4 * (t - 59) / 2.5 : 0.5);
+    hold(brass, ['D2', 'A2', 'D3'], 59.0, 2.2, 0.5); hold(brass, ['Eb2', 'Bb2', 'Eb3', 'G3'], cues.K.overthrew, 1.8, 0.8);
+    hold(brass, ['D2', 'A2', 'D3', 'F3', 'A3'], cues.K.seized, 2.8, 0.85); hold(choir, ['D4', 'F4', 'A4', 'D5'], cues.K.seized, 2.8, 0.6);
+    hold(drone, ['D1', 'A1'], 59.0, 7.2, 1);
+
+    // Fear and prophecy: tremolo cluster, sparse bells
+    for (let t = 66.4; t < 77.8; t += 0.11) strings.triggerAttackRelease(['D3', 'Eb3'], 0.1, t, 0.12 + 0.1 * Math.sin((t - 66.4) / 11.4 * Math.PI));
+    hold(drone, ['D1', 'Eb2'], 66.4, 11.6, 0.8);
+    for (const [t, n] of [[69.3, 'D5'], [71.2, 'Eb5'], [73.4, 'A4'], [75.5, 'D5']]) bell.triggerAttackRelease(n, 3, t, 0.25);
+    hold(brass, ['Eb2', 'Bb2', 'Eb3'], cues.K.overthrowHim, 2.0, 0.5);
+
+    // Swallowing: rumble and a descending line
+    hold(drone, ['D1', 'Eb1', 'A1'], 78.2, 4.6, 1);
+    ['D3', 'C3', 'Bb2', 'A2', 'G2'].forEach((n, i) => strings.triggerAttackRelease([n, n.replace(/\d/, d => d - 1)], 0.8, 79.6 + i * 0.35, 0.5));
+
+    // One escaped: a single high note in the silence
+    bell.triggerAttackRelease('A5', 4, cues.K.escaped - 0.1, 0.4);
+    hold(choir, ['A4'], 84.0, 2.4, 0.3);
+
+    // Zeus: D major lift
+    hold(choir, ['D4', 'F#4', 'A4'], 86.6, 3.0, 0.5); hold(strings, ['D2', 'A2', 'D3', 'F#3'], 86.6, 3.0, 0.55);
+    arp(['D5', 'F#5', 'A5', 'D6'], 86.8, 89.6, 0.18, 0.4);
+    hold(brass, ['D3', 'F#3', 'A3', 'D4'], cues.K.eyes, 2.4, 0.6); hold(choir, ['D4', 'G4', 'B4', 'D5'], cues.K.eyes, 2.4, 0.6);
+
+    // Olympus: full ensemble to the end
+    const oly = [[92.8, ['D3', 'F#3', 'A3', 'D4']], [95.2, ['Bb2', 'D3', 'F3', 'Bb3']], [97.2, ['C3', 'E3', 'G3', 'C4']], [99.6, ['D3', 'F#3', 'A3', 'D4', 'F#4', 'A4']]];
+    oly.forEach(([t, ch], i) => {
+      const d = i === 3 ? 6.0 : 2.4;
+      hold(choir, ch.map(n => n.replace(/\d/, v => +v + 1)), t, d, 0.6); hold(strings, ch, t, d, 0.65); hold(brass, ch.slice(0, 3), t, d, i === 3 ? 0.8 : 0.55);
+      hold(drone, [ch[0].replace(/\d/, v => v - 2)], t, d, 0.8);
+      arp(ch.map(n => n.replace(/\d/, v => +v + 2)), t, t + Math.min(d, 2.4), 0.15, 0.4);
+    });
+    for (let t = 95.2; t < 99.6; t += beat) mono(taiko, 'D1', 0.6, t, 0.35 + 0.1 * (t - 95.2));
+    mono(taiko, 'C1', 1.2, 99.6, 0.9);
+
+    // --- effects from the film's cue sheet ---
+    for (const h of cues.hits) {
+      if (h.kind === 'boom') mono(taiko, 'A0', 1.2, h.at, 0.8);
+      if (h.kind === 'rumble') mono(rumble, 2.4, h.at, 0.8);
+      if (h.kind === 'shimmer') ['D6', 'A6', 'E6', 'D7'].forEach((n, i) => bell.triggerAttackRelease(n, 2.5, h.at + i * 0.07, 0.16));
+      if (h.kind === 'slash') { slashF.frequency.setValueAtTime(500, h.at - 0.12); slashF.frequency.exponentialRampToValueAtTime(6000, h.at + 0.2); mono(slash, 0.3, h.at - 0.12, 0.9); }
+      if (h.kind === 'thunder') { mono(crack, 0.2, h.at, 1); mono(thunder, 3.2, h.at + 0.05, 1); mono(taiko, 'G0', 2, h.at + 0.05, 1); }
+      if (h.kind === 'swell') { riserF.frequency.setValueAtTime(300, h.at - 3); riserF.frequency.exponentialRampToValueAtTime(5000, h.at + 0.6); mono(riser, 3.4, h.at - 3, 0.8); }
+    }
+    monoQ.sort((a, b) => a[0] - b[0]).forEach(([, fire]) => fire());
+    // fade out with the picture
+    master.gain.setValueAtTime(0.85, DUR - 3.5);
+    master.gain.linearRampToValueAtTime(0, DUR - 0.2);
+  }, DUR, 2, SR);
+
+  // Float32 stereo → 16-bit WAV → base64
+  const L = buf.getChannelData(0), R = buf.getChannelData(1), n = L.length;
+  const ab = new ArrayBuffer(44 + n * 4), v = new DataView(ab);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 4, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 2, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 4, true); v.setUint16(32, 4, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 4, true);
+  for (let i = 0; i < n; i++) { v.setInt16(44 + i * 4, Math.max(-1, Math.min(1, L[i])) * 32767, true); v.setInt16(46 + i * 4, Math.max(-1, Math.min(1, R[i])) * 32767, true); }
+  const bytes = new Uint8Array(ab); let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+</script>

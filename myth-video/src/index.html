@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Before Olympus — film</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; width: 1920px; height: 1080px; }
+  body.preview canvas { width: 100vw; height: auto; max-width: 1920px; }
+  #preview { font: 14px system-ui, sans-serif; color: #ddd; display: flex; gap: 12px; align-items: center; padding: 10px; }
+  #preview input { flex: 1; }
+</style>
+</head>
+<body>
+<!--
+  Deterministic film. Every frame is a pure function of time:
+    window.renderAt(seconds)   draws the exact frame for that moment
+    window.FILM.ready          resolves once fonts and textures are ready
+    window.FILM.cues           narration start times and sound-effect hits, read by the audio tools
+  URL params: ?t=30 (jump)  &render=1 (no preview controls)
+-->
+<canvas id="c" width="1920" height="1080"></canvas>
+<div id="preview" hidden>
+  <button id="play">▶︎ Play</button>
+  <input id="scrub" type="range" min="0" max="106" step="0.0333" value="0">
+  <span id="time">0.00</span>
+</div>
+<audio id="mix" src="../audio/mix.wav" preload="auto"></audio>
+<script src="film.js"></script>
+</body>
+</html>
