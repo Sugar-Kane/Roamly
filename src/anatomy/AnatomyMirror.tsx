@@ -219,7 +219,10 @@ export function AnatomyMirror({ onBack, onLogMinutes, taskTitle }: {
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_17rem]">
         {/* Stage */}
-        <div ref={stageRef} className="relative overflow-hidden rounded-3xl border border-border bg-black shadow-sm" style={{ aspectRatio: String(aspect) }}
+        <div ref={stageRef} className={`relative min-w-0 overflow-hidden rounded-3xl border border-border bg-black shadow-sm ${running ? "" : "min-h-[21rem] sm:aspect-video"}`}
+          // Before the camera starts the panel only needs room for its text (a fixed
+          // shape plus a min-height would widen it past a phone screen).
+          style={running ? { aspectRatio: String(aspect) } : undefined}
           onPointerDown={onStageTap}>
           <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-fill" style={{ transform: "scaleX(-1)" }} />
           <div ref={tintRef} aria-hidden="true" className={`pointer-events-none absolute inset-0 transition-opacity ${running && look === "xray" ? "opacity-100" : "opacity-0"}`}
@@ -232,7 +235,7 @@ export function AnatomyMirror({ onBack, onLogMinutes, taskTitle }: {
           ))}
 
           {!running && (
-            <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/70 to-black/85 p-6 text-center text-white">
+            <div className="absolute inset-0 grid place-items-center bg-gradient-to-b from-black/70 to-black/85 p-5 text-center text-white sm:p-6">
               <div className="max-w-sm">
                 <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl gradient-primary shadow-glow"><Scan size={26} /></div>
                 <p className="mt-4 font-display text-xl font-semibold">Look inside your own head</p>
