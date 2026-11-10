@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { limitOrResponse } from "./_ratelimit.js";
+import { scrubText } from "./_scrub.js";
 
 // Inlined structured logger (kept local so this function bundles standalone).
 // Never log secrets, tokens, or message bodies — ids and outcomes only.
@@ -55,7 +56,7 @@ export async function POST(request: Request): Promise<Response> {
   const id = (body.id ?? "").trim();
   if (!id) return json({ error: "Missing feedback id" }, 400);
 
-  // Load the feedback row + submitter details. Service role bypasses RLS, so we
+  // Load the feedback row. Service role bypasses RLS, so we
   // re-check ownership by hand: the caller must own this feedback.
   const { data: row, error: rowErr } = await admin
     .from("feedback")
@@ -70,11 +71,11 @@ export async function POST(request: Request): Promise<Response> {
   // client never surfaces an error for an unconfigured integration.
   if (!githubToken) return json({ ok: true, note: "github_not_configured" }, 200);
 
-  const { data: profile } = await admin
-    .from("profiles").select("email, username").eq("id", row.user_id).single();
-
+  // The repository is public, so the issue must not identify the reporter:
+  // no email or username, and contact details typed into the message itself
+  // are redacted. Admins look the reporter up by ticket id in the admin panel.
   const category = String(row.category);
-  const message = String(row.message);
+  const message = scrubText(String(row.message));
   const title = `[${category}] ${message.replace(/\s+/g, " ").slice(0, 60)}${message.length > 60 ? "…" : ""}`;
   const bodyLines = [
     message,
@@ -84,7 +85,6 @@ export async function POST(request: Request): Promise<Response> {
     row.page ? `**Page:** ${row.page}` : "",
     row.device ? `**Device:** ${row.device}` : "",
     row.platform ? `**Platform:** ${row.platform}` : "",
-    `**From:** ${profile?.email ?? "unknown"}${profile?.username ? ` (@${profile.username})` : ""}`,
     "",
     `_Submitted through Roamly in-app feedback · ticket \`${row.id}\`_`,
   ].filter(Boolean);

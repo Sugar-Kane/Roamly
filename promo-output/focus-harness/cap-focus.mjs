@@ -1,0 +1,13 @@
+import { open, shot } from "./lib.mjs";
+const { b, p } = await open({ clock: true, prefs: { "roamly-companions": "1", "roamly-dnd-nudge-seen": "1", "roamly-focus-sound": "lofi" } });
+const card = p.getByRole("button", { name: /Select timer/ });
+await card.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + scrollY - 40));
+await p.clock.runFor(800);
+await shot(p, "e0-classic-card");
+await p.getByRole("button", { name: /^Start/ }).first().click();
+await p.clock.runFor(1500);
+await shot(p, "e1-focus-mode");
+await p.clock.runFor(47000);
+await shot(p, "e2-focus-mode-later");
+console.log((await p.locator("body").innerText()).slice(0, 900));
+await b.close();

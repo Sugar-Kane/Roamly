@@ -26,6 +26,28 @@ type MediaType = (typeof ALLOWED_MEDIA_TYPES)[number];
 const MAX_TEXT_CHARS = 60_000; // keep worst-case Claude input (and cost) bounded
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12MB — bounds a worst-case PDF's Claude cost
 const MAX_PDF_PAGES = 50;
+// Office files are zips: a 12MB upload can inflate to gigabytes. Bound what the
+// central directory says each entry (and the whole archive) expands to.
+const MAX_ZIP_ENTRIES = 2000;
+const MAX_ZIP_ENTRY_BYTES = 25 * 1024 * 1024;
+const MAX_ZIP_TOTAL_BYTES = 100 * 1024 * 1024;
+
+async function openBoundedZip(data: ArrayBuffer | Buffer): Promise<JSZip> {
+  const zip = await JSZip.loadAsync(data);
+  const entries = Object.values(zip.files);
+  if (entries.length > MAX_ZIP_ENTRIES) throw new Error("zip_too_many_entries");
+  let total = 0;
+  for (const entry of entries) {
+    // JSZip keeps the central-directory sizes on a private field; it is set for
+    // every entry of a loaded archive. Missing means we can't bound it: refuse.
+    const size = (entry as unknown as { _data?: { uncompressedSize?: number } })._data?.uncompressedSize;
+    if (entry.dir) continue;
+    if (typeof size !== "number" || size > MAX_ZIP_ENTRY_BYTES) throw new Error("zip_entry_too_large");
+    total += size;
+    if (total > MAX_ZIP_TOTAL_BYTES) throw new Error("zip_too_large");
+  }
+  return zip;
+}
 const MIN_USABLE_PDF_CHARS = 80;
 
 const FREE_MONTHLY_QUOTA = 3;
@@ -317,11 +339,13 @@ export async function POST(request: Request): Promise<Response> {
       if (!resp.ok) throw new Error(`file fetch failed (${resp.status})`);
       let text: string;
       if (validatedMediaType === DOCX) {
-        const { value } = await mammoth.extractRawText({ buffer: Buffer.from(await resp.arrayBuffer()) });
+        const buf = Buffer.from(await resp.arrayBuffer());
+        await openBoundedZip(buf); // a .docx is a zip: refuse decompression bombs before mammoth inflates it
+        const { value } = await mammoth.extractRawText({ buffer: buf });
         text = value;
       } else if (validatedMediaType === PPTX) {
         // A .pptx is a zip; slide text lives in <a:t> runs inside each slide's XML.
-        const zip = await JSZip.loadAsync(await resp.arrayBuffer());
+        const zip = await openBoundedZip(await resp.arrayBuffer());
         const slideNames = Object.keys(zip.files)
           .filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
           .sort((a, b) => Number(a.match(/\d+/)![0]) - Number(b.match(/\d+/)![0]));

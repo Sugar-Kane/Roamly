@@ -11,6 +11,7 @@ import {
   Camera, Trash2, Check, X, Pencil, Crown, Mail, CalendarDays, ShieldCheck,
   Download, AlertTriangle, Loader2, ChevronRight, Users,
 } from "lucide-react";
+import { TwoFactorSection } from "./TwoFactor";
 import type { Session } from "@supabase/supabase-js";
 import { Modal } from "./Modal";
 import {
@@ -307,6 +308,11 @@ export function AccountSettings({ session, profile, isPremium, onProfileChange, 
             </span>
             <ChevronRight size={16} className="shrink-0 text-muted-foreground" />
           </button>
+        </Section>
+
+        {/* Security */}
+        <Section title="Security">
+          <TwoFactorSection />
         </Section>
 
         {/* Privacy */}

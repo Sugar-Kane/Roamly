@@ -852,10 +852,10 @@ export async function mirrorFeedbackToGitHub(id: string): Promise<void> {
 }
 
 // ---- Invites ----
-// Invite someone by email (api/invite). Returns { status } on success —
-// "invited" (email sent) or "friend_request" (they're already a user) — or
-// { error } with a user-facing message.
-export type InviteResult = { status?: "invited" | "friend_request"; error?: string; note?: string };
+// Invite someone by email (api/invite). Returns { status: "sent" } on success,
+// the same whether an invite email or a friend request went out (so the
+// endpoint can't reveal who has an account), or { error } with a message.
+export type InviteResult = { status?: "sent"; error?: string };
 
 export async function sendInvite(email: string, name?: string): Promise<InviteResult> {
   const token = await getAccessToken();

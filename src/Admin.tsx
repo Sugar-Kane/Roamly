@@ -214,11 +214,7 @@ function AdminUsers() {
     if (res.error) { setInviteMsg({ ok: false, text: res.error }); return; }
     setInviteMsg({
       ok: true,
-      text: res.status === "friend_request"
-        ? "Already a user. Friend request sent."
-        : res.note === "resent"
-          ? `Invite re-sent to ${inviteEmail.trim()}.`
-          : `Invite emailed to ${inviteEmail.trim()}.`,
+      text: `Sent to ${inviteEmail.trim()}: an invite email, or a friend request if they already have an account.`,
     });
     setInviteEmail("");
     setInviteName("");

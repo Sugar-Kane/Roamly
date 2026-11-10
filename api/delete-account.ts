@@ -68,17 +68,20 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
-  // Sweep avatar objects from Storage. Rows cascade on user delete, but Storage
+  // Sweep the user's Storage objects. Rows cascade on user delete, but Storage
   // blobs do not — they live under a per-user folder (userId/<uuid>.ext). Best
   // effort: a leftover blob is harmless (its signed URLs die with the account)
   // and must never block the deletion the user asked for.
-  try {
-    const { data: files } = await service.storage.from("avatars").list(userId);
-    if (files && files.length > 0) {
-      await service.storage.from("avatars").remove(files.map((f) => `${userId}/${f.name}`));
+  // The same goes for study uploads left behind by an interrupted AI upload.
+  for (const bucket of ["avatars", "study-uploads"]) {
+    try {
+      const { data: files } = await service.storage.from(bucket).list(userId, { limit: 1000 });
+      if (files && files.length > 0) {
+        await service.storage.from(bucket).remove(files.map((f) => `${userId}/${f.name}`));
+      }
+    } catch (error) {
+      apiLog("delete-account", "storage_sweep_failed", { userId, bucket, message: error instanceof Error ? error.message : "unknown" });
     }
-  } catch (error) {
-    apiLog("delete-account", "avatar_sweep_failed", { userId, message: error instanceof Error ? error.message : "unknown" });
   }
 
   // Hard delete (false = do not soft-delete). Supabase defaults to hard, but

@@ -25,19 +25,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Fetch, transcode, and rebuild the manifest
-        run: node scripts/fetch-music.mjs "${{ inputs.tracks_per_channel }}"
+        # Passed through env, not interpolated into the script, so the input
+        # can't inject shell syntax.
+        env:
+          TRACKS_PER_CHANNEL: ${{ inputs.tracks_per_channel }}
+        run: node scripts/fetch-music.mjs "$TRACKS_PER_CHANNEL"
       # The rows still have to be registered in public.music_tracks before the
       # player sees them. Kept as an artifact rather than executed here so no
       # database credentials are needed in CI.
       - name: Upload catalog SQL
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: supabase-seed-sql
           path: supabase-seed.sql

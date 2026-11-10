@@ -12,6 +12,7 @@ const WeekChart = lazyChunk(() => import("./Charts").then((m) => ({ default: m.W
 const SubjectDonut = lazyChunk(() => import("./Charts").then((m) => ({ default: m.SubjectDonut })));
 import { supabase, arrivedViaEmailLink } from "./supabaseClient";
 import { fetchProfile, updateGoalAndExam, recordFocusSession, fetchRecentSessions, fetchStudyEvents, fetchPlannedStudySessions, createPlannedStudySession, updatePlannedStudySession, deletePlannedStudySession, getAccessToken, fetchTasks, createTask, updateTask, deleteTask, checkIsAdmin, migrateGuestDataToAccount, fetchExamSchedules, createExamSchedule, updateExamSchedule, deleteExamSchedule, saveThemePreference, type ExamSchedule, type PlannedStudyUpdate, type Profile } from "./db";
+import { MfaGate } from "./TwoFactor";
 import { addSession, computeStreak, minutesToday, dateKey, type FocusSession } from "./streaks";
 import { track, setTrackUser } from "./track";
 import { identifySelfHealing } from "./selfheal";
@@ -283,9 +284,18 @@ export default function App() {
       setActiveTask(taskRows[0]?.id ?? null);
       setTasksLoaded(true);
     })();
-    checkIsAdmin().then((admin) => { if (!cancelled) setIsAdmin(admin); });
     return () => { cancelled = true; };
   }, [session?.user.id]);
+
+  // Admin access depends on the session's assurance level (is_admin() needs
+  // aal2), so re-check whenever the token changes — e.g. right after the
+  // two-step code is entered — not only when the user changes.
+  useEffect(() => {
+    if (!session) { setIsAdmin(false); return; }
+    let cancelled = false;
+    checkIsAdmin().then((admin) => { if (!cancelled) setIsAdmin(admin); });
+    return () => { cancelled = true; };
+  }, [session?.access_token]);
 
   useEffect(() => {
     if (!session && tasksLoaded) saveGuestTasks(tasks);
@@ -1375,6 +1385,7 @@ export default function App() {
         <FriendsModal session={session} profile={profile} onClose={() => setShowFriends(false)} onUsernameSet={handleUsernameSet}
           isPremium={isPremium} onUpgrade={() => { setShowFriends(false); setShowUpsell(true); }} />
       )}
+      {session && <MfaGate accessToken={session.access_token} onSignOut={onSignOut} />}
       {showAccount && session && (
         <AccountSettings session={session} profile={profile} isPremium={isPremium}
           onProfileChange={setProfile} onClose={() => setShowAccount(false)} onSignOut={onSignOut}

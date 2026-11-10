@@ -19,6 +19,7 @@
 // Env: VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GITHUB_TOKEN, GITHUB_REPO.
 
 import { createClient } from "@supabase/supabase-js";
+import { callerIsAdmin } from "./_admin.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { apiLog } from "./_log.js";
 import { limitOrResponse } from "./_ratelimit.js";
@@ -47,8 +48,7 @@ export async function handleAction(request: Request): Promise<Response> {
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
 
-  const { data: isAdmin } = await admin.from("admins").select("user_id").eq("user_id", userData.user.id).maybeSingle();
-  if (!isAdmin) return json({ error: "Not an admin" }, 403);
+  if (!(await callerIsAdmin(supabaseUrl, process.env.VITE_SUPABASE_ANON_KEY ?? "", token))) return json({ error: "Not an admin" }, 403);
 
   const rl = await limitOrResponse("selfheal-action", userData.user.id, 30, 300);
   if (rl) return rl;

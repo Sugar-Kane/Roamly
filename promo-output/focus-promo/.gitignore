@@ -1,0 +1,3 @@
+out/
+# the focus-mode clip is a render input (frames captured by focus-harness), so it is versioned
+!public/clips/*.mp4

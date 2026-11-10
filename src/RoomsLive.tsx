@@ -4,7 +4,7 @@ import { Users, Plus, X, DoorOpen, Send, MessageCircle, Lock, Infinity as Infini
 import { supabase } from "./supabaseClient";
 import {
   fetchRooms, createRoom, deleteRoom, reapRoom, roomPhaseAt, roomStationAt, notifyFriendsOfRoom, inviteToRoom,
-  fetchMessages, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
+  fetchMessages, fetchMessageById, sendMessage, fetchFriendships, getPublicProfiles, heartbeatRoom, clearRoomHeartbeat,
   setRoomMusic, joinRoom, joinRoomByCode, roomNowMs, syncServerClock, fetchRoomOccupancy,
   type LiveRoom, type RoomMessage, type PublicProfile,
 } from "./rooms";
@@ -1091,52 +1091,76 @@ function RoomView({ room, session, profile, now, isPremium, gateThen, soundAuto,
 function useRoomChat(roomId: string) {
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [names, setNames] = useState<Map<string, PublicProfile>>(new Map());
-  // The live channel, so send() can broadcast a new message to peers instantly.
-  const channelRef = useRef<ReturnType<NonNullable<typeof supabase>["channel"]> | null>(null);
+  // The private ping channel, so send() can tell peers a new message exists.
+  const pingRef = useRef<ReturnType<NonNullable<typeof supabase>["channel"]> | null>(null);
 
   // Merge keyed by id (never blind-append) so a message that lands via more
-  // than one path (broadcast, postgres-changes, history, or the sender's own
-  // echo) shows exactly once. Stable identity so send() can call it too.
+  // than one path (ping, postgres-changes, history, or the sender's own echo)
+  // shows exactly once. Stable identity so send() can call it too.
   const mergeRef = useRef((incoming: RoomMessage[]) =>
     setMessages((prev) => {
       const byId = new Map(prev.map((m) => [m.id, m]));
       for (const m of incoming) byId.set(m.id, m);
       return [...byId.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
     }));
+  const knownIds = useRef<Set<string>>(new Set());
+  useEffect(() => { knownIds.current = new Set(messages.map((m) => m.id)); }, [messages]);
 
-  // History + live inserts. subscribe() throws if this topic is somehow already
-  // subscribed — guard so a duplicate can degrade to history-only. We listen on
-  // BOTH a realtime broadcast (near-instant, sent by peers in send()) and
-  // postgres-changes (slower WAL replication, the reliability backstop) so a
-  // message shows immediately for everyone instead of after replication lag.
+  // Two paths, both of which only ever render rows read through RLS:
+  //  * postgres-changes (RLS-filtered per subscriber) on the room-chat channel,
+  //    the reliability backstop, which can lag by several seconds;
+  //  * a ping on a PRIVATE channel (realtime.messages policies limit it to
+  //    people who can access the room) carrying only the new message's id.
+  //    Receivers fetch that row themselves, so a ping can never inject, alter
+  //    or reveal a message: the database decides what exists and who sees it.
+  // subscribe() throws if a topic is somehow already subscribed, so each path
+  // is guarded and chat degrades to history-only rather than breaking.
   useEffect(() => {
     if (!supabase) return;
     const client = supabase;
     const merge = (incoming: RoomMessage[]) => mergeRef.current(incoming);
+    let changes: ReturnType<typeof client.channel> | null = null;
+    let ping: ReturnType<typeof client.channel> | null = null;
     try {
-      const channel = client
+      changes = client
         .channel(`room-chat:${roomId}`)
-        .on("broadcast", { event: "msg" }, (payload) => merge([payload.payload as RoomMessage]))
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${roomId}` },
           (payload) => merge([payload.new as RoomMessage]))
         .subscribe((status) => { if (status === "SUBSCRIBED") fetchMessages(roomId).then(merge); });
-      channelRef.current = channel;
-      return () => { channelRef.current = null; client.removeChannel(channel); };
     } catch (e) {
       console.warn("[Roamly] room chat subscribe failed", e);
       fetchMessages(roomId).then(merge); // degrade to history-only
     }
+    try {
+      ping = client
+        .channel(`room-chat-ping:${roomId}`, { config: { private: true } })
+        .on("broadcast", { event: "msg" }, ({ payload }) => {
+          const id = typeof payload?.id === "string" ? payload.id : null;
+          if (!id || knownIds.current.has(id)) return;
+          knownIds.current.add(id);
+          fetchMessageById(roomId, id).then((m) => { if (m) merge([m]); });
+        })
+        .subscribe();
+      pingRef.current = ping;
+    } catch (e) {
+      console.warn("[Roamly] room chat ping subscribe failed", e);
+    }
+    return () => {
+      pingRef.current = null;
+      if (changes) client.removeChannel(changes);
+      if (ping) client.removeChannel(ping);
+    };
   }, [roomId]);
 
-  // Send + instant delivery: insert, then echo the real row locally right away
-  // (the sender never waits on replication) and broadcast it so peers get it
-  // within a channel round-trip instead of up to ~12s of WAL lag.
+  // Send + instant delivery: insert, echo the real row locally right away (the
+  // sender never waits on replication), and ping peers with its id so they
+  // fetch it within a round-trip instead of waiting on WAL lag.
   const send = useCallback(async (userId: string, body: string): Promise<string | null> => {
     const { error, message } = await sendMessage(roomId, userId, body);
     if (error) return error;
     if (message) {
       mergeRef.current([message]);
-      channelRef.current?.send({ type: "broadcast", event: "msg", payload: message });
+      pingRef.current?.send({ type: "broadcast", event: "msg", payload: { id: message.id } });
     }
     return null;
   }, [roomId]);

@@ -22,8 +22,10 @@
 // Env: ANTHROPIC_API_KEY, VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
 //      CRON_SECRET, GITHUB_TOKEN (read-only use here), GITHUB_REPO.
 
+import { timingSafeEqual } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
+import { callerIsAdmin } from "./_admin.js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { apiLog } from "./_log.js";
 import { scrubForPrompt, scrubText } from "./_scrub.js";
@@ -154,16 +156,18 @@ async function authorize(request: Request, admin: SupabaseClient): Promise<Respo
   const cronSecret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization") ?? "";
 
-  if (cronSecret && auth === `Bearer ${cronSecret}`) return null;
+  if (cronSecret) {
+    const given = Buffer.from(auth), expected = Buffer.from(`Bearer ${cronSecret}`);
+    if (given.length === expected.length && timingSafeEqual(given, expected)) return null;
+  }
 
   if (auth.startsWith("Bearer ")) {
     const { data, error } = await admin.auth.getUser(auth.slice(7));
     if (!error && data.user) {
-      // Membership of public.admins is the same gate is_admin() uses in SQL.
-      // Checked here against the service-role client rather than trusted from
-      // the caller — this endpoint spends money and reads source code.
-      const { data: row } = await admin.from("admins").select("user_id").eq("user_id", data.user.id).maybeSingle();
-      if (row) return null;
+      // is_admin() asked as the caller: allowlist membership AND a two-step
+      // (aal2) session — this endpoint spends money and reads source code.
+      const url = process.env.VITE_SUPABASE_URL ?? "";
+      if (await callerIsAdmin(url, process.env.VITE_SUPABASE_ANON_KEY ?? "", auth.slice(7))) return null;
       return json({ error: "not_admin" }, 403);
     }
   }
