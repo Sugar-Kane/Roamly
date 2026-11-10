@@ -1,0 +1,9 @@
+head.bin, head.json, hand.bin and hand.json are derived from BodyParts3D,
+© The Database Center for Life Science (DBCLS), licensed under
+Creative Commons Attribution-Share Alike 2.1 Japan (CC BY-SA 2.1 JP):
+https://creativecommons.org/licenses/by-sa/2.1/jp/deed.en
+Source: https://lifesciencedb.jp/bp3d/
+
+Changes: selected parts were decimated, aligned to MediaPipe's canonical face
+model, normalized (hand bones) and quantized. These files are distributed under
+the same license. Build scripts: scripts/anatomy/.

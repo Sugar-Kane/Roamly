@@ -47,5 +47,12 @@
     "index": false,
     "title": "Admin | Roamly Flow",
     "description": "Roamly Flow admin."
+  },
+  {
+    "view": "anatomy",
+    "path": "/anatomy",
+    "index": true,
+    "title": "Anatomy Mirror: see your skull, muscles and brain live | Roamly Flow",
+    "description": "Point your webcam at your face to see the skull, jaw, facial muscles and brain follow your head, then quiz yourself. Free, no account, video stays on your device."
   }
 ]

@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { lazyChunk } from "./lazyChunk";
 import { createPortal } from "react-dom";
-import { Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, Pencil, Trash2, Sprout, Moon, Settings2, PictureInPicture2, CircleCheck } from "lucide-react";
+import { ScanFace, Timer, ListChecks, BarChart3, Users, Check, Plus, Minus, Crown, Play, Pause, RotateCcw, SkipForward, X, Music, Palette, Flame, BellOff, CalendarClock, LogIn, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Volume2, Lock, GripVertical, HelpCircle, Pencil, Trash2, Sprout, Moon, Settings2, PictureInPicture2, CircleCheck } from "lucide-react";
 import { METHODS, THEMES, sortTasks, tagColor, readableTextOn, type Task } from "./data";
 import { useTimer, fmt, type Phase } from "./useTimer";
 import { FOCUS_SOUNDS, startFocusSound, stopFocusSound, setFocusVolume, focusSoundActive, unlockAudio, releaseAudioSession, musicCredit, duckFocusSound, setOnPlaybackStart, playCelebration, type FocusSoundId } from "./focusSounds";
@@ -32,6 +32,8 @@ import { Tutorial } from "./Tutorial";
 // Admin-only, and large (the whole BI dashboard). Lazy so it never ships in
 // the initial bundle for the public/focus route — only admins fetch it.
 const AdminView = lazyChunk(() => import("./Admin").then((m) => ({ default: m.AdminView })));
+// three.js + MediaPipe load only when someone opens the Anatomy Mirror.
+const AnatomyMirror = lazyChunk(() => import("./anatomy/AnatomyMirror").then((m) => ({ default: m.AnatomyMirror })));
 import { Modal } from "./Modal";
 import LockedFeaturePreview from "./LockedFeaturePreview";
 import { HelpLegal } from "./HelpLegal";
@@ -56,7 +58,7 @@ import { AdBreakPrompt, AdSubmitModal } from "./AdBreak";
 import type { Session } from "@supabase/supabase-js";
 import { applySeo } from "./seo";
 
-export type View = "focus" | "tasks" | "analytics" | "rooms" | "garden" | "premium" | "admin";
+export type View = "focus" | "tasks" | "analytics" | "rooms" | "garden" | "premium" | "admin" | "anatomy";
 
 // A count-up session shorter than this isn't offered for saving — a few
 // seconds from an accidental start is not real study time.
@@ -67,11 +69,25 @@ const MIN_COUNTUP_SAVE_SECONDS = 60;
 // already rewrites all non-api paths to the SPA.
 const VIEW_LABELS: Record<View, string> = {
   focus: "Focus", tasks: "Tasks", analytics: "Analytics", rooms: "Rooms",
-  garden: "Garden", premium: "Premium", admin: "Admin",
+  garden: "Garden", premium: "Premium", admin: "Admin", anatomy: "Anatomy Mirror",
 };
 function viewFromPath(pathname: string): View {
   const slug = pathname.replace(/^\/+|\/+$/g, "").toLowerCase();
   return (Object.keys(VIEW_LABELS) as View[]).find((v) => v === slug) ?? "focus";
+}
+
+// Entry point on the Focus page for the Anatomy Mirror (free for everyone).
+function AnatomyMirrorCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <button onClick={onOpen} className="mt-6 flex w-full items-center gap-4 rounded-3xl border border-border bg-card/80 p-4 text-left shadow-sm transition hover:border-primary/40">
+      <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl gradient-primary text-white shadow-glow"><ScanFace size={22} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">Anatomy Mirror <span className="ml-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">New</span></span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">See your skull, jaw, facial muscles and brain on your own face through your camera, then quiz yourself.</span>
+      </span>
+      <ChevronRight size={18} className="shrink-0 text-muted-foreground" />
+    </button>
+  );
 }
 
 function calendarDayNumber(date: Date): number {
@@ -485,6 +501,19 @@ export default function App() {
       },
     });
   }, [countUp, session?.user.id, activeTask, tasks, bumpGamification]);
+
+  const logAnatomyMinutes = useCallback((minutes: number) => {
+    const current = activeTask ? tasks.find((t) => t.id === activeTask) : undefined;
+    setSessions((prev) => addSession(prev, minutes));
+    setStudyEvents((prev) => [...prev, newStudyEvent(minutes, current, "count_up")]);
+    if (session?.user.id) {
+      setBankingMinutes((b) => b + minutes);
+      void recordFocusSession(dateKey(), minutes, current, "count_up")
+        .then(async (ok) => { if (ok) await bumpGamification(); })
+        .finally(() => setBankingMinutes((b) => Math.max(0, b - minutes)));
+    }
+    track("anatomy_mirror_logged", String(minutes));
+  }, [session?.user.id, activeTask, tasks, bumpGamification]);
 
   const createStudyPlan = useCallback(async (row: PlannedStudyDraft): Promise<PlannedStudySession | null> => {
     if (!session?.user.id) return null;
@@ -1135,6 +1164,13 @@ export default function App() {
               pipSupported={pipSupported} pipActive={!!pipWindow}
               onPopOut={() => openPip().then((pip) => { if (pip) track("pip_open"); })} onClosePip={closePip}
               motivation={motivation} onOpenHowItWorks={() => setShowHowItWorks(true)} />
+          )}
+          {view === "focus" && <AnatomyMirrorCard onOpen={() => setView("anatomy")} />}
+          {view === "anatomy" && (
+            <Suspense fallback={<div className="mx-auto max-w-5xl py-10 text-sm text-muted-foreground">Loading Anatomy Mirror…</div>}>
+              <AnatomyMirror onBack={() => setView("focus")} onLogMinutes={logAnatomyMinutes}
+                taskTitle={activeTask ? tasks.find((t) => t.id === activeTask)?.title ?? null : null} />
+            </Suspense>
           )}
           {view === "tasks" && (
             <TasksView tasks={tasks} activeTask={activeTask} setActiveTask={setActiveTask}
