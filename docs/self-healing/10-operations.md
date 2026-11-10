@@ -122,7 +122,7 @@ Immediate mitigation: disable the sweep workflow.
    test.
 
 ### "Telemetry stopped arriving"
-Check `/api/health` for env presence, then Vercel logs for `route: telemetry`.
+Check `/api/health` (with `Authorization: Bearer $CRON_SECRET`) for env presence, then Vercel logs for `route: telemetry`.
 Remember the SDK backs off to 5 minutes after 3 consecutive failures, so
 recovery takes a few minutes after the cause is fixed. Confirm
 `sh_flags.selfheal.telemetry` is still enabled — an auto-rollback could have

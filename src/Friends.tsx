@@ -89,13 +89,7 @@ export function FriendsModal({ session, profile, onClose, onUsernameSet, isPremi
     setInviting(false);
     if (res.error) { setInviteError(res.error); return; }
     setInvitedEmail(addr.toLowerCase());
-    setInviteMsg(
-      res.status === "friend_request"
-        ? "They're already on Roamly Flow. Friend request sent."
-        : res.note === "resent"
-          ? "Invite re-sent. They'll get a fresh email."
-          : "Invite sent. They'll get an email to join."
-    );
+    setInviteMsg("Sent. They'll get an email invite, or a friend request if they're already on Roamly Flow.");
     reload();
   };
 

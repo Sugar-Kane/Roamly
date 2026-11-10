@@ -13,6 +13,9 @@ function apiLog(route: string, outcome: string, fields: Record<string, unknown> 
   }
 }
 
+// Every successful outcome (new invite, re-sent invite, or friend request to an
+// existing account) answers the same { status: "sent" }, so this endpoint can't
+// be used to test whether an email is registered.
 const GENERAL_DAILY_LIMIT = 5;
 const ADMIN_DAILY_LIMIT = 50;
 // Global ceiling across ALL users per 24h. Signups are open, so without this,
@@ -119,7 +122,7 @@ export async function POST(request: Request): Promise<Response> {
         await admin.from("notifications").insert({ user_id: existing.id, actor_id: inviter.id, kind: "friend_request" });
         await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: existing.id });
         apiLog("invite", "connected_pending", { inviter: inviter.id });
-        return json({ status: "invited", note: "connected_pending" }, 200);
+        return json({ status: "sent" }, 200);
       }
       const { error: delErr } = await admin.auth.admin.deleteUser(existing.id);
       if (delErr) {
@@ -131,13 +134,13 @@ export async function POST(request: Request): Promise<Response> {
       const userClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
       const { error: frErr } = await userClient.rpc("send_friend_request", { p_target: existing.id });
       if (frErr) {
-        if (frErr.message.includes("already_exists")) return json({ status: "friend_request", note: "already_connected" }, 200);
+        if (frErr.message.includes("already_exists")) return json({ status: "sent" }, 200);
         return json({ error: "Couldn't send that friend request — try again." }, 500);
       }
       // Record the send so friend requests count against the same daily caps as
       // email invites — otherwise this branch is an uncapped notification spammer.
       await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: existing.id });
-      return json({ status: "friend_request" }, 200);
+      return json({ status: "sent" }, 200);
     }
   }
 
@@ -150,7 +153,7 @@ export async function POST(request: Request): Promise<Response> {
     console.warn("[Roamly] inviteUserByEmail failed", inviteErr?.message);
     // A race where they signed up between our check and now surfaces here.
     if (inviteErr?.message?.toLowerCase().includes("already been registered")) {
-      return json({ error: "That person already has an account — search their email to add them." }, 409);
+      return json({ error: "Couldn't send the invite email — try again shortly." }, 502);
     }
     return json({ error: "Couldn't send the invite email — try again shortly." }, 502);
   }
@@ -168,5 +171,5 @@ export async function POST(request: Request): Promise<Response> {
   await admin.from("invitations").insert({ inviter_id: inviter.id, email, invited_user_id: invited.user.id });
 
   apiLog("invite", resend ? "resent" : "invited", { inviter: inviter.id });
-  return json(resend ? { status: "invited", note: "resent" } : { status: "invited" }, 200);
+  return json({ status: "sent" }, 200);
 }

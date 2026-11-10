@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { callerIsAdmin } from "./_admin.js";
 
 // Inlined structured logger (kept local so this function bundles standalone).
 // Never log secrets, tokens, or message bodies — ids and outcomes only.
@@ -64,10 +65,10 @@ export async function POST(request: Request): Promise<Response> {
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
 
-  // Admin gate: must be in the allowlist.
-  const { data: adminRow } = await admin
-    .from("admins").select("user_id").eq("user_id", userData.user.id).maybeSingle();
-  if (!adminRow) return json({ error: "You don't have admin access." }, 403);
+  // Admin gate: is_admin() asked as the caller (allowlist + two-step session).
+  if (!(await callerIsAdmin(supabaseUrl, process.env.VITE_SUPABASE_ANON_KEY ?? "", token))) {
+    return json({ error: "You don't have admin access. Admin tools need two-step verification." }, 403);
+  }
 
   let body: { action?: string; id?: string; status?: string; reply?: string };
   try { body = await request.json(); } catch { return json({ error: "Invalid request body" }, 400); }

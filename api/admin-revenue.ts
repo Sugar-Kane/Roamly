@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { callerIsAdmin } from "./_admin.js";
 
 // Admin-only authoritative revenue, read straight from Stripe. This is the
 // source of truth that the Revenue page's list-price estimates defer to.
@@ -47,9 +48,9 @@ export async function POST(request: Request): Promise<Response> {
   const { data: userData, error: userError } = await admin.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
 
-  const { data: adminRow } = await admin
-    .from("admins").select("user_id").eq("user_id", userData.user.id).maybeSingle();
-  if (!adminRow) return json({ error: "You don't have admin access." }, 403);
+  if (!(await callerIsAdmin(supabaseUrl, process.env.VITE_SUPABASE_ANON_KEY ?? "", token))) {
+    return json({ error: "You don't have admin access. Admin tools need two-step verification." }, 403);
+  }
 
   let body: { start?: string; end?: string } = {};
   try { body = await request.json(); } catch { /* defaults below */ }

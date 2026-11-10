@@ -220,7 +220,10 @@ export async function joinRoomByCode(code: string): Promise<{ room?: LiveRoom; e
   if (!supabase) return { error: "Rooms aren't available right now." };
   const { data, error } = await supabase.rpc("join_room_by_code", { p_code: code.trim().toUpperCase() });
   if (!error && data?.[0]) return { room: data[0] as LiveRoom };
-  if (error?.message.includes("invalid_invite_code")) return { error: "That invite code isn't valid." };
+  // A wrong code comes back as an empty result (the database records the miss
+  // toward a per-hour limit); older databases raised invalid_invite_code.
+  if (!error || error.message.includes("invalid_invite_code")) return { error: "That invite code isn't valid." };
+  if (error.message.includes("too_many_attempts")) return { error: "Too many wrong codes. Wait an hour, or ask your friend to send an invite." };
   return { error: "Couldn't join that room. Try again." };
 }
 
@@ -263,6 +266,20 @@ export async function fetchMessages(roomId: string, limit = 50): Promise<RoomMes
     .limit(limit);
   if (error) { console.warn("[Roamly] fetchMessages failed", error.message); return []; }
   return ((data ?? []) as RoomMessage[]).reverse();
+}
+
+// One message by id, read through RLS: a chat ping only names the message, so
+// what the UI shows always comes from the database, never from the ping.
+export async function fetchMessageById(roomId: string, id: string): Promise<RoomMessage | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("room_messages")
+    .select("*")
+    .eq("room_id", roomId)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) { console.warn("[Roamly] fetchMessageById failed", error.message); return null; }
+  return (data as RoomMessage | null) ?? null;
 }
 
 // Returns an error string for the UI (null on success) — the DB trigger
@@ -314,7 +331,8 @@ export async function searchUsers(query: string): Promise<PublicProfile[]> {
 }
 
 // Exact-email lookup (find_user_by_email is SECURITY DEFINER: signed-in
-// callers, full address required, returns public fields only — never emails).
+// callers, full address required, returns public fields only — never emails;
+// limited to 30 lookups an hour, after which it errors and this returns null).
 export async function findUserByEmail(email: string): Promise<PublicProfile | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.rpc("find_user_by_email", { p_email: email });

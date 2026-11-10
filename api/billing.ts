@@ -81,7 +81,7 @@ export async function POST(request: Request): Promise<Response> {
     let packId: PackId | null = null;
     let planId: PlanId = "monthly";
     if (body.pack) {
-      if (!(body.pack in CREDIT_PACKS)) return json({ error: "Unknown credit pack." }, 400);
+      if (!Object.hasOwn(CREDIT_PACKS, body.pack)) return json({ error: "Unknown credit pack." }, 400);
       packId = body.pack as PackId;
       pack = CREDIT_PACKS[packId];
     }
@@ -97,8 +97,9 @@ export async function POST(request: Request): Promise<Response> {
     if (profileError) return json({ error: "Could not load profile" }, 500);
 
     // Stripe rejections (archived/wrong-mode price ids, an account that can't
-    // take live charges yet) used to escape as opaque 500s. Surface the real
-    // message so misconfiguration is diagnosable from the network tab.
+    // take live charges yet) are logged with Stripe's message for diagnosis;
+    // the client gets a generic one, since the raw text can name price ids and
+    // account configuration.
     try {
       let customerId = profileRow?.stripe_customer_id as string | null;
       if (!customerId) {
@@ -141,9 +142,9 @@ export async function POST(request: Request): Promise<Response> {
 
       return json({ url: checkoutSession.url }, 200);
     } catch (err) {
-      const message = (err as { message?: string })?.message ?? "Checkout could not be started.";
+      const message = (err as { message?: string })?.message ?? "unknown";
       console.log(JSON.stringify({ src: "roamly-api", route: "billing/checkout", outcome: "stripe_error", message }));
-      return json({ error: message }, 500);
+      return json({ error: "Checkout couldn't be started. Try again in a moment." }, 500);
     }
   }
 

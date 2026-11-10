@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { callerIsAdmin } from "./_admin.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -31,8 +32,7 @@ export async function POST(request: Request): Promise<Response> {
   const service = createClient(supabaseUrl, serviceRoleKey);
   const { data: userData, error: userError } = await service.auth.getUser(token);
   if (userError || !userData.user) return json({ error: "Invalid session" }, 401);
-  const { data: adminRow } = await service.from("admins").select("user_id").eq("user_id", userData.user.id).maybeSingle();
-  if (!adminRow) return json({ error: "You don't have admin access." }, 403);
+  if (!(await callerIsAdmin(supabaseUrl, publishableKey, token))) return json({ error: "You don't have admin access. Admin tools need two-step verification." }, 403);
 
   let body: { action?: string; userId?: string };
   try { body = await request.json(); } catch { return json({ error: "Invalid request body" }, 400); }
